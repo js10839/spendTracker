@@ -1,0 +1,101 @@
+.app-shell {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.status-card {
+  width: min(100%, 420px);
+  padding: 32px;
+  border: 1px solid #e5e8eb;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 12px 40px rgb(25 31 40 / 8%);
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #3182f6;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+h1 {
+  margin: 0;
+  color: #191f28;
+  font-size: clamp(26px, 8vw, 34px);
+  line-height: 1.25;
+  letter-spacing: -0.04em;
+}
+
+.description {
+  margin: 12px 0 24px;
+  color: #6b7684;
+  line-height: 1.6;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f2f4f6;
+  color: #4e5968;
+  font-weight: 650;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #8b95a1;
+}
+
+.connection-status.connected {
+  background: #e5f7ef;
+  color: #018756;
+}
+
+.connection-status.connected .status-dot {
+  background: #02b26e;
+}
+
+.connection-status.disconnected {
+  background: #fdecec;
+  color: #d9303e;
+}
+
+.connection-status.disconnected .status-dot {
+  background: #f04452;
+}
+
+button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: #3182f6;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 3px solid rgb(49 130 246 / 30%);
+  outline-offset: 3px;
+}
+
+@media (max-width: 420px) {
+  .app-shell {
+    padding: 16px;
+  }
+
+  .status-card {
+    padding: 24px;
+    border-radius: 20px;
+  }
+}
