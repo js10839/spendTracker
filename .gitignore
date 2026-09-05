@@ -1,0 +1,25 @@
+# secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# frontend
+node_modules/
+frontend/node_modules/
+frontend/dist
+frontend/.vite/
+*.local
+
+# backend
+.venv/
+backend/.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# local tools
+.gjc/
+
+.DS_Store
+*.log
