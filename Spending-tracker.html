@@ -304,10 +304,10 @@ html{scroll-behavior:auto}
 <header>
 <div class="hero-badge">✦ 카드 사이클 기반 지출 추적</div>
 <h1>이번 카드값이 얼마 나올지,<br><span class="blue">마감일 전에</span> 알 수 있게.</h1>
-<p class="hero-sub">신용카드의 statement closing date 기준으로 지출 사이클을 추적하고, 영수증 사진을 AI로 파싱해 품목별로 자동 기록하는 모바일 퍼스트 PWA. 아래 데모를 직접 눌러보면서 읽어보세요.</p>
+<p class="hero-sub">신용카드의 statement closing date 기준으로 지출 사이클을 추적하고, 영수증 사진을 AI로 파싱해 품목별로 자동 기록하는 iOS·Android 모바일 앱. 아래 데모를 직접 눌러보면서 읽어보세요.</p>
 <div class="meta">
-<span>플랫폼 <b>모바일 퍼스트 PWA</b></span>
-<span>스택 <b>FastAPI · React · Supabase</b></span>
+<span>플랫폼 <b>Flutter · iOS + Android</b></span>
+<span>스택 <b>Flutter · FastAPI · Supabase</b></span>
 <span>통화 <b>USD</b></span>
 </div>
 </header>
@@ -351,9 +351,9 @@ html{scroll-behavior:auto}
 </ul>
 <h3>플랫폼 전략 <span class="chip ok">확정</span></h3>
 <ul style="margin-bottom:0">
-<li>PWA: 홈 화면 설치, <code>&lt;input capture&gt;</code> 카메라 촬영, 즉시 배포(심사 없음).</li>
-<li>웹 결제(Stripe ~3%)로 앱스토어 수수료(15~30%) 회피 — freemium 마진 확보.</li>
-<li>네이티브(푸시·위젯)는 Phase 3 검토 — React → React Native 재활용 가능.</li>
+<li>Flutter 단일 코드베이스로 iOS·Android 동시 지원.</li>
+<li>카메라 촬영·갤러리 선택·딥링크 등 모바일 네이티브 기능을 직접 활용.</li>
+<li>초기 MVP는 웹 없이 모바일 앱에 집중하고, TestFlight·Google Play 테스트 트랙을 거쳐 스토어 출시.</li>
 </ul>
 </div>
 </section>
@@ -405,11 +405,11 @@ html{scroll-behavior:auto}
 <li>무료 파싱 카운팅 (유료화 시 그대로 재사용)</li>
 </ul></div>
 <div class="pane" id="p3"><ul>
-<li>Pro 유료 플랜 — Stripe, <strong>회원만 결제</strong> (구매 귀속/환불 이슈) <span class="chip open">수치 미확정</span></li>
+<li>Pro 유료 플랜 — App Store / Google Play 인앱 구독, <strong>회원만 결제</strong> (구매 귀속·복구·환불) <span class="chip open">수치·결제 레이어 미확정</span></li>
 <li>파싱 크레딧 팩(+20장 등) — "50장 소진 유저 비율" 확인 후</li>
 <li>공유 가계부 (커플/룸메이트용 + 가상 모임통장) + 정산 뷰 — 홈에 ledger switcher 추가. <strong>API는 처음부터 <code>/ledgers/{id}/...</code> 경로로 설계</strong> (MVP 코딩 시점부터). Pro 100장 상향 or "멤버 수 × 50장" 검토</li>
-<li><strong>Pro 기능 — ICS 캘린더 구독 피드</strong>: 카드 마감일·예상 카드값·반복 결제일을 폰 캘린더(애플/구글/아웃룩)로. webcal URL 구독 1회로 자동 갱신 — OAuth 불필요, ICS 표준이라 엔드포인트 하나. 캘린더 알림이 "마감 D-3" 푸시를 대체 → 네이티브 전환 필요성 완화</li>
-<li>환불/취소·반복 지출 · 네이티브 전환 검토 (푸시 "마감 D-3", 위젯)</li>
+<li><strong>Pro 기능 — 캘린더 연동</strong>: 카드 마감일·예상 카드값·반복 결제일을 Apple/Google 캘린더와 연동하는 기능 검토. 네이티브 푸시 알림과 역할을 구분해 필요성 검증 후 구현.</li>
+<li>환불/취소·반복 지출 · 네이티브 확장 기능(푸시 "마감 D-3", 홈 위젯, 딥링크) 검토</li>
 </ul></div>
 <div class="pane" id="p0"><ul>
 <li>은행 연동(Plaid 등) — 비용·심사 이슈. <em>카드번호를 받지 않음</em> = 민감정보 제로.</li>
@@ -421,7 +421,7 @@ html{scroll-behavior:auto}
 <div class="tier-cards" id="tierCards">
 <div class="tier sel" data-tier="guest">
 <div class="t-name">비회원</div><div class="t-sub">가입 없이 둘러보기</div>
-<div class="t-row"><span>데이터</span><b>이 기기에만</b></div>
+<div class="t-row"><span>데이터</span><b>기기 SQLite</b></div>
 <div class="t-row"><span>카드</span><b>1개</b></div>
 <div class="t-row"><span>파싱</span><b>총 3장</b></div>
 </div>
@@ -453,23 +453,34 @@ html{scroll-behavior:auto}
 <div class="tbl-wrap"><table>
 <tr><th>레이어</th><th>선택</th><th>이유</th></tr>
 <tr><td>Backend</td><td>Python + FastAPI</td><td>익숙한 언어로 핵심 로직(사이클·파싱)에 집중</td></tr>
-<tr><td>Frontend</td><td>React (Vite) + PWA</td><td>모바일 퍼스트 · 홈 화면 설치 · 카메라 업로드</td></tr>
-<tr><td>DB · 인증</td><td>Supabase</td><td>Postgres + 이메일 Auth + Storage 통합, 무료 티어. 소셜 로그인(Google/Apple)은 토글로 추후 추가 — 백엔드는 JWT 검증만이라 변경 불필요</td></tr>
+<tr><td>Mobile App</td><td>Flutter (Dart) · iOS + Android</td><td>단일 코드베이스 · 카메라/갤러리 · 딥링크·푸시 등 모바일 기능 확장 용이</td></tr>
+<tr><td>DB · 인증</td><td>Supabase</td><td>Postgres + Storage + Passwordless Auth. Email OTP · Google · Apple · Guest를 지원하고 앱 데이터는 고유 user_id 기준으로 연결</td></tr>
+<tr><td>인증 이메일</td><td>Resend 등 Transactional Email Provider</td><td>Production OTP 메일 발송용. 앱 도메인의 auth@... 주소 사용, 전용 Google Workspace 메일함은 필수 아님</td></tr>
+<tr><td>모바일 결제</td><td>App Store / Google Play IAP · RevenueCat 검토</td><td>Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. 유료화 전 최종 확정</td></tr>
 <tr><td>이미지</td><td>Supabase Storage</td><td>private bucket + presigned URL · 1GB ≈ 영수증 2,000~5,000장</td></tr>
 <tr><td>확장 경로</td><td>Cloudflare R2</td><td>10GB + egress 무료, S3 호환 — 이미지만 분리 이전 용이</td></tr>
 <tr><td>ORM</td><td>SQLAlchemy + Alembic</td><td>Python 표준 조합</td></tr>
 <tr><td>파싱</td><td>Vision LLM API</td><td>OCR 대비 간단·정확 · 모델명은 config 값(교체 자유)</td></tr>
-<tr><td>배포</td><td>Railway/Render + Vercel</td><td>무료 티어로 시작</td></tr>
+<tr><td>배포</td><td>Railway/Render + TestFlight / Google Play 테스트 트랙</td><td>백엔드는 저비용 호스팅으로 시작하고 모바일 앱은 App Store·Google Play 출시</td></tr>
 </table></div>
 <ul>
 <li><strong>Supabase 무료 티어</strong>: 1주 미사용 시 일시정지(웨이크업 지연) → 실사용자 유입 시 Pro($25/월) 전환.</li>
 <li><strong>이미지 보안</strong>: 영수증 = 구매 내역 민감 정보. private bucket + 만료형 presigned URL, DB엔 경로만.</li>
 </ul>
 <div class="spec">
+<div class="spec-title">인증 아키텍처 결정</div>
+<div class="si"><div class="si-head">Passwordless <span class="tag b">방향 확정</span></div><div class="si-desc">이메일+비밀번호 대신 Email OTP를 기본 인증 방식으로 사용. 인증 성공 후 기존 Identity면 로그인, 새 Identity면 계정 생성.</div></div>
+<div class="si"><div class="si-head">통합 진입 플로우 <span class="tag b">방향 확정</span></div><div class="si-desc">Email OTP · Google · Apple · Guest를 한 화면에서 제공하고 Sign Up / Log In을 UI에서 강하게 분리하지 않음.</div></div>
+<div class="si"><div class="si-head">User ≠ Email <span class="tag b">확정</span></div><div class="si-desc">앱 데이터 소유자는 Supabase Auth의 고유 user_id. 이메일·Google·Apple은 별도 로그인 Identity이며 앱 데이터는 이메일을 FK로 사용하지 않음.</div></div>
+<div class="si"><div class="si-head">Account Linking <span class="tag a">미확정</span></div><div class="si-desc">Google과 Apple 이메일이 다르거나 Apple Hide My Email을 쓰는 경우 자동 병합하지 않음. 여러 Identity를 하나의 user_id에 연결하는 기능의 MVP 포함 여부는 추후 결정.</div></div>
+<div class="si"><div class="si-head">OTP 이메일 발송 <span class="tag b">방향 확정</span></div><div class="si-desc">Supabase가 OTP 생성·검증·세션을 담당하고 production 메일은 Resend 같은 Transactional Email Provider로 전송. 만료시간·재전송 cooldown·이메일/IP rate limit·최대 시도 횟수 적용.</div></div>
+<div class="si"><div class="si-head">Guest → 회원 전환 <span class="tag b">방향 확정</span></div><div class="si-desc">Guest 데이터는 기기 SQLite에 유지하다 인증 완료 후 해당 user_id의 서버 데이터로 마이그레이션.</div></div>
+</div>
+<div class="spec">
 <div class="spec-title">시스템 아키텍처 결정</div>
 <div class="si">
 <div class="si-head">데이터 단일 경로 <span class="tag b">확정</span></div>
-<div class="si-desc">읽기·쓰기 모두 FastAPI 경유. 프론트가 Supabase와 직접 통신하는 건 Auth뿐.</div>
+<div class="si-desc">읽기·쓰기 모두 FastAPI 경유. Flutter 앱이 Supabase와 직접 통신하는 건 Auth뿐.</div>
 <div class="si-note">로직(사이클·quota·멤버십)이 한 곳에 모이고, RLS는 "전부 거부"로 잠금 — 보안 체크리스트와 맞물림.</div>
 </div>
 <div class="si">
@@ -688,9 +699,9 @@ html{scroll-behavior:auto}
 <details class="acc">
 <summary><span class="acc-n">S7</span>온보딩 (2단계)<span class="acc-arrow">▶</span></summary>
 <div class="acc-body"><ul>
-<li>시작: 가치 제안 + [이메일로 시작하기] / [가입 없이 둘러보기] — "기기 저장·소실 가능" 명시.</li>
+<li>시작: 가치 제안 + [계속하기: Email OTP / Google / Apple] / [가입 없이 둘러보기] — 기기 저장이며 앱 삭제·기기 변경 시 소실 가능함을 명시.</li>
 <li>첫 카드 등록: <em>"카드번호는 필요 없어요 — 이름과 마감일만"</em>. 빠른 선택(1/5/15일/직접), 건너뛰기 허용.</li>
-<li>비회원 → 회원 전환 시 localStorage → 서버 마이그레이션 (전환율 핵심 장치).</li>
+<li>비회원 → 회원 전환 시 기기 SQLite → 서버 마이그레이션 (전환율 핵심 장치).</li>
 </ul></div>
 </details>
 </section>
@@ -730,7 +741,7 @@ html{scroll-behavior:auto}
 <div class="si">
 <div class="si-head">약관 · 개인정보처리방침 동의 <span class="tag r">공개 전 필수</span></div>
 <div class="si-desc">온보딩 가입 버튼 하단 동의 한 줄. 방침엔 수집 항목 · 제3자 전송 · 보관 기간(비회원 즉시 삭제) · 삭제 방법 포함.</div>
-<div class="si-note">일반 공개·유료화 전 방침 문구는 전문가/템플릿 검토 필수 — CCPA, Stripe 요건.</div>
+<div class="si-note">일반 공개·유료화 전 방침 문구는 전문가/템플릿 검토 필수 — CCPA 및 App Store·Google Play 심사 요건.</div>
 </div>
 <div class="si">
 <div class="si-head">설계로 방어 <span class="tag g">문서보다 강력</span></div>
@@ -785,7 +796,7 @@ html{scroll-behavior:auto}
 <div class="si">
 <div class="si-head">IP rate limit <span class="tag a">1주차 필수</span></div>
 <div class="si-desc">비인증 파싱은 IP당 시간 3회 · 일 5회. 가입 엔드포인트도 IP 제한.</div>
-<div class="si-note">FastAPI slowapi로 몇 줄. 보이지 않는 봇 체크(Turnstile)와 이미지 사전 검증은 실제 어뷰징이 관측되면 추가. SMS 인증은 기각 — 발송 비용이 역으로 공격면이 되고 "카드번호도 안 받는 앱" 포지셔닝과 충돌.</div>
+<div class="si-note">FastAPI slowapi로 API rate limit 적용. OTP는 Supabase/Auth provider 측 제한과 앱 레벨 cooldown을 함께 사용. 보이지 않는 봇 체크와 이미지 사전 검증은 실제 어뷰징이 관측되면 추가. SMS 인증은 기각.</div>
 </div>
 <div class="si">
 <div class="si-head">모니터링 3종 <span class="tag a">1주차 필수</span> <span class="tag g">전부 무료</span></div>
@@ -839,7 +850,7 @@ html{scroll-behavior:auto}
 <div class="sec-head"><span class="sec-ico">🚀</span><h2>마일스톤 &amp; 결정 현황</h2></div>
 <div class="tbl-wrap"><table>
 <tr><th>주차</th><th>목표</th></tr>
-<tr><td>1주</td><td>셋업 (FastAPI+React), DB 스키마, 결제수단/카테고리 CRUD, 모니터링 3종 + rate limit + 지출 캡 + RLS·CORS·멤버십 의존성</td></tr>
+<tr><td>1주</td><td>셋업 (FastAPI+Flutter), Supabase/Auth 기본 설정, DB 스키마, 결제수단/카테고리 CRUD, 모니터링 3종 + rate limit + 지출 캡 + RLS·멤버십 의존성</td></tr>
 <tr><td>2주</td><td>지출 입력 + 거래 내역 + 사이클 계산 (테스트 포함)</td></tr>
 <tr><td>3주</td><td>대시보드 — <strong>Phase 1 완성</strong></td></tr>
 <tr><td>4주</td><td>파싱 파이프라인 + 확인 UI</td></tr>
@@ -849,7 +860,7 @@ html{scroll-behavior:auto}
 <div class="bigcard">
 <h3 style="margin-top:0">결정 현황</h3>
 <ul style="margin-bottom:0">
-<li><span class="chip ok">확정</span> 사이클 = closing date · USD 단일 · 이메일 인증 · 통합 뷰 = 30일 rolling · 카테고리 11개 · 캘린더 도트+마감일 누적액 · 기술 스택.</li>
+<li><span class="chip ok">확정</span> 사이클 = closing date · USD 단일 · Flutter(iOS+Android) · Guest 허용 + Passwordless 인증 방향 · 통합 뷰 = 30일 rolling · 캘린더 도트+마감일 누적액 · 기술 스택.</li>
 <li data-status="open"><span class="chip open">논의 중</span> 회원 등급 수치(카드 1/2/무제한, 파싱 3/10/50)와 Pro 가격 — 실사용 데이터 확인 후.</li>
 <li><strong>파싱 정확도</strong> 리스크 — 구겨진/비영어 영수증. 확인 화면 + total 검증 배지가 안전망.</li>
 <li><strong>기록 누락</strong> — 연동이 없어 기록 안 한 지출은 없음. 기록 리마인드는 post-MVP 리텐션 아이디어.</li>
@@ -998,9 +1009,9 @@ t.classList.add('on');document.getElementById(t.dataset.pane).classList.add('on'
 });
 /* ---------- tier cards ---------- */
 const TIER_INFO={
-guest:'<strong>비회원 정책</strong> — 데이터는 이 기기 localStorage에만 (서버 DB 기록 없음). 파싱 시에만 이미지가 서버를 경유하고 <em>즉시 삭제</em>. 소실 가능 경고 배너 필수. 가입 시 로컬 데이터를 서버로 마이그레이션.',
-free:'<strong>무료 회원</strong> — 이메일 인증 필수(다중 계정 어뷰징 방지). 한도 초과 시에도 업로드·수동 입력은 항상 가능, 잠기는 건 AI 파싱뿐. 3번째 카드 추가 시도 시 Pro 게이트 모달.',
-pro:'<strong>Pro</strong> — 3티어 대신 단일 플랜. 결제는 회원만(웹 결제 Stripe ~3%). 파싱 원가는 장당 1¢ 미만이라 마진 넉넉. 50장 소진 유저가 유의미하면 크레딧 팩(+20장) 추가 판매 검토.'
+guest:'<strong>비회원 정책</strong> — 데이터는 기기 SQLite에만 저장 (서버 DB 기록 없음). 파싱 시에만 이미지가 서버를 경유하고 <em>즉시 삭제</em>. 앱 삭제·기기 변경 시 소실 가능 경고 필수. 가입 시 로컬 데이터를 서버로 마이그레이션.',
+free:'<strong>무료 회원</strong> — Email OTP / Google / Apple 중 지원 Identity로 인증. 사용량은 Supabase user_id 기준. 한도 초과 시에도 업로드·수동 입력은 항상 가능, 잠기는 건 AI 파싱뿐. 3번째 카드 추가 시도 시 Pro 게이트 모달.',
+pro:'<strong>Pro</strong> — 3티어 대신 단일 플랜. 결제는 회원만 가능하며 모바일 스토어 결제 방식은 출시 전 확정. 파싱 원가는 낮게 유지하고, 50장 소진 유저가 유의미하면 크레딧 팩(+20장) 추가 판매 검토.'
 };
 const tierDetail=document.getElementById('tierDetail');
 tierDetail.innerHTML=TIER_INFO.guest;

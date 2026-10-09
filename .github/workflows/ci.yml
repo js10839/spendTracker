@@ -52,4 +52,6 @@ jobs:
       - name: Run ruff check
         run: uv run ruff check .
       - name: Run tests
+        env:
+          DB_URL: postgresql+psycopg://test:test@localhost:5432/test
         run: uv run pytest
