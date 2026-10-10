@@ -168,7 +168,7 @@ pre .tbl{color:#6CB6FF;font-weight:700}
 /* ===== ERD ===== */
 .erd{position:relative;display:grid;gap:26px 20px;margin:14px 0 4px;
 grid-template-columns:repeat(3,1fr);
-grid-template-areas:"u l m" "p t r" "c t g";}
+grid-template-areas:"u l m" "p t r" "c t g" "i ir ir";}
 #erdSvg{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
 #erdSvg path{fill:none;stroke:#C9D2DB;stroke-width:2;transition:stroke .15s,opacity .15s}
 #erdSvg path.hot{stroke:var(--blue);stroke-width:2.5}
@@ -193,10 +193,10 @@ grid-template-areas:"u l m" "p t r" "c t g";}
 .fk{background:var(--gray-bg);color:var(--ink-2)}
 .erd-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;font-weight:600;color:var(--ink-2);margin-top:14px}
 @media (max-width:720px){
-.erd{grid-template-columns:1fr 1fr;grid-template-areas:"u l" "m p" "t t" "c r" "g g"}
+.erd{grid-template-columns:1fr 1fr;grid-template-areas:"u l" "m p" "t t" "c r" "g i" "ir ir"}
 }
 @media (max-width:480px){
-.erd{grid-template-columns:1fr;grid-template-areas:"u" "l" "m" "p" "t" "c" "r" "g"}
+.erd{grid-template-columns:1fr;grid-template-areas:"u" "l" "m" "p" "t" "c" "r" "g" "i" "ir"}
 #erdSvg{display:none}
 }
 /* ===== flow stepper ===== */
@@ -454,34 +454,44 @@ html{scroll-behavior:auto}
 <tr><th>레이어</th><th>선택</th><th>이유</th></tr>
 <tr><td>Backend</td><td>Python + FastAPI</td><td>익숙한 언어로 핵심 로직(사이클·파싱)에 집중</td></tr>
 <tr><td>Mobile App</td><td>Flutter (Dart) · iOS + Android</td><td>단일 코드베이스 · 카메라/갤러리 · 딥링크·푸시 등 모바일 기능 확장 용이</td></tr>
-<tr><td>DB · 인증</td><td>Supabase</td><td>Postgres + Storage + Passwordless Auth. Email OTP · Google · Apple · Guest를 지원하고 앱 데이터는 고유 user_id 기준으로 연결</td></tr>
-<tr><td>인증 이메일</td><td>Resend 등 Transactional Email Provider</td><td>Production OTP 메일 발송용. 앱 도메인의 auth@... 주소 사용, 전용 Google Workspace 메일함은 필수 아님</td></tr>
+<tr><td>DB</td><td>Supabase Managed PostgreSQL</td><td>표준 PostgreSQL. Flutter는 DB에 직접 접근하지 않고 FastAPI → SQLAlchemy를 통해서만 Read / Write</td></tr>
+<tr><td>인증</td><td>Supabase Auth</td><td>Email/Password + Email Verification + Guest. Credential·세션·JWT는 Supabase가 관리하고 앱 데이터는 고유 user_id 기준으로 연결</td></tr>
+<tr><td>인증 이메일</td><td>Resend 등 Transactional Email Provider</td><td>Production 인증 메일 발송용 custom SMTP. 앱 도메인의 auth@... 주소 사용 가능</td></tr>
 <tr><td>모바일 결제</td><td>App Store / Google Play IAP · RevenueCat 검토</td><td>Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. 유료화 전 최종 확정</td></tr>
 <tr><td>이미지</td><td>Supabase Storage</td><td>private bucket + presigned URL · 1GB ≈ 영수증 2,000~5,000장</td></tr>
 <tr><td>확장 경로</td><td>Cloudflare R2</td><td>10GB + egress 무료, S3 호환 — 이미지만 분리 이전 용이</td></tr>
 <tr><td>ORM</td><td>SQLAlchemy + Alembic</td><td>Python 표준 조합</td></tr>
-<tr><td>파싱</td><td>Vision LLM API</td><td>OCR 대비 간단·정확 · 모델명은 config 값(교체 자유)</td></tr>
+<tr><td>파싱</td><td>Google Gemini Vision API</td><td>공통 Gemini client는 provider 연결만 담당하고 실제 영수증 prompt·검증 로직은 Receipt Service가 소유</td></tr>
 <tr><td>배포</td><td>Railway/Render + TestFlight / Google Play 테스트 트랙</td><td>백엔드는 저비용 호스팅으로 시작하고 모바일 앱은 App Store·Google Play 출시</td></tr>
 </table></div>
 <ul>
 <li><strong>Supabase 무료 티어</strong>: 1주 미사용 시 일시정지(웨이크업 지연) → 실사용자 유입 시 Pro($25/월) 전환.</li>
 <li><strong>이미지 보안</strong>: 영수증 = 구매 내역 민감 정보. private bucket + 만료형 presigned URL, DB엔 경로만.</li>
 </ul>
+
 <div class="spec">
 <div class="spec-title">인증 아키텍처 결정</div>
-<div class="si"><div class="si-head">Passwordless <span class="tag b">방향 확정</span></div><div class="si-desc">이메일+비밀번호 대신 Email OTP를 기본 인증 방식으로 사용. 인증 성공 후 기존 Identity면 로그인, 새 Identity면 계정 생성.</div></div>
-<div class="si"><div class="si-head">통합 진입 플로우 <span class="tag b">방향 확정</span></div><div class="si-desc">Email OTP · Google · Apple · Guest를 한 화면에서 제공하고 Sign Up / Log In을 UI에서 강하게 분리하지 않음.</div></div>
-<div class="si"><div class="si-head">User ≠ Email <span class="tag b">확정</span></div><div class="si-desc">앱 데이터 소유자는 Supabase Auth의 고유 user_id. 이메일·Google·Apple은 별도 로그인 Identity이며 앱 데이터는 이메일을 FK로 사용하지 않음.</div></div>
-<div class="si"><div class="si-head">Account Linking <span class="tag a">미확정</span></div><div class="si-desc">Google과 Apple 이메일이 다르거나 Apple Hide My Email을 쓰는 경우 자동 병합하지 않음. 여러 Identity를 하나의 user_id에 연결하는 기능의 MVP 포함 여부는 추후 결정.</div></div>
-<div class="si"><div class="si-head">OTP 이메일 발송 <span class="tag b">방향 확정</span></div><div class="si-desc">Supabase가 OTP 생성·검증·세션을 담당하고 production 메일은 Resend 같은 Transactional Email Provider로 전송. 만료시간·재전송 cooldown·이메일/IP rate limit·최대 시도 횟수 적용.</div></div>
-<div class="si"><div class="si-head">Guest → 회원 전환 <span class="tag b">방향 확정</span></div><div class="si-desc">Guest 데이터는 기기 SQLite에 유지하다 인증 완료 후 해당 user_id의 서버 데이터로 마이그레이션.</div></div>
+<div class="si"><div class="si-head">Email / Password + Email Verification <span class="tag b">확정</span></div><div class="si-desc">회원은 이메일과 비밀번호를 사용하고 이메일 인증을 완료한 뒤 계정을 활성화. 비밀번호 해싱·credential·session은 Supabase Auth가 관리하며 public.users에는 비밀번호 관련 컬럼을 두지 않음.</div></div>
+<div class="si"><div class="si-head">Guest 모드 <span class="tag b">확정</span></div><div class="si-desc">Guest 데이터는 Flutter 기기 SQLite에 저장. 회원 전환 시 인증된 user_id의 서버 데이터로 마이그레이션.</div></div>
+<div class="si"><div class="si-head">User ≠ Email <span class="tag b">확정</span></div><div class="si-desc">앱 데이터 소유자는 Supabase Auth UUID. public.users.id = auth.users.id로 연결하고 이메일을 FK로 사용하지 않음.</div></div>
+<div class="si"><div class="si-head">Social Login / Account Linking <span class="tag a">확장 가능</span></div><div class="si-desc">Google·Apple Sign-In은 Supabase provider로 추가 가능. 서로 다른 provider 계정 자동 병합은 하지 않고 linking 기능은 별도 요구사항으로 다룸.</div></div>
+<div class="si"><div class="si-head">인증 이메일 발송 <span class="tag b">방향 확정</span></div><div class="si-desc">Production에서는 Resend 같은 Transactional Email Provider를 Supabase custom SMTP에 연결. 인증 메일 요청에 rate limit과 resend cooldown 적용.</div></div>
+</div>
+<div class="spec">
+<div class="spec-title">Supabase 의존성 경계</div>
+<div class="si"><div class="si-head">Database <span class="tag b">확정</span></div><div class="si-desc">Supabase Managed PostgreSQL을 사용하지만 앱 데이터는 Flutter → FastAPI → Service → Repository → SQLAlchemy → PostgreSQL 경로로만 접근.</div></div>
+<div class="si"><div class="si-head">Auth <span class="tag b">확정</span></div><div class="si-desc">Flutter는 Supabase Auth SDK로 로그인하고 JWT를 FastAPI에 전달. FastAPI 공통 Auth dependency에서 검증.</div></div>
+<div class="si"><div class="si-head">App Profile <span class="tag b">확정</span></div><div class="si-desc">auth.users는 credential/identity를 관리하고 public.users는 nickname·plan 등 앱 전용 프로필을 관리. 동일 UUID로 1:1 연결.</div></div>
+<div class="si"><div class="si-head">Storage <span class="tag b">확정</span></div><div class="si-desc">Supabase Storage 호출은 FastAPI의 Storage Service / Wrapper에 격리하여 추후 S3·R2로 교체 가능하게 유지.</div></div>
+<div class="si"><div class="si-head">Gemini <span class="tag b">확정</span></div><div class="si-desc">Gemini SDK·API key·timeout·retry는 공통 integration에서 관리. Prompt·category logic·total validation은 Receipt Service가 관리.</div></div>
 </div>
 <div class="spec">
 <div class="spec-title">시스템 아키텍처 결정</div>
+
 <div class="si">
 <div class="si-head">데이터 단일 경로 <span class="tag b">확정</span></div>
 <div class="si-desc">읽기·쓰기 모두 FastAPI 경유. Flutter 앱이 Supabase와 직접 통신하는 건 Auth뿐.</div>
-<div class="si-note">로직(사이클·quota·멤버십)이 한 곳에 모이고, RLS는 "전부 거부"로 잠금 — 보안 체크리스트와 맞물림.</div>
+<div class="si-note">로직(사이클·quota·멤버십)은 FastAPI에 모으고, RLS는 우회 접근을 막는 추가 방어 계층으로 유지.</div>
 </div>
 <div class="si">
 <div class="si-head">이미지 업로드는 서버 경유 <span class="tag b">확정</span></div>
@@ -503,19 +513,20 @@ html{scroll-behavior:auto}
 <!-- ========== 05 ========== -->
 <section id="s5">
 <div class="sec-head"><span class="sec-ico">🗄️</span><h2>데이터 모델</h2></div>
-<p class="lead">모든 데이터는 <code>ledger</code>(가계부)에 귀속 — 공유 기능을 구조 변경 없이 확장하기 위한 설계. 금액은 <em>cents 정수</em> 저장, 표시 시점에만 달러 변환.</p>
+<p class="lead">앱 데이터는 <code>ledger</code>에 귀속되고, 로그인 credential은 Supabase Auth가 별도로 관리한다. <code>public.users.id = auth.users.id</code>로 연결하며 금액은 <em>cents 정수</em>로 저장한다. 지출은 transactions, 수입은 income_sources + income_records로 분리한다.</p>
 <div class="demo" style="padding-bottom:18px">
 <div class="demo-tag">Interactive ERD</div>
 <div class="demo-title">테이블에 마우스를 올려보세요 — 연결된 관계만 하이라이트됩니다</div>
 <div class="erd" id="erd">
 <svg id="erdSvg" aria-hidden="true"></svg>
 <div class="ent" data-t="user" style="grid-area:u">
-<div class="ent-h hv"><span>👤 users</span></div>
+<div class="ent-h hv"><span>👤 public.users</span><em>auth.users 1:1</em></div>
 <div class="ent-b">
-<div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
-<div class="fld"><span>email</span><i>text</i></div>
+<div class="fld"><span>id <b class="pk">PK/FK</b></span><i>uuid</i></div>
+<div class="fld"><span>nickname</span><i>text·null</i></div>
 <div class="fld"><span>plan</span><i>free|pro</i></div>
 <div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
 </div>
 <div class="ent" data-t="ledger" style="grid-area:l">
@@ -524,6 +535,8 @@ html{scroll-behavior:auto}
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>owner_user_id <b class="fk">FK</b></span><i>uuid</i></div>
 <div class="fld"><span>name</span><i>text</i></div>
+<div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
 </div>
 <div class="ent" data-t="ledger_member" style="grid-area:m">
@@ -543,6 +556,8 @@ html{scroll-behavior:auto}
 <div class="fld"><span>type</span><i>credit|cash</i></div>
 <div class="fld"><span>closing_day</span><i>1–31·null</i></div>
 <div class="fld"><span>color</span><i>text</i></div>
+<div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
 </div>
 <div class="ent big" data-t="transaction" style="grid-area:t">
@@ -559,6 +574,9 @@ html{scroll-behavior:auto}
 <div class="fld"><span>memo</span><i>text</i></div>
 <div class="fld"><span>transacted_at</span><i>date</i></div>
 <div class="fld"><span>source</span><i>manual|parse</i></div>
+<div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
+<div class="fld"><span>deleted_at</span><i>ts·null</i></div>
 </div>
 </div>
 <div class="ent" data-t="receipt" style="grid-area:r">
@@ -567,8 +585,10 @@ html{scroll-behavior:auto}
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
 <div class="fld"><span>image_url</span><i>text</i></div>
-<div class="fld"><span>raw_parse_json</span><i>json</i></div>
+<div class="fld"><span>raw_parse_json</span><i>jsonb</i></div>
 <div class="fld"><span>status</span><i>pending→draft→parsed / failed</i></div>
+<div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
 <div class="fld"><span>deleted_at</span><i>soft delete</i></div>
 </div>
 </div>
@@ -581,6 +601,8 @@ html{scroll-behavior:auto}
 <div class="fld"><span>icon</span><i>text</i></div>
 <div class="fld"><span>is_default</span><i>bool</i></div>
 <div class="fld"><span>description</span><i>LLM 프롬프트용</i></div>
+<div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
 </div>
 <div class="ent" data-t="categorization_rule" style="grid-area:g">
@@ -589,25 +611,65 @@ html{scroll-behavior:auto}
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
 <div class="fld"><span>category_id <b class="fk">FK</b></span><i>uuid</i></div>
-<div class="fld"><span>merchant</span><i>text</i></div>
-<div class="fld"><span>item_keyword</span><i>text</i></div>
+<div class="fld"><span>merchant</span><i>text·null</i></div>
+<div class="fld"><span>item_keyword</span><i>text·null</i></div>
+<div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
+</div>
+</div>
+<div class="ent" data-t="income_source" style="grid-area:i">
+<div class="ent-h hv"><span>💰 income_sources</span><em>반복 규칙</em></div>
+<div class="ent-b">
+<div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
+<div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
+<div class="fld"><span>name</span><i>text</i></div>
+<div class="fld"><span>income_type</span><i>text</i></div>
+<div class="fld"><span>expected_amount_cents</span><i>int</i></div>
+<div class="fld"><span>frequency</span><i>NOT NULL</i></div>
+<div class="fld"><span>reference_date</span><i>date·NOT NULL</i></div>
+<div class="fld"><span>next_expected_date</span><i>date·calculated</i></div>
+<div class="fld"><span>is_active</span><i>bool</i></div>
+</div>
+</div>
+<div class="ent" data-t="income_record" style="grid-area:ir">
+<div class="ent-h hg"><span>💵 income_records</span><em>실제 수입</em></div>
+<div class="ent-b two">
+<div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
+<div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
+<div class="fld"><span>income_source_id <b class="fk">FK</b></span><i>uuid·null</i></div>
+<div class="fld"><span>name</span><i>text</i></div>
+<div class="fld"><span>income_type</span><i>text</i></div>
+<div class="fld"><span>amount_cents</span><i>int</i></div>
+<div class="fld"><span>received_at</span><i>date</i></div>
+<div class="fld"><span>memo</span><i>text·null</i></div>
+<div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
 </div>
 </div>
 <div class="erd-legend">
 <span><b class="pk">PK</b> 기본키</span>
 <span><b class="fk">FK</b> 외래키</span>
-<span style="color:var(--ink-3)">선 = 1 : N 관계 · receipts → transactions는 영수증 한 장이 품목별 여러 거래를 낳는 관계</span>
+<span style="color:var(--ink-3)">선 = 1 : N 관계 · receipts → transactions는 영수증 한 장이 여러 지출 row를 낳고, income_sources → income_records는 반복 수입 규칙과 실제 수입 기록의 관계</span>
 </div>
 </div>
 <div class="bigcard">
-<h3 style="margin-top:0">설계 원칙 3가지</h3>
+<h3 style="margin-top:0">설계 원칙</h3>
 <ul style="margin-bottom:0">
 <li><strong>사이클은 저장하지 않는다</strong> <span class="chip ok">확정</span> — <code>closing_day</code> 하나로 조회 시점에 계산(Demo A = 이 명세). 마감일 변경 시 과거 재계산 불필요. UI 용어는 "결제일"이 아닌 <em>"명세서 마감일"</em>.</li>
-<li><strong>금액·카테고리의 유일한 집은 transaction</strong> — receipt는 원본 보관함. 영수증 1장 → 품목별 N개(1:N), Tax·Tip도 별도 row → <code>SUM = 영수증 총액</code> 항상 성립. <code>raw_parse_json</code>은 감사 로그(개인화 학습 재료).</li>
+<li><strong>지출과 수입을 분리</strong> — <code>transactions</code>는 지출 전용. 반복 수입 규칙은 <code>income_sources</code>, 실제 수입은 <code>income_records</code>에 저장. 비정기 수입은 source 없이 record만 생성 가능.</li>
+<li><strong>Receipt는 원본 보관함</strong> — 영수증 1장 → 품목별 N개 transaction. Tax·Tip도 별도 row로 저장해 합계 검증 가능.</li>
+<li><strong>인증 정보는 Auth에 격리</strong> — 비밀번호·identity·session은 Supabase Auth가 관리하고 <code>public.users</code>에는 앱 프로필만 저장.</li>
 <li><strong>카운터 컬럼을 두지 않는다</strong> — 파싱 사용량은 <code>receipts</code> COUNT, 카드 수는 <code>payment_method</code> COUNT로 파생. 카운터는 동기화 버그의 원천. <span class="chip open">게이팅 수치는 미확정</span></li>
 </ul>
 </div>
+
+<div class="callout blue">
+<div class="co-title">💰 Income 규칙</div>
+정기 수입은 <strong>frequency + reference_date</strong>를 필수로 받고, <code>next_expected_date</code>는 FastAPI가 계산한다. 실제 입금은 <code>income_records</code>에 저장하며 예상 금액과 실제 금액을 분리한다. Tip·cashback 같은 비정기 수입은 <code>income_source_id = null</code>로 직접 기록할 수 있다.
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">알림 시간은 사용자별 설정으로 저장하지 않고 앱 정책으로 고정한다. Flutter가 <code>next_expected_date</code>를 받아 정해진 시간에 local notification을 예약하며 MVP에서는 별도 notification table을 만들지 않는다.</div>
+</div>
+
 </section>
 <!-- ========== 06 ========== -->
 <section id="s6">
@@ -860,7 +922,7 @@ html{scroll-behavior:auto}
 <div class="bigcard">
 <h3 style="margin-top:0">결정 현황</h3>
 <ul style="margin-bottom:0">
-<li><span class="chip ok">확정</span> 사이클 = closing date · USD 단일 · Flutter(iOS+Android) · Guest 허용 + Passwordless 인증 방향 · 통합 뷰 = 30일 rolling · 캘린더 도트+마감일 누적액 · 기술 스택.</li>
+<li><span class="chip ok">확정</span> 사이클 = closing date · USD 단일 · Flutter(iOS+Android) · Guest 허용 + Email/Password·이메일 인증 · 통합 뷰 = 30일 rolling · 캘린더 도트+마감일 누적액 · 기술 스택.</li>
 <li data-status="open"><span class="chip open">논의 중</span> 회원 등급 수치(카드 1/2/무제한, 파싱 3/10/50)와 Pro 가격 — 실사용 데이터 확인 후.</li>
 <li><strong>파싱 정확도</strong> 리스크 — 구겨진/비영어 영수증. 확인 화면 + total 검증 배지가 안전망.</li>
 <li><strong>기록 누락</strong> — 연동이 없어 기록 안 한 지출은 없음. 기록 리마인드는 post-MVP 리텐션 아이디어.</li>
@@ -1078,7 +1140,8 @@ const RELS=[
 ['ledger','user'],['ledger_member','ledger'],['ledger_member','user'],
 ['payment_method','ledger'],['category','ledger'],['receipt','ledger'],
 ['transaction','ledger'],['transaction','payment_method'],['transaction','category'],['transaction','receipt'],
-['categorization_rule','ledger'],['categorization_rule','category']
+['categorization_rule','ledger'],['categorization_rule','category'],
+['income_source','ledger'],['income_record','ledger'],['income_record','income_source']
 ];
 function erdDraw(){
 if(!erd||getComputedStyle(erdSvg).display==='none')return;

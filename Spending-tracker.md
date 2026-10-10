@@ -151,127 +151,235 @@
 
 | 레이어 | 선택 | 이유 |
 |---|---|---|
-| Backend | Python + FastAPI | 익숙한 언어로 핵심 로직(사이클 계산, 파싱) 집중 |
-| Mobile App | Flutter (Dart), iOS + Android | 단일 코드베이스로 양 플랫폼 지원, 카메라·갤러리·딥링크·푸시 등 모바일 기능 확장 용이 |
-| DB | Supabase (managed PostgreSQL) | DB + Auth + Storage 통합, 무료 티어로 시작 |
-| 인증 | Supabase Auth — Email OTP + Google + Apple + Guest | 비밀번호를 저장하지 않는 Passwordless 흐름. Supabase가 OTP·OAuth·세션을 관리하고 FastAPI는 JWT 검증. 앱 내부 데이터는 이메일이 아니라 고유 `user_id` 기준으로 연결 |
-| 인증 이메일 | Resend 등 Transactional Email Provider + 앱 도메인 | Supabase OTP 메일의 production 발송용. `auth@appname.com` 형태 사용, 전용 Google Workspace 메일함은 필수 아님 |
-| 모바일 결제 | App Store / Google Play IAP, RevenueCat 검토 | Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. MVP 유료화 전 최종 확정 |
-| 이미지 스토리지 | Supabase Storage (private bucket + presigned URL) | 무료 1GB — 리사이즈 시 영수증 2,000~5,000장, MVP 충분 |
-| 스토리지 확장 경로 | Cloudflare R2 (S3 호환이라 마이그레이션 용이) | 10GB 무료 + egress 완전 무료, 용량 초과 시 이미지만 분리 |
-| ORM | SQLAlchemy + Alembic | Python 표준 조합 |
-| 영수증 파싱 | Vision 지원 LLM API (Claude / GPT 등) | 전통 OCR 대비 구현 간단, 정확도 높음 |
-| 배포 | Backend: Railway/Render, App: TestFlight + Google Play 테스트 트랙 → App Store / Google Play | 백엔드는 저비용 호스팅으로 시작하고 모바일 앱은 스토어 배포 플로우 사용 |
+| Backend | Python + FastAPI | 핵심 비즈니스 로직, 인증 검증, DB 접근, 외부 API 연동을 한 곳에서 관리 |
+| Mobile App | Flutter (Dart), iOS + Android | 단일 코드베이스로 양 플랫폼 지원, 카메라·갤러리·푸시 등 모바일 기능 확장 용이 |
+| DB | Supabase Managed PostgreSQL | 표준 PostgreSQL 사용. Flutter가 직접 DB에 접근하지 않고 FastAPI → SQLAlchemy를 통해서만 Read / Write |
+| 인증 | Supabase Auth — Email/Password + Email Verification + Guest | 비밀번호 해싱·세션·토큰·이메일 인증은 Supabase Auth가 담당. Google/Apple 로그인은 필요 시 추가 |
+| 인증 이메일 | Resend 등 Transactional Email Provider + 앱 도메인 | Production 인증 메일 발송용. Supabase Auth와 custom SMTP로 연결 |
+| 모바일 결제 | App Store / Google Play IAP, RevenueCat 검토 | Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. 유료화 전 최종 확정 |
+| 이미지 스토리지 | Supabase Storage (private bucket) | 영수증 이미지는 FastAPI를 통해 업로드하고 private bucket에 저장 |
+| 스토리지 확장 경로 | Cloudflare R2 / S3 | Storage wrapper 뒤에 격리해 추후 교체 가능 |
+| ORM / Migration | SQLAlchemy + Alembic | Supabase 전용 DB API 대신 표준 PostgreSQL 접근. Migration을 코드로 관리 |
+| 영수증 파싱 | Google Gemini Vision API | 영수증 이미지 → structured output. Gemini 연결은 공통 integration, 파싱 규칙은 Receipt Service가 소유 |
+| 배포 | Backend: Railway/Render, App: TestFlight + Google Play 테스트 트랙 | 모바일 앱은 스토어 배포 플로우 사용 |
 
-**Supabase 무료 티어 주의사항**: 1주 미사용 시 프로젝트 일시정지(첫 요청 웨이크업 지연). 개발 중엔 무관, 실사용자 유입 시 Pro($25/월) 전환 시점.
+**Supabase 사용 원칙**: Supabase를 Auth + PostgreSQL + Storage에 활용하되, Supabase 전용 코드를 앱 전체에 퍼뜨리지 않는다. 핵심 비즈니스 로직은 FastAPI에 두고 provider-specific 코드는 Auth / Storage / Integration 경계에 격리한다.
 
-**이미지 접근 보안**: 영수증은 구매 내역이 담긴 민감 정보 → 버킷은 private, presigned URL(만료 있는 임시 링크)로만 접근. DB에는 이미지 경로만 저장, 파일 자체는 스토리지에.
+**이미지 접근 보안**: 영수증은 구매 내역이 담긴 민감 정보 → bucket은 private. 앱이 Storage를 직접 Read / Write하지 않고 FastAPI가 접근 권한을 확인한 뒤 처리한다.
 
 ### 3.1 인증 아키텍처 결정
 
-1. **Passwordless** ✅: 이메일+비밀번호 대신 Email OTP를 기본 인증 방식으로 사용. 인증 성공 후 기존 Identity면 로그인, 처음 보는 Identity면 계정 생성.
+1. **Email/Password + Email Verification** ✅: 현재 MVP는 이메일과 비밀번호를 받고 이메일 인증을 완료한 뒤 계정을 활성화하는 방향. 비밀번호 해싱과 credential 저장은 Supabase Auth가 담당하며 `public.users`에는 비밀번호 관련 컬럼을 두지 않는다.
 
-2. **통합 진입 플로우** ✅: `Continue with Email / Google / Apple / Continue as Guest` 구조. Sign Up과 Log In을 UI에서 강하게 분리하지 않음.
+2. **Guest 모드** ✅: 계정 없이 앱을 사용할 수 있다. Guest 데이터는 Flutter 기기 로컬 SQLite에 저장하고, 회원 전환 시 서버로 마이그레이션한다.
 
-3. **User ≠ Email** ✅: 앱 데이터의 소유자는 Supabase Auth의 고유 `user_id`. 이메일·Google·Apple은 각각 로그인 Identity이며 transaction/ledger 등 앱 데이터는 이메일을 FK로 사용하지 않음.
+3. **User ≠ Email** ✅: 앱 데이터의 실제 소유자는 Supabase Auth의 고유 UUID다. `public.users.id = auth.users.id` 형태로 연결하며 transaction / ledger 등 앱 데이터는 이메일을 FK로 사용하지 않는다.
 
-4. **Account Linking** ⚠️ 미확정: Google과 Apple의 이메일이 다르거나 Apple Hide My Email을 쓰는 경우 자동으로 동일인 판단하지 않음. 여러 Identity를 하나의 user_id에 연결하는 기능을 MVP에 넣을지는 별도 결정.
+4. **Social Login** ⚠️ 확장 가능: Google / Apple Sign-In은 Supabase Auth provider로 추가 가능하게 설계하되 MVP 포함 범위는 개발 일정에 따라 결정한다.
 
-5. **Email OTP 발송** ✅ 방향: Supabase가 OTP 생성·검증·세션을 담당하고, production 메일 전송은 Resend 같은 custom SMTP/Transactional Email Provider를 사용. OTP 만료시간·재전송 cooldown·이메일/IP rate limit·최대 시도 횟수 적용.
+5. **Account Linking** ⚠️ Post-MVP 검토: Email / Google / Apple 계정을 자동 병합하지 않는다. 서로 다른 provider identity를 하나의 사용자로 연결하는 기능은 별도 요구사항으로 다룬다.
 
-6. **Guest → 회원 전환** ✅: Guest 데이터는 기기 로컬에 유지하다 인증 완료 후 해당 `user_id`의 서버 데이터로 마이그레이션. 중복 전송/부분 실패를 고려해 idempotent migration 필요.
+6. **인증 이메일 발송** ✅ 방향: Production에서는 Resend 같은 Transactional Email Provider를 Supabase custom SMTP에 연결한다. 인증 메일 요청에는 rate limit과 resend cooldown을 적용한다.
 
-### 3.2 시스템 아키텍처 결정
+7. **Guest → 회원 전환** ✅: Guest 데이터는 인증 완료 후 해당 `user_id`의 서버 데이터로 이전한다. 중복 전송이나 재시도를 고려해 migration은 idempotent하게 설계한다.
 
-1. **데이터 단일 경로** ✅: 읽기·쓰기 모두 FastAPI 경유. Flutter 앱이 Supabase와 직접 통신하는 것은 Auth뿐 — 로직(사이클·quota·멤버십 검사)이 한 곳에 모이고, RLS는 "전부 거부"로 잠금 (보안 체크리스트와 맞물림).
+### 3.2 Supabase 의존성 경계
 
-2. **이미지 업로드는 서버 경유** ✅: 프론트 → FastAPI → Storage. 모든 이미지가 검역(재인코딩·EXIF 제거·리사이즈)을 반드시 통과 — presigned 직접 업로드는 검역 우회 경로라 기각.
+1. **Database**: Supabase의 managed PostgreSQL을 사용하지만 모든 앱 데이터 Read / Write는 `Flutter → FastAPI → Service → Repository → SQLAlchemy → PostgreSQL` 경로를 따른다. Flutter에서 Supabase Database SDK를 직접 사용하지 않는다.
 
-3. **파싱은 "확장 가능한 동기"** ✅: MVP는 동기 처리(FastAPI async라 LLM 대기가 서버를 막지 않음, 타임아웃 30초). 단 API 계약은 비동기 호환 — `POST /receipts → {receipt_id, status}` + `GET /receipts/{id}` 폴링, 프론트는 "draft면 진행, pending이면 폴링" 분기. 큐 도입 시 프론트 무수정, 백엔드는 인라인 호출→큐 등록만 교체. 연결 끊김은 상태 머신(draft 서버 보존)이 방어. **오늘 비용 ~0으로 문만 내는 결정 — 큐 자체는 짓지 않음.**
+2. **Auth**: Flutter는 Supabase Auth SDK를 사용해 로그인할 수 있다. 로그인 후 발급된 JWT를 FastAPI에 전달하고, FastAPI의 공통 Auth dependency가 검증한다.
 
-4. **스케줄 작업 (미저장 이미지 7일 청소)** ⚠️ 미확정 — 유력안: **GitHub Actions 스케줄 → 보호된 `/internal/cleanup` 하루 1회 호출**. 근거: 무료, 실행 로그가 GitHub에 남음, 서버 수명 무관, 정리 로직은 API의 순수 함수라 스케줄러 교체 시 재사용. 탈락안: pg_cron 단독(Storage 이미지 못 지움), lazy cleanup(프라이버시 약속 위반 소지), APScheduler(무료 티어 재시작 환경에서 불안정).
+3. **App User Profile**: Supabase Auth의 `auth.users`는 credential / identity를 관리하고, 앱 전용 정보는 `public.users`에 저장한다. 두 테이블은 동일한 UUID로 1:1 연결한다.
+
+4. **Storage**: Supabase Storage 호출은 FastAPI의 공통 Storage Service / Wrapper에 격리한다. 추후 S3 / Cloudflare R2로 바꿔도 Receipt Service를 크게 수정하지 않도록 한다.
+
+5. **External AI**: Gemini SDK / API key / timeout / retry는 `integrations/gemini.py` 같은 공통 client에서 관리한다. Prompt, category logic, total validation은 Receipt Service가 관리한다.
+
+6. **Portability**: PostgreSQL은 표준 SQLAlchemy/Alembic으로 관리하고, Auth·Storage·Gemini 같은 provider-specific 코드는 경계 모듈에 모은다.
+
+### 3.3 시스템 아키텍처 결정
+
+1. **데이터 단일 경로** ✅: 읽기·쓰기 모두 FastAPI 경유. Flutter 앱이 Supabase와 직접 통신하는 것은 Auth뿐 — 로직(사이클·quota·멤버십 검사)이 한 곳에 모이고, RLS는 방어 계층으로 유지한다.
+
+2. **이미지 업로드는 서버 경유** ✅: Flutter → FastAPI → Storage. 모든 이미지가 검역(재인코딩·EXIF 제거·리사이즈)을 반드시 통과한다.
+
+3. **파싱은 확장 가능한 동기 처리** ✅: MVP는 동기 처리로 시작하되 API 계약은 추후 queue 기반 비동기 처리로 교체 가능하게 유지한다.
+
+4. **스케줄 작업 (미저장 이미지 7일 청소)** ⚠️ 미확정 — GitHub Actions 등 외부 scheduler가 보호된 cleanup endpoint를 호출하는 방식을 우선 검토한다.
 
 ---
 
 ## 4. 데이터 모델 (초안)
 
+**핵심 원칙**
+
+- Supabase Auth의 `auth.users`는 로그인 credential과 identity를 관리한다.
+- 앱 전용 사용자 정보는 `public.users`에서 관리한다.
+- `public.users.id`는 Supabase Auth의 `auth.users.id`와 동일한 UUID를 사용한다.
+- 모든 금액은 달러 실수가 아니라 **cents 정수**로 저장한다.
+- `transactions`는 지출 전용으로 유지하고, 수입은 `income_sources` + `income_records`로 분리한다.
+- `income_sources`는 반복 수입 규칙, `income_records`는 실제로 들어온 수입 기록이다.
+
+```text
+auth.users                         # Supabase Auth가 관리
+- id uuid PK
+- email
+- encrypted_password / identities / session metadata
+# 앱 코드에서 비밀번호·OTP 등을 직접 저장하지 않음
+
+
+public.users                       # 앱 전용 프로필
+- id uuid PK, FK -> auth.users.id
+- nickname text nullable
+- plan text NOT NULL               # free | pro
+- created_at timestamp
+- updated_at timestamp
+
+
+ledgers
+- id uuid PK
+- name text
+- owner_user_id uuid FK -> users.id
+- created_at timestamp
+- updated_at timestamp
+
+
+ledger_members                     # 공유 가계부 확장 대비
+- ledger_id uuid FK -> ledgers.id
+- user_id uuid FK -> users.id
+- role text
+- created_at timestamp
+- UNIQUE (ledger_id, user_id)
+
+
+payment_methods
+- id uuid PK
+- ledger_id uuid FK -> ledgers.id
+- name text
+- type text                        # credit | cash-like
+- closing_day int nullable         # credit만 1~31
+- color text
+- created_at timestamp
+- updated_at timestamp
+
+
+categories
+- id uuid PK
+- ledger_id uuid FK -> ledgers.id
+- name text
+- icon text nullable
+- is_default bool
+- description text                 # LLM 분류 기준
+- created_at timestamp
+- updated_at timestamp
+
+
+transactions                       # 지출 전용
+- id uuid PK
+- ledger_id uuid FK -> ledgers.id
+- payment_method_id uuid FK -> payment_methods.id
+- category_id uuid FK -> categories.id
+- receipt_id uuid nullable FK -> receipts.id
+- amount_cents int NOT NULL
+- currency text NOT NULL default 'USD'
+- merchant text nullable
+- memo text nullable
+- transacted_at date NOT NULL
+- source text                      # manual | receipt_parse
+- created_at timestamp
+- updated_at timestamp
+- deleted_at timestamp nullable
+
+
+receipts
+- id uuid PK
+- ledger_id uuid FK -> ledgers.id
+- image_url text
+- raw_parse_json jsonb
+- status text                      # pending | draft | parsed | failed
+- created_at timestamp
+- updated_at timestamp
+- deleted_at timestamp nullable
+
+
+categorization_rules
+- id uuid PK
+- ledger_id uuid FK -> ledgers.id
+- category_id uuid FK -> categories.id
+- merchant text nullable
+- item_keyword text nullable
+- created_at timestamp
+- updated_at timestamp
+
+
+income_sources                     # 반복되는 수입 규칙
+- id uuid PK
+- ledger_id uuid FK -> ledgers.id
+- name text NOT NULL               # Paycheck, Part-time Job 등
+- income_type text NOT NULL        # salary | freelance | other 등
+- expected_amount_cents int NOT NULL
+- frequency text NOT NULL          # weekly | biweekly | monthly
+- reference_date date NOT NULL     # 실제 수입 주기 계산 기준일
+- next_expected_date date NOT NULL # Backend가 계산
+- is_active bool NOT NULL default true
+- created_at timestamp
+- updated_at timestamp
+
+
+income_records                     # 실제 수입 기록
+- id uuid PK
+- ledger_id uuid FK -> ledgers.id
+- income_source_id uuid nullable FK -> income_sources.id
+- name text NOT NULL               # 실제 기록 시점의 이름 snapshot
+- income_type text NOT NULL        # salary | tip | cashback | freelance | other
+- amount_cents int NOT NULL
+- received_at date NOT NULL
+- memo text nullable
+- created_at timestamp
+- updated_at timestamp
 ```
 
-user
+### 4.0.1 Income 설계 원칙
 
-id, email, created_at
+- **정기 수입**: 먼저 `income_sources`에 규칙을 저장한다.
+- `frequency`와 `reference_date`는 둘 다 **required / NOT NULL**.
+- `next_expected_date`는 사용자가 입력하지 않고 FastAPI가 `frequency + reference_date`를 기준으로 계산한다.
+- 실제 수입이 확인되면 `income_records`에 한 건을 생성한다.
+- 실제 금액은 예상 금액과 다를 수 있으므로 `expected_amount_cents`와 `amount_cents`를 분리한다.
+- **비정기 수입**(tip, cashback, 일회성 freelance 등)은 `income_source_id = NULL`로 `income_records`에 바로 저장할 수 있다.
+- 수입 알림 시간은 사용자별 DB 설정으로 받지 않고 앱 정책으로 고정한다.
+- Flutter는 `next_expected_date`를 받아 앱에서 정한 시간에 local notification을 예약한다.
+- MVP에서는 별도 notification table을 만들지 않는다.
 
-plan # 'free' | 'pro' (기본 free) — 게이팅 기준. 인앱 구독 연동 시 구매 entitlement/구독 상태 테이블로 확장
+### 4.0.2 다음 수입일 계산 예시
 
-ledger # 가계부 (공유 확장 대비)
+```text
+frequency = weekly
+reference_date = 2026-10-16
+→ next_expected_date = 2026-10-23
 
-id, name, owner_user_id
+frequency = biweekly
+reference_date = 2026-10-16
+→ next_expected_date = 2026-10-30
 
-ledger_member # Post-MVP, 지금은 owner만
-
-ledger_id, user_id, role
-
-payment_method
-
-id, ledger_id, name, type (credit | cash-like)
-
-closing_day # credit만 사용: statement closing date (1~31)
-
-# cash-like는 null (= 매월 1일~말일 기준)
-
-color # 캘린더 마감일 마커·대시보드 카드 구분용 (6색 팔레트)
-
-category
-
-id, ledger_id, name, icon, is_default
-
-description # 카테고리 정의 한 줄 — LLM 파싱 프롬프트에 사용
-
-transaction
-
-id, ledger_id, payment_method_id, category_id
-
-amount, currency, merchant, memo
-
-transacted_at, created_at
-
-source (manual | receipt_parse)
-
-receipt_id (nullable)
-
-receipt
-
-id, ledger_id, image_url, raw_parse_json, created_at
-
-status # pending → draft(파싱 성공, quota 차감) → parsed(저장) | failed(무차감)
-
-deleted_at # soft delete — 개별 삭제도 quota 유지 (6.2 참조)
-
-categorization_rule # Phase 2 개인화
-
-id, ledger_id, merchant, item_keyword, category_id
-
+frequency = monthly
+reference_date = 2026-10-16
+→ next_expected_date = 2026-11-16
 ```
+
+월별 계산에서 다음 달에 같은 날짜가 없으면 해당 월의 마지막 날로 fallback하는 규칙을 사용한다.
 
 **게이팅 구현 원칙 (⚠️ 등급 구조와 함께 미확정)**: 별도 카운터 테이블/컬럼 없이 파생 계산.
 
-- 파싱 사용량 = `receipts`에서 `status IN ('draft','parsed') AND created_at >= 이번 달 1일` COUNT — 차감 시점은 LLM 호출 성공(상세 6.2), deleted 무관, 카운터 컬럼은 두지 않음
+- 파싱 사용량 = `receipts`에서 `status IN ('draft','parsed') AND created_at >= 이번 달 1일` COUNT
+- 카드 개수 = `payment_methods` COUNT
+- 비회원 한도는 Flutter 기기 로컬 SQLite에서 카운트
 
-- 카드 개수 = `payment_method` COUNT를 API에서 검사 (스키마 변경 없음)
+**사이클 계산 원칙**: 기준은 **statement closing date**. DB에 카드 사이클 row를 저장하지 않고 `payment_methods.closing_day`를 기준으로 조회 시점에 계산한다.
 
-- 비회원 한도는 기기 로컬 저장소에서 카운트 — 재설치 등으로 우회 가능하나 방어 과투자 안 함 원칙
-
-**사이클 계산 원칙**: 기준은 **statement closing date** (결제금액이 확정되는 날). DB에 사이클을 저장하지 않고 조회 시점에 계산.
-
-- 사이클 = 전월 closing date **다음날** ~ 이번 closing date (당일 포함)
-
-- 예: closing_day = 15, 오늘 = 8/24 → 현재 사이클 = 8/16 ~ 9/15
-
-- closing_day가 29~31인데 해당 월에 없으면 → 그 달 마지막 날로 fallback
-
-- closing date 변경 시 과거 데이터 재계산 불필요 (transaction 날짜는 불변)
-
-- UI 용어: "결제일(due date)"이 아닌 "명세서 마감일(closing date)"로 표기해 혼동 방지. 온보딩에서 카드 명세서의 closing date를 입력하도록 안내
+- 사이클 = 전월 closing date 다음날 ~ 이번 closing date
+- closing_day가 29~31인데 해당 월에 없으면 그 달 마지막 날로 fallback
+- UI에서는 due date와 혼동하지 않도록 명세서 마감일(closing date)로 표기
 
 ---
 
@@ -541,4 +649,4 @@ draft·failed 공통: 이미지 7일 보존 후 자동 삭제 — draft의 7일�
 
 - **currency**: ✅ 결정 — USD 단일. 본인 + 초기 테스터 모두 미국 거주. `transaction.currency` 컬럼은 'USD' 기본값으로 유지해 향후 다중 통화 확장 여지만 남김 (지금 복잡도 0)
 
-- **인증 범위**: ✅ 방향 결정 — Guest 사용 허용 + 회원은 Passwordless 인증. Email OTP를 기본으로 하고 Google/Apple 로그인을 함께 지원하는 방향. 계정의 실제 식별 기준은 이메일이 아니라 Supabase `user_id`. Account Linking의 MVP 포함 여부는 미결정
+- **인증 범위**: ✅ 방향 결정 — Guest 사용 허용 + 회원은 Email/Password + Email Verification을 기본으로 사용. credential은 Supabase Auth가 관리하고 앱 데이터는 Supabase `user_id` 기준으로 연결. Google/Apple 로그인과 Account Linking은 일정에 따라 확장
