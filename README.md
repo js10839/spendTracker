@@ -70,5 +70,5 @@ npm run dev
 
 ## References
 
-For more details, please check [Spending-tracker.md](./Spending-tracker.md)
+For product details, see [Spending-tracker.md](./Spending-tracker.md). For development conventions and backend layer responsibilities, see [AGENTS.md](./AGENTS.md).
 

@@ -23,6 +23,9 @@
 
 ## Backend Boundaries
 
+- Routers handle request validation, dependencies, service calls, and responses; keep business logic and direct database queries out of routers.
+- Services own business rules and transaction commit/rollback, but delegate database reads and writes to repositories. Repositories do not commit independently.
+- Keep Supabase and external API calls behind dedicated Auth, Storage, and integration modules; do not scatter provider-specific code across features.
 - `auth/` verifies user tokens; `users/` owns app profiles; `ledgers/` owns ledgers, membership checks, and access control.
 - `payment_methods/`, `categories/`, and `transactions/` own their respective CRUD and business rules. Manual expense entry belongs to `transactions/`.
 - `receipts/` owns upload, parsing, drafts, categorization rules, and confirmation. Confirmed items become expense transactions through the shared transaction logic; coordinate their creation with the receipt status update.
