@@ -59,7 +59,7 @@ cp backend/.env.example backend/.env
 ### Backend
 ```bash
 cd backend
-uv run fastapi dev main.py
+uv run fastapi dev app/main.py
 ```
 
 ### Frontend
