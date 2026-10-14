@@ -51,6 +51,8 @@ jobs:
         run: uv sync --locked --dev
       - name: Run ruff check
         run: uv run ruff check .
+      - name: Check ruff formatting
+        run: uv run ruff format --check .
       - name: Run tests
         env:
           DB_URL: postgresql+psycopg://test:test@localhost:5432/test
