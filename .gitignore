@@ -20,6 +20,7 @@ __pycache__/
 
 # local tools
 .gjc/
+/AGENTS.md
 
 .DS_Store
 *.log
