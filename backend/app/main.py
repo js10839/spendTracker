@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.users.router import router as users_router
 from app.ledgers.router import router as ledgers_router
+from app.users.router import router as users_router
 
 # API 인스턴스와 공통 미들웨어를 구성한다. 기능별 라우터는 별도로 등록한다.
 app = FastAPI(
