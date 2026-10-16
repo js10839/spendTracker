@@ -8,8 +8,11 @@ from app.db.base import Base
 
 
 class Ledger(Base):
+    """지출·결제수단·카테고리를 묶는 가계부."""
+
     __tablename__ = "ledgers"
 
+    # 사용자 UUID와 별개로 새 가계부를 INSERT할 때 uuid4를 생성한다.
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     owner_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)

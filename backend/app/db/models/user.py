@@ -17,6 +17,8 @@ auth_users = Table(
 
 
 class User(Base):
+    """Supabase Auth 사용자와 같은 UUID를 쓰는 앱 전용 프로필."""
+
     __tablename__ = "users"
 
     id: Mapped[UUID] = mapped_column(
