@@ -12,6 +12,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 def get_current_user_id(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
 ) -> UUID:
+    """Bearer 토큰을 검증해 Supabase Auth가 발급한 사용자 UUID를 얻는다."""
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

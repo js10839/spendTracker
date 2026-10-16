@@ -15,4 +15,5 @@ def get_user_ledger(
     user_id: Annotated[UUID, Depends(get_current_user_id)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Ledger:
+    """경로의 가계부에 현재 사용자가 접근 가능한지 확인한다."""
     return require_ledger_access(db, ledger_id, user_id)

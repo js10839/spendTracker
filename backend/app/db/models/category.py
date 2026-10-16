@@ -8,6 +8,8 @@ from app.db.base import Base
 
 
 class Category(Base):
+    """가계부별 지출 분류와 영수증 분류에 사용할 설명을 저장한다."""
+
     __tablename__ = "categories"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)

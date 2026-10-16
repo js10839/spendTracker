@@ -8,6 +8,8 @@ from app.db.base import Base
 
 
 class PaymentMethod(Base):
+    """신용카드 또는 현금성 결제수단과 선택적 마감일을 저장한다."""
+
     __tablename__ = "payment_methods"
     __table_args__ = (
         CheckConstraint(

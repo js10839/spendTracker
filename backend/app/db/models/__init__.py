@@ -1,3 +1,5 @@
+"""앱 모델을 한곳에서 불러와 Alembic의 Base.metadata에 등록한다."""
+
 from app.db.models.category import Category
 from app.db.models.ledger import Ledger
 from app.db.models.ledger_member import LedgerMember

@@ -8,6 +8,8 @@ from app.db.base import Base
 
 
 class Transaction(Base):
+    """직접 입력하거나 영수증에서 확정한 지출을 cents 단위로 기록한다."""
+
     __tablename__ = "transactions"
     __table_args__ = (
         CheckConstraint("amount_cents > 0", name="ck_transactions_positive_amount"),
