@@ -5,11 +5,8 @@
 secrets/
 
 # frontend
-node_modules/
-frontend/node_modules/
-frontend/dist
-frontend/.vite/
-*.local
+frontend/.dart_tool/
+frontend/build/
 
 # backend
 .venv/

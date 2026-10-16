@@ -1,32 +1,23 @@
-# React + TypeScript + Vite
+# Spending Tracker Flutter App
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This directory is the iOS and Android Flutter app. The previous React/Vite scaffold has been replaced. Product behavior and screen requirements are defined in [Spending-tracker.md](../Spending-tracker.md).
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Install Flutter, then run from this directory:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+flutter pub get
+flutter run
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+For the current scaffold, verify changes with:
+
+```bash
+flutter analyze
+flutter test
+```
+
+`lib/main.dart` currently contains only a minimal launch screen. Feature screens, Supabase Auth, and FastAPI integration have not been added yet. App data must go through FastAPI; the mobile app may call Supabase directly only for Auth.
+
+Before a store release, replace the generated `com.example` Android application ID and iOS bundle identifier with the team's chosen identifiers.
