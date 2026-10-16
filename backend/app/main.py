@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.ledgers.router import router as ledgers_router
+from app.payment_methods.router import router as payment_methods_router
 from app.users.router import router as users_router
 
 # API 인스턴스와 공통 미들웨어를 구성한다. 기능별 라우터는 별도로 등록한다.
@@ -23,6 +24,8 @@ app.add_middleware(
 app.include_router(users_router)
 # 인증된 사용자의 가계부 목록 API를 앱에 연결한다.
 app.include_router(ledgers_router)
+# 가계부 멤버가 결제수단을 추가하는 API를 연결한다.
+app.include_router(payment_methods_router)
 
 @app.get("/health/live")
 async def health_live() -> dict[str, str]:
