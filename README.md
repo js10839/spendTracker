@@ -1,11 +1,11 @@
 # Spending Tracker
 
-Spending Tracker is a mobile spending tracker. The existing React frontend is an earlier scaffold; the target app is Flutter for iOS and Android.
+Spending Tracker is a mobile spending tracker with a Flutter app for iOS and Android and a FastAPI backend.
 
 ## Tech Specs
 
 * backend: Python + FastAPI + SQLAlchemy (Supabase PostgreSQL and Auth)
-* target frontend: Flutter (iOS and Android)
+* frontend: Flutter (iOS and Android)
 
 ## Main Features (Upcoming)
 
@@ -19,14 +19,14 @@ Spending Tracker is a mobile spending tracker. The existing React frontend is an
 
 ```text
 spendTracker/
-├── frontend/            # React app
+├── frontend/            # Flutter iOS and Android app
 ├── backend/             # FastAPI app
 └── Spending-tracker.md  # Project plan
 ```
 
 ## Prerequisites
 
-* Node.js 24
+* Flutter 3.47
 * Python 3.12
 * uv
 
@@ -35,7 +35,7 @@ spendTracker/
 ### Frontend
 ```bash
 cd frontend
-npm install
+flutter pub get
 ```
 
 ### Backend
@@ -46,10 +46,9 @@ uv sync
 
 ## Environment Variables
 
-Copy the following local .env.example files
+Copy the backend environment example locally:
 
 ```bash
-cp frontend/.env.example frontend/.env
 cp backend/.env.example backend/.env
 ```
 
@@ -68,10 +67,11 @@ For routes under `/ledgers/{ledger_id}/...`, depend on `get_user_ledger` from `a
 ### Frontend
 ```bash
 cd frontend
-npm run dev
+flutter run
 ```
 
 ## References
 
 For product details, see [Spending-tracker.md](./Spending-tracker.md).
 
+For AI-assisted Flutter work, see the [GJC frontend workflow](./docs/gjc-frontend-workflow.md).

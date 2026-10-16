@@ -19,18 +19,19 @@ jobs:
         working-directory: frontend
 
     steps:
-      - name: Checkout frontend repository
+      - name: Checkout repository
         uses: actions/checkout@v6
-      - name: Install node
-        uses: actions/setup-node@v6
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
         with:
-          node-version: "24"
+          flutter-version: "3.47.0"
+          channel: stable
       - name: Install dependencies
-        run: npm ci
-      - name: Run lint
-        run: npm run lint
-      - name: Build application
-        run: npm run build
+        run: flutter pub get
+      - name: Analyze Dart code
+        run: flutter analyze
+      - name: Run Flutter tests
+        run: flutter test
   
   backend:
     name: Backend
