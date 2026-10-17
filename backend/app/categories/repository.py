@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models.category import Category
@@ -21,3 +22,8 @@ def add_default_categories(
     db.add_all(categories)
     db.flush()
     return categories
+
+def list_categories(db: Session, ledger_id: UUID) -> list[Category]:
+    """지정한 가계부의 카테고리만 조회한다."""
+    statement = select(Category).where(Category.ledger_id==ledger_id).order_by(Category.name, Category.id)
+    return list(db.execute(statement=statement).scalars().all())
