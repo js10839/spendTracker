@@ -254,7 +254,7 @@ ledger_members                     # 공유 가계부 확장 대비
 
 payment_methods
 - id uuid PK
-- ledger_id uuid FK -> ledgers.id
+- user_id uuid FK -> users.id     # 내 지갑은 사용자 소유, 가계부 전환과 무관
 - name text
 - type text                        # credit | cash-like
 - closing_day int nullable         # credit만 1~31
@@ -376,6 +376,8 @@ reference_date = 2026-10-16
 - 비회원 한도는 Flutter 기기 로컬 SQLite에서 카운트
 
 **사이클 계산 원칙**: 기준은 **statement closing date**. DB에 카드 사이클 row를 저장하지 않고 `payment_methods.closing_day`를 기준으로 조회 시점에 계산한다.
+
+`내 지갑`의 결제수단은 사용자에게 속하며 가계부를 바꿔도 같은 목록을 보여준다. 지출 기록은 선택한 가계부에 속하고, 그 사용자가 소유한 결제수단을 참조한다. 카드별 사이클의 여러 가계부 지출 집계 범위는 별도로 확정한다.
 
 - 사이클 = 전월 closing date 다음날 ~ 이번 closing date
 - closing_day가 29~31인데 해당 월에 없으면 그 달 마지막 날로 fallback
