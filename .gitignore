@@ -18,6 +18,7 @@ __pycache__/
 # local tools
 .gjc/
 /AGENTS.md
+.vscode
 
 .DS_Store
 *.log
