@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.categories.router import router as categories_router
 from app.core.config import settings
 from app.ledgers.router import router as ledgers_router
 from app.payment_methods.router import router as payment_methods_router
@@ -26,6 +27,8 @@ app.include_router(users_router)
 app.include_router(ledgers_router)
 # 가계부 선택과 무관한 사용자 지갑 API를 연결한다.
 app.include_router(payment_methods_router)
+# 가계부 멤버가 카테고리 목록을 조회하는 API를 연결한다.
+app.include_router(categories_router)
 
 @app.get("/health/live")
 async def health_live() -> dict[str, str]:

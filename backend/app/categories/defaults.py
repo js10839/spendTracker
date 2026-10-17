@@ -7,7 +7,7 @@ DEFAULT_CATEGORIES: list[tuple[str, str]] = [
     ("Dining", "조리된 음식·음료. 예: 레스토랑, 카페, 배달, 술집. 마트에서 산 식재료는 Food."),
     ("Transport", "일상 이동 비용. 예: 개스, 대중교통, Uber/Lyft, 주차, 차량 정비. 여행지 항공·숙박은 Travel."),
     ("Subscription", "반복 결제 디지털·멤버십 서비스. 예: Netflix, Spotify, iCloud, 짐 멤버십, Amazon Prime. 일회성 구매는 해당 카테고리로 분류."),
-    ("Utilities·Bills", "주거 관련 고정 요금. 예: 전기, 수도, 주거용 개스, 인터넷, 휴대폰 요금. 렌트는 MVP 범위 밖이며 필요하면 별도 카테고리로 추가."),
+    ("Utilities·Bills", "주거 관련 고정 요금. 예: 전기, 수도, 주거용 개스, 인터넷, 휴대폰 요금. 렌트는 MVP 범위 밖."),
     ("Health", "건강·의료 비용. 예: 병원, 약국, 보험 본인부담금, 영양제. 짐 멤버십은 Subscription."),
     ("Entertainment", "여가·취미 소비. 예: 영화, 공연, 게임, 책, 취미용품. 반복 결제형 콘텐츠는 Subscription."),
     ("Travel", "여행 관련 지출. 예: 항공권, 호텔, 여행지 액티비티. 일상 이동은 Transport."),
