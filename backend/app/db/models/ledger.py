@@ -8,7 +8,7 @@ from app.db.base import Base
 
 
 class Ledger(Base):
-    """지출·결제수단·카테고리를 묶는 가계부."""
+    """지출과 카테고리를 묶는 가계부."""
 
     __tablename__ = "ledgers"
 
