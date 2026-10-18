@@ -1,19 +1,19 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Text, func
+from sqlalchemy import Boolean, DateTime, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
 
 class Category(Base):
-    """가계부별 지출 분류와 영수증 분류에 사용할 설명을 저장한다."""
+    """모든 가계부가 공유하는 운영팀 정의 지출 카테고리를 저장한다."""
 
     __tablename__ = "categories"
+    __table_args__ = (UniqueConstraint("name", name="uq_categories_name"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    ledger_id: Mapped[UUID] = mapped_column(ForeignKey("ledgers.id"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     icon: Mapped[str | None] = mapped_column(Text)
     is_default: Mapped[bool] = mapped_column(

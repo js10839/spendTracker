@@ -215,7 +215,7 @@
 
 ## 4. 데이터 모델 (현행 / 계획 구분)
 
-**현행**: Alembic/SQLAlchemy에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`가 있다. 아래 `receipts`, `categorization_rules`, `income_*`는 아직 구현되지 않은 계획이다. `transactions.receipt_id`도 현행 모델·마이그레이션에는 없다.
+**현행**: Alembic/SQLAlchemy에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`가 있다. `categories`는 가계부마다 복제하지 않는 공통 목록이며, 기존 거래의 카테고리 ID는 공통 ID로 이전한다. 아래 `receipts`, `categorization_rules`, `income_*`는 아직 구현되지 않은 계획이다. `transactions.receipt_id`도 현행 모델·마이그레이션에는 없다.
 
 **핵심 원칙**
 
@@ -271,8 +271,7 @@ payment_methods
 
 categories
 - id uuid PK
-- ledger_id uuid FK -> ledgers.id
-- name text
+- name text UNIQUE
 - icon text nullable
 - is_default bool
 - description text                 # LLM 분류 기준
@@ -396,7 +395,7 @@ reference_date = 2026-10-16
 
 ## 4.1 기본 카테고리 정의
 
-가입 시 자동 생성되는 기본 카테고리 12개. 각 정의는 `categories.description`에 저장되며 LLM 파싱 프롬프트에 그대로 사용된다. 카테고리 목록은 운영팀이 관리하고 사용자는 지출 또는 영수증 품목에 적용할 카테고리만 선택한다.
+DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 정의는 `categories.description`에 저장되며 LLM 파싱 프롬프트에 사용된다. 카테고리 목록은 운영팀이 관리하고 사용자는 지출 또는 영수증 품목에 적용할 카테고리만 선택한다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다.
 
 | 카테고리 | 담당 범위 | 예시 | 아닌 것 (경계) |
 |---|---|---|---|
@@ -415,7 +414,7 @@ reference_date = 2026-10-16
 
 **분류 원칙**: 경계가 애매하면 "어디서 샀는가"가 아니라 "무엇을 샀는가" 기준. 같은 Target 영수증이라도 사과는 Food, 세제는 Living, 티셔츠는 Fashion으로 품목별 분류 (영수증 파싱의 존재 이유).
 
-**향후 카테고리 검토 예시 — Pet**: 반려동물 지출을 Food·Fashion·Health에 흩어 놓으면 펫 지출 총액을 보기 어렵다. 다만 Pet은 모든 사용자에게 필요하지 않으므로 기본 세트에는 포함하지 않는다. 운영팀이 수요를 보고 Pet, Gift, Education, Kids 등의 추가 여부를 결정한다. 새 카테고리를 도입할 때는 신규 가계부의 기본 목록뿐 아니라 기존 가계부에도 반영해야 한다.
+**향후 카테고리 검토 예시 — Pet**: 반려동물 지출을 Food·Fashion·Health에 흩어 놓으면 펫 지출 총액을 보기 어렵다. 다만 Pet은 모든 사용자에게 필요하지 않으므로 기본 세트에는 포함하지 않는다. 운영팀이 수요를 보고 Pet, Gift, Education, Kids 등의 추가 여부를 결정한다. 공통 목록에 추가하면 모든 가계부에서 같은 카테고리를 사용할 수 있다.
 
 ---
 
@@ -529,13 +528,13 @@ reference_date = 2026-10-16
 
 **카테고리 운영 원칙**:
 
-1. 기본 카테고리: 가입 시 자동 생성 (`is_default = true`) — 확정 세트 (12개):
+1. 기본 카테고리: DB migration에서 공통 목록으로 생성 (`is_default = true`) — 확정 세트 (12개):
 
 Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, 수건, 주방용품 등) / Electronics (전자기기·주변기기 하드웨어) / Fashion (옷·신발·액세서리) / Dining (외식·카페·배달) / Transport / Subscription / Utilities·Bills / Health / Entertainment / Travel / Etc
 
 - `categories.description` 컬럼 추가: 각 카테고리의 한 줄 정의. LLM 파싱 프롬프트에 이름+설명을 함께 제공해 분류 정확도 확보 (예: Target 영수증에서 detergent → Living, 사과 → Food)
 
-2. 운영팀 관리: 사용자는 카테고리 목록을 조회하고 지출에 적용할 항목을 선택하지만, 카테고리 자체를 추가·변경·삭제하지 않는다. 운영팀이 새 카테고리를 도입하면 기존 가계부에도 반영한다.
+2. 운영팀 관리: 사용자는 카테고리 목록을 조회하고 지출에 적용할 항목을 선택하지만, 카테고리 자체를 추가·변경·삭제하지 않는다. 운영팀이 공통 목록에 새 항목을 추가하면 모든 가계부에 동일하게 보인다.
 
 3. AI는 추천만: 파싱 시 해당 가계부의 카테고리 목록(이름+설명)을 프롬프트에 제공하고 그 안에서만 선택한다. AI가 새 카테고리를 만들 수는 없다. 사용자의 품목별 분류 수정은 `categorization_rules`에 축적해 개인화한다.
 
