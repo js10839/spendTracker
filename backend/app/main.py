@@ -27,7 +27,7 @@ app.include_router(users_router)
 app.include_router(ledgers_router)
 # 가계부 선택과 무관한 사용자 지갑 API를 연결한다.
 app.include_router(payment_methods_router)
-# 가계부 멤버가 카테고리 목록을 조회하는 API를 연결한다.
+# 인증된 사용자가 공통 카테고리 목록을 조회하는 API를 연결한다.
 app.include_router(categories_router)
 
 @app.get("/health/live")

@@ -516,7 +516,7 @@ html{scroll-behavior:auto}
 <section id="s5">
 <div class="sec-head"><span class="sec-ico">🗄️</span><h2>데이터 모델</h2></div>
 <p class="lead">지출·카테고리는 <code>ledger</code>에, 내 지갑의 결제수단은 <code>user</code>에 귀속된다. 로그인 credential은 Supabase Auth가 별도로 관리한다. <code>public.users.id = auth.users.id</code>로 연결하며 금액은 <em>cents 정수</em>로 저장한다.</p>
-<p>현행 SQLAlchemy/Alembic 테이블은 users·ledgers·ledger_members·payment_methods·categories·transactions다. 아래 receipts·categorization_rules·income_*는 계획이며, <code>transactions.receipt_id</code>도 아직 구현되지 않았다.</p>
+<p>현행 SQLAlchemy/Alembic 테이블은 users·ledgers·ledger_members·payment_methods·categories·transactions다. categories는 가계부마다 복제하지 않는 공통 목록이다. 아래 receipts·categorization_rules·income_*는 계획이며, <code>transactions.receipt_id</code>도 아직 구현되지 않았다.</p>
 <div class="demo" style="padding-bottom:18px">
 <div class="demo-tag">Interactive ERD</div>
 <div class="demo-title">테이블에 마우스를 올려보세요 — 연결된 관계만 하이라이트됩니다</div>
@@ -595,11 +595,10 @@ html{scroll-behavior:auto}
 </div>
 </div>
 <div class="ent" data-t="category" style="grid-area:c">
-<div class="ent-h ho"><span>🏷️ categories</span></div>
+<div class="ent-h ho"><span>🏷️ categories</span><em>공통 목록</em></div>
 <div class="ent-b">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
-<div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
-<div class="fld"><span>name</span><i>text</i></div>
+<div class="fld"><span>name</span><i>text·unique</i></div>
 <div class="fld"><span>icon</span><i>text</i></div>
 <div class="fld"><span>is_default</span><i>bool</i></div>
 <div class="fld"><span>description</span><i>LLM 프롬프트용</i></div>
@@ -676,7 +675,7 @@ html{scroll-behavior:auto}
 <!-- ========== 06 ========== -->
 <section id="s6">
 <div class="sec-head"><span class="sec-ico">🏷️</span><h2>기본 카테고리 <span class="chip ok" style="vertical-align:4px">확정 · 12개</span></h2></div>
-<p class="lead">운영팀이 정한 기본 12개를 가계부에 제공한다. 사용자는 카테고리를 선택하지만 추가·수정·삭제하지 않는다. 각 정의는 <code>categories.description</code>에 저장되어 LLM 분류 문맥으로 사용된다.</p>
+<p class="lead">운영팀이 정한 기본 12개를 공통 목록으로 한 번 저장한다. 인증된 앱은 <code>GET /categories</code>로 같은 ID를 조회한다. 사용자는 카테고리를 선택하지만 추가·수정·삭제하지 않는다. 각 정의는 <code>categories.description</code>에 저장되어 LLM 분류 문맥으로 사용된다.</p>
 <div class="demo">
 <div class="demo-tag">Demo C</div>
 <div class="demo-title">분류 시뮬레이터 — 품목을 입력해보세요</div>
@@ -702,7 +701,7 @@ html{scroll-behavior:auto}
 <div class="callout blue">
 <div class="co-title">💡 분류 원칙</div>
 "어디서 샀는가"가 아니라 <strong>"무엇을 샀는가"</strong>. 같은 Target 영수증이라도 사과는 Food, 세제는 Living, 티셔츠는 Fashion — 품목별 분류가 영수증 파싱의 존재 이유.
-<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0"><strong>향후 카테고리 후보 — Pet</strong>: 펫 지출을 별도로 묶을 필요가 있는지 운영팀이 검토한다. Pet·Gift·Education·Kids는 기본 세트에 없으며 사용자가 직접 추가하지 않는다. 새 카테고리 도입 시 기존 가계부 반영도 필요하다.</div>
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0"><strong>향후 카테고리 후보 — Pet</strong>: 펫 지출을 별도로 묶을 필요가 있는지 운영팀이 검토한다. Pet·Gift·Education·Kids는 기본 세트에 없으며 사용자가 직접 추가하지 않는다. 공통 목록에 추가하면 모든 가계부에 동일하게 보인다.</div>
 </div>
 </section>
 <!-- ========== 07 ========== -->
@@ -1150,7 +1149,7 @@ const erd=document.getElementById('erd');
 const erdSvg=document.getElementById('erdSvg');
 const RELS=[
 ['ledger','user'],['ledger_member','ledger'],['ledger_member','user'],
-['payment_method','user'],['category','ledger'],['receipt','ledger'],
+['payment_method','user'],['receipt','ledger'],
 ['transaction','ledger'],['transaction','payment_method'],['transaction','category'],['transaction','receipt'],
 ['categorization_rule','ledger'],['categorization_rule','category'],
 ['income_source','ledger'],['income_record','ledger'],['income_record','income_source']
