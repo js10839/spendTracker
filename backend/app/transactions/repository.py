@@ -26,3 +26,27 @@ def add_manual_transaction(db: Session, ledger_id: UUID, payment_method_id: UUID
     db.flush()
     return transaction
 
+def list_ledger_transactions(db: Session, ledger_id: UUID, start_date: date, end_date: date) -> list[Transaction]:
+    """가계부의 지정 기간에 속한 삭제되지 않은 지출을 최신순으로 조회한다."""
+    statement = select(Transaction).where(
+        Transaction.ledger_id==ledger_id,
+        Transaction.deleted_at.is_(None),
+        Transaction.transacted_at >= start_date,
+        Transaction.transacted_at <= end_date,
+    ).order_by(Transaction.transacted_at.desc(), Transaction.created_at.desc())
+    return list(db.scalars(statement=statement))
+
+def find_ledger_manual_transaction(db: Session, ledger_id: UUID, transaction_id: UUID) -> Transaction | None:
+    """가계부에 속한 삭제되지 않은 수동 지출을 조회한다."""
+    statement = select(Transaction).where(Transaction.id==transaction_id, Transaction.ledger_id==ledger_id, Transaction.source=="manual", Transaction.deleted_at.is_(None),)
+    return db.execute(statement=statement).scalar_one_or_none();
+
+def update_manual_transaction(db: Session, transaction: Transaction, payment_method_id: UUID, category_id: UUID, amount_cents: int, transacted_at: date, memo: str | None) -> Transaction:
+    """검증된 수동 지출의 입력값을 변경하고 DB에 반영한다."""
+    transaction.payment_method_id = payment_method_id
+    transaction.category_id = category_id
+    transaction.amount_cents = amount_cents
+    transaction.transacted_at = transacted_at
+    transaction.memo = memo
+    db.flush()
+    return transaction
