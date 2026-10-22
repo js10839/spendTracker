@@ -5,6 +5,7 @@ from app.categories.router import router as categories_router
 from app.core.config import settings
 from app.ledgers.router import router as ledgers_router
 from app.payment_methods.router import router as payment_methods_router
+from app.transactions.router import router as transaction_router
 from app.users.router import router as users_router
 
 # API 인스턴스와 공통 미들웨어를 구성한다. 기능별 라우터는 별도로 등록한다.
@@ -29,6 +30,8 @@ app.include_router(ledgers_router)
 app.include_router(payment_methods_router)
 # 인증된 사용자가 공통 카테고리 목록을 조회하는 API를 연결한다.
 app.include_router(categories_router)
+# 가계부 멤버의 수동 지출 입력 API를 연결한다.
+app.include_router(transaction_router)
 
 @app.get("/health/live")
 async def health_live() -> dict[str, str]:
