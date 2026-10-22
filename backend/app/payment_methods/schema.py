@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class PaymentMethodCreate(BaseModel):
-    """가계부에 추가할 결제수단의 입력값이다."""
+    """사용자에 추가할 결제수단의 입력값이다."""
     name: str = Field(min_length=1)
     type: Literal["credit", "cash-like"]
     closing_day: int|None = Field(default=None, ge=1, le=31)
