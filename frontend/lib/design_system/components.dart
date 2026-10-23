@@ -4,6 +4,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'tokens.dart';
 import 'typography.dart';
 
+export 'calendar.dart';
+
 enum AppButtonVariant { primary, secondary, social, outline, disabled, danger }
 
 enum AppChipTone { income, expense, neutral, outline }
