@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.categories.router import router as categories_router
 from app.core.config import settings
+from app.income.router import router as income_router
 from app.ledgers.router import router as ledgers_router
 from app.payment_methods.router import router as payment_methods_router
 from app.transactions.router import router as transaction_router
@@ -32,6 +33,8 @@ app.include_router(payment_methods_router)
 app.include_router(categories_router)
 # 가계부 멤버의 수동 지출 입력 API를 연결한다.
 app.include_router(transaction_router)
+# 가계부 멤버의 수입 기록 API를 연결한다.
+app.include_router(income_router)
 
 @app.get("/health/live")
 async def health_live() -> dict[str, str]:
