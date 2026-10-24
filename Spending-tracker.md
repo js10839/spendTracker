@@ -27,7 +27,7 @@
 
 - **경쟁 앱 리뷰·릴리즈 노트에서 배운 것** (설계 요구사항으로 반영):
 
-- 할인/쿠폰 라인(음수 금액) 처리 실패 → 합계 불일치가 주요 불만 → 파싱 프롬프트에 음수 라인 처리 명시 + total 검증 배지 (기설계)
+- 할인/쿠폰 라인(음수 금액) 처리 실패 → 합계 불일치가 주요 불만. 할인/쿠폰 처리 방식은 아직 설계하지 않았으며, total 불일치 검증은 유지한다.
 
 - 영수증 축약 표기("WHL MLK 2% 1G")가 그대로 저장되는 불만 → 프롬프트에 품목명 정규화(읽기 좋게 풀어 쓰기) 명시
 
@@ -79,7 +79,7 @@
 
 - [ ] 결제수단 등록: 신용카드(statement closing date 지정) / 현금성 수단 — 카드별 색상 지정
 
-- [ ] 지출 수동 입력: 금액, 카테고리, 결제수단, 날짜, 메모
+- [ ] 지출 수동 입력: 결제 1건에 상점·결제수단·날짜·메모와 카테고리별 품목 N개를 저장 (백엔드 API 구현, Flutter 연동 필요)
 
 - [ ] 카드별 사이클 뷰: 현재 사이클 지출 합계, 남은 일수, 진행률
 
@@ -215,7 +215,7 @@
 
 ## 4. 데이터 모델 (현행 / 계획 구분)
 
-**현행**: Alembic/SQLAlchemy에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`가 있다. `categories`는 가계부마다 복제하지 않는 공통 목록이며, 기존 거래의 카테고리 ID는 공통 ID로 이전한다. 아래 `receipts`, `categorization_rules`, `income_*`는 아직 구현되지 않은 계획이다. `transactions.receipt_id`도 현행 모델·마이그레이션에는 없다.
+**현행 구현과 확정 목표를 구분한다**: SQLAlchemy/Alembic에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`, `transaction_items`, `income_sources`, `income_records`가 있다. 지출은 결제 헤더 `transactions` 1건과 품목 `transaction_items` N건으로 저장하며, 수동 생성·기간 조회·기존 품목 ID를 유지하는 수정 API가 구현됐다. 품목 추가·제거와 거래 삭제 API는 아직 없고, 영수증 파싱을 통한 생성도 미구현이다. `receipts`, `categorization_rules`, `transactions.receipt_id`는 Phase 2 계획이며, `categories`는 가계부마다 복제하지 않는 공통 목록이다.
 
 **핵심 원칙**
 
@@ -223,8 +223,9 @@
 - 앱 전용 사용자 정보는 `public.users`에서 관리한다.
 - `public.users.id`는 Supabase Auth의 `auth.users.id`와 동일한 UUID를 사용한다.
 - 모든 금액은 달러 실수가 아니라 **cents 정수**로 저장한다.
-- `transactions`는 지출 전용으로 유지하고, 수입은 `income_sources` + `income_records`로 분리한다.
-- `income_sources`는 반복 수입 규칙, `income_records`는 실제로 들어온 수입 기록이다.
+- `transactions`는 지출 결제 1건의 공통 정보와 결제 전체의 Tax/Tip 금액을, `transaction_items`는 그 결제의 품목 N건을 저장한다. 수동 입력과 영수증 파싱은 생성 경로만 다르다. 수입은 `income_sources` + `income_records`로 분리한다.
+- `transactions`에 `item_ids` 배열을 중복 저장하지 않는다. 각 `transaction_items.transaction_id`가 부모 거래를 참조한다.
+- `income_sources`는 반복 Paycheck 규칙, `income_records`는 실제로 들어온 수입과 카드에 적용한 Cashback·Refund 기록이다.
 
 ```text
 auth.users                         # Supabase Auth가 관리
@@ -279,21 +280,31 @@ categories
 - updated_at timestamp
 
 
-transactions                       # 지출 전용
+transactions                       # 현행: 지출 결제 헤더 1건
 - id uuid PK
 - ledger_id uuid FK -> ledgers.id
 - payment_method_id uuid FK -> payment_methods.id
-- category_id uuid FK -> categories.id
 - receipt_id uuid nullable FK -> receipts.id  # Phase 2 계획, 현행 DB에는 없음
-- amount_cents int NOT NULL
+- tax_cents int NOT NULL default 0    # 결제 전체의 Tax
+- tip_cents int NOT NULL default 0    # 결제 전체의 Tip
 - currency text NOT NULL default 'USD'
 - merchant text nullable
 - memo text nullable
 - transacted_at date NOT NULL
-- source text                      # manual | receipt_parse
+- source text                      # manual | receipt_parse, 입력 출처로 유지
 - created_at timestamp
 - updated_at timestamp
 - deleted_at timestamp nullable
+
+
+transaction_items                  # 현행: 결제 1건의 품목 N건
+- id uuid PK
+- transaction_id uuid FK -> transactions.id
+- category_id uuid FK -> categories.id  # 품목 카테고리 필수
+- name text NOT NULL
+- amount_cents int NOT NULL
+- created_at timestamp
+- updated_at timestamp
 
 
 receipts
@@ -316,13 +327,12 @@ categorization_rules
 - updated_at timestamp
 
 
-income_sources                     # 반복되는 수입 규칙
+income_sources                     # Repeats를 설정한 Paycheck 규칙
 - id uuid PK
 - ledger_id uuid FK -> ledgers.id
-- name text NOT NULL               # Paycheck, Part-time Job 등
-- income_type text NOT NULL        # salary | freelance | other 등
+- from_name text NOT NULL          # 지급처, 예: Acme Inc.
 - expected_amount_cents int NOT NULL
-- frequency text NOT NULL          # weekly | biweekly | monthly
+- frequency text NOT NULL          # biweekly | monthly
 - reference_date date NOT NULL     # 실제 수입 주기 계산 기준일
 - next_expected_date date NOT NULL # Backend가 계산
 - is_active bool NOT NULL default true
@@ -334,8 +344,9 @@ income_records                     # 실제 수입 기록
 - id uuid PK
 - ledger_id uuid FK -> ledgers.id
 - income_source_id uuid nullable FK -> income_sources.id
-- name text NOT NULL               # 실제 기록 시점의 이름 snapshot
-- income_type text NOT NULL        # salary | tip | cashback | freelance | other
+- payment_method_id uuid nullable FK -> payment_methods.id  # Cashback·Refund 적용 수단
+- income_type text NOT NULL        # paycheck | cashback | refund | other
+- from_name text nullable          # Paycheck·Refund의 지급처; 반복 기록은 당시 값 snapshot
 - amount_cents int NOT NULL
 - received_at date NOT NULL
 - memo text nullable
@@ -343,16 +354,21 @@ income_records                     # 실제 수입 기록
 - updated_at timestamp
 ```
 
+**확정 관계와 집계 기준**: `ledgers` 1:N `transactions`, `payment_methods` 1:N `transactions`, `transactions` 1:N `transaction_items`이며, 품목은 `categories`의 공통 카테고리를 참조한다. 영수증 파싱 결제를 `transactions.receipt_id`로 파싱 기록에 연결하는 것은 Phase 2 계획이며, 정확한 제약 조건도 그때 정한다. 결제 합계는 `SUM(transaction_items.amount_cents) + transactions.tax_cents + transactions.tip_cents`로 계산하며 부모에 별도의 `total_cents`를 중복 저장하지 않는다. 조회·사이클·대시보드는 `transactions.deleted_at IS NULL`인 결제의 합계를 결제당 한 번만 집계해 헤더가 품목 수만큼 중복 계산되지 않도록 한다. 현행 PUT은 모든 기존 품목 ID를 요청에 포함해야 하며 ID를 유지한 채 이름·금액·카테고리를 수정한다. 품목 추가·제거와 결제 전체 삭제는 아직 구현·정책 확정 전이다. 영수증 처리 상태와 일괄 저장의 상세 계약은 Phase 2에서 정한다. 할인/쿠폰은 아직 모델·파싱 규칙에 포함하지 않는다.
+
+**기존 거래가 있는 DB의 이전 조건**: 현재 migration은 기존 `transactions`가 0건인 환경에서만 적용된다. 이미 거래가 있는 DB에는 금액·카테고리를 품목으로 옮기는 별도 백필 migration을 작성해야 하며, 데이터를 버리고 현재 migration을 강제로 적용하지 않는다.
+
 **날짜별 메모 (미구현·설계 TBD)**: 2026-10-17 미팅에서 날짜에 메모를 남기는 방향에 합의했다. 현행 `transactions.memo`는 개별 지출 메모이며 날짜 메모를 대체하지 않는다. 사용자 개인/가계부 중 소유 범위, 시간대, 같은 날짜의 복수 메모 허용 여부와 저장 구조는 미정이므로 여기서 새 테이블·컬럼을 확정하지 않는다. 영수증 원본 이미지는 영구 보관하지 않으며, `receipts`의 임시 이미지 참조 필요 여부도 TBD다.
 
 ### 4.0.1 Income 설계 원칙
 
-- **정기 수입**: 먼저 `income_sources`에 규칙을 저장한다.
-- `frequency`와 `reference_date`는 둘 다 **required / NOT NULL**.
-- `next_expected_date`는 사용자가 입력하지 않고 FastAPI가 `frequency + reference_date`를 기준으로 계산한다.
-- 실제 수입이 확인되면 `income_records`에 한 건을 생성한다.
-- 실제 금액은 예상 금액과 다를 수 있으므로 `expected_amount_cents`와 `amount_cents`를 분리한다.
-- **비정기 수입**(tip, cashback, 일회성 freelance 등)은 `income_source_id = NULL`로 `income_records`에 바로 저장할 수 있다.
+- **유형별 입력**: Paycheck는 금액·From·날짜·메모와 선택적 Repeats, Cashback은 금액·Applied to(등록 결제수단)·날짜·메모, Refund는 금액·From·Applied to·날짜·메모, Other는 금액·날짜·메모만 받는다. `Other` 수입 유형과 Refund의 `Applied to: Other`는 서로 다른 선택지다.
+- **반복 Paycheck**: Repeats가 `Every 2 weeks` 또는 `Monthly`일 때만 `income_sources`에 규칙을 만든다. `Never`는 규칙을 만들지 않는다는 뜻이다. `income_sources`는 Paycheck 전용이므로 별도의 `income_type` 컬럼을 두지 않는다.
+- 반복 규칙의 `frequency`와 `reference_date`는 둘 다 **required / NOT NULL**. `next_expected_date`는 사용자가 입력하지 않고 FastAPI가 계산한다. 예상 날짜를 달력에 표시해도 실제 입금 `income_records`를 자동 생성하지는 않는다.
+- 실제 Paycheck 입금은 `income_records`에 기록한다. 예상 금액은 `income_sources.expected_amount_cents`, 실제 금액은 `income_records.amount_cents`에 별도로 저장한다. 반복 기록은 지급처 `from_name`을 당시 값으로 보존하고 `income_source_id`로 규칙에 연결한다.
+- **Cashback·Refund**: 등록 결제수단을 고르면 그 ID를 `payment_method_id`에 저장한다. Refund의 `Applied to`는 필수 선택이며, 등록 수단이 아닌 `Other`를 명시적으로 고르면 `payment_method_id = NULL`로 저장한다. 따라서 `NULL`이 선택 누락이 되지 않도록 API에서 검증한다. 등록 수단을 고르면 현재 사용자의 소유인지 확인한다.
+- 등록된 신용카드에 적용한 Cashback·Refund는 `received_at`이 속한 카드 사이클의 순 청구 예상액에서 차감한다. 현금·체크카드(`cash-like`) 또는 Refund의 `Applied to: Other`는 신용카드 사이클 금액을 바꾸지 않는다. 원래 `transactions` 지출 행이나 원 구매일의 사이클로 환불을 소급 배치하지 않으며, 총 지출과 차감 후 예상 청구액을 구분한다.
+- Refund는 새로 번 돈이 아니므로 Paycheck와 같은 순수입 합계에 무조건 더하지 않는다. Cashback·Refund의 대시보드 집계 방식은 담당자와 API 계약에서 구분한다.
 - 수입 알림 시간은 사용자별 DB 설정으로 받지 않고 앱 정책으로 고정한다.
 - Flutter는 `next_expected_date`를 받아 앱에서 정한 시간에 local notification을 예약한다.
 - MVP에서는 별도 notification table을 만들지 않는다.
@@ -360,10 +376,6 @@ income_records                     # 실제 수입 기록
 ### 4.0.2 다음 수입일 계산 예시
 
 ```text
-frequency = weekly
-reference_date = 2026-10-16
-→ next_expected_date = 2026-10-23
-
 frequency = biweekly
 reference_date = 2026-10-16
 → next_expected_date = 2026-10-30
@@ -388,14 +400,14 @@ reference_date = 2026-10-16
 - 사이클 = 전월 closing date 다음날(포함) ~ 이번 closing date(포함). 월별 길이가 달라 29~31일이 없는 경우 아래 fallback을 먼저 적용한다.
 - closing_day가 29~31인데 해당 월에 없으면 그 달 마지막 날로 fallback
 - UI에서는 due date와 혼동하지 않도록 명세서 마감일(closing date)로 표기
-- 일반 캘린더의 월간 조회와 카드별 billing-cycle 조회는 서로 다른 기간이다. 카드별 범위는 이전 달과 다음 달에 걸칠 수 있으며, 거래일 `transacted_at`을 해당 범위에 한 번만 포함해 집계한다. 월말·윤년·연도 경계와 결제수단별 서로 다른 마감일은 구현 시 테스트한다.
+- 일반 캘린더의 월간 조회와 카드별 billing-cycle 조회는 서로 다른 기간이다. 카드별 범위는 이전 달과 다음 달에 걸칠 수 있으며, 결제일 `transactions.transacted_at`을 해당 범위에 한 번만 포함하고 활성 거래의 품목 합계와 결제 전체 Tax/Tip을 함께 집계한다. 월말·윤년·연도 경계와 결제수단별 서로 다른 마감일은 구현 시 테스트한다.
 - **UI 미정**: 카드 선택 시 사이클 시작일이 보이도록 달력 배치를 재구성하는 방향을 검토한다. 이전/다음 달 날짜를 월간 그리드에 함께 노출할지와 카드별 그리드의 최종 배치는 디자이너 비교 후 결정한다. 이 UI 논의만으로 DB 컬럼을 추가하지 않는다.
 
 ---
 
 ## 4.1 기본 카테고리 정의
 
-DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 정의는 `categories.description`에 저장되며 LLM 파싱 프롬프트에 사용된다. 카테고리 목록은 운영팀이 관리하고 사용자는 지출 또는 영수증 품목에 적용할 카테고리만 선택한다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다.
+DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 정의는 `categories.description`에 저장되며 LLM 파싱 프롬프트에 사용된다. 카테고리 목록은 운영팀이 관리하고 사용자는 `transaction_items`의 품목에 적용할 카테고리만 선택한다. Tax/Tip은 결제 전체 금액이므로 품목 카테고리를 붙이지 않는다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다.
 
 | 카테고리 | 담당 범위 | 예시 | 아닌 것 (경계) |
 |---|---|---|---|
@@ -462,13 +474,13 @@ DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 �
 
 - **후보·미확정**: 결제수단별 breakdown, 두 막대의 동일 경과 구간 사이클 비교, 선택형 위젯·순서 변경. 추세는 Daily/Monthly를 우선 검토하고 Weekly는 제외하는 방향이다. Monthly 범위(최근 12개월/해당 연도), 위젯 구성 저장 위치는 TBD이며 기본 대시보드 확정 항목으로 취급하지 않는다.
 
-3. **지출 입력 (직접 입력)**: 금액 크게 → 결제수단 칩 → 카테고리 칩 → 날짜/메모 순. 3탭 이내 목표. 카드 칩 색상은 등록 시 지정한 색과 일치
+3. **지출 입력 (직접 입력)**: 상점·날짜·결제수단·Tax·Tip은 결제 헤더에, 이름·가격·카테고리는 품목별로 입력한다. 한 번의 수동 입력에 여러 품목을 담고 품목 금액과 Tax/Tip으로 합계를 계산한다. 카드 칩 색상은 등록 시 지정한 색과 일치한다.
 
-- 저장된 수동 지출의 기간별 조회와 금액·결제수단·카테고리·날짜·메모 전체 수정 API를 제공한다(구현 완료). 영수증 파싱 후 편집 화면의 재사용을 검토하되, 최초 등록과 기존 거래 편집의 버튼·동작은 구분한다. 편집 진입 위치, 영수증 품목 수정 범위와 거래 삭제 방식은 TBD이며, 삭제 API는 아직 구현되지 않았다.
+- **현행 백엔드 API**: 수동 입력은 결제 1건과 품목 N건을 함께 생성한다. 기간 조회는 품목과 계산된 합계를 반환하며, PUT은 입력 출처와 무관하게 기존 품목 ID를 유지한 채 결제 헤더와 모든 기존 품목을 수정한다. 품목 추가·제거, 결제 삭제, 영수증 파싱 생성 경로 및 Flutter 연동은 아직 구현되지 않았다. 편집 진입 UI와 삭제 정책은 별도로 정한다.
 
 4. **입력 선택 시트**: ➕ 탭 시 "직접 입력 / 영수증 촬영" 2택. 영수증 옵션에 남은 무료 파싱 수 상시 노출 (예: "이번 달 7장 남음") — 한도를 미리 인지시켜 초과 시 반감 완화
 
-5. **영수증 파싱 확인**: merchant/날짜/결제수단 헤더 + "AI 분류" 배지. 품목 리스트 각각 이름/가격/카테고리 칩(탭하여 변경). Tax·Tip은 회색 라인으로 구분. 하단에 합계 + 영수증 total 일치/불일치 검증 배지. "품목 추가" 보조 버튼 + "N건 모두 저장" 주 버튼. 원본 이미지 재열람 UI는 제공하지 않는다.
+5. **영수증 파싱 확인**: merchant/날짜/결제수단 헤더 + "AI 분류" 배지. 품목 리스트 각각 이름/가격/카테고리 칩(탭하여 변경). Tax·Tip은 회색 라인으로 구분. 하단에 합계 + 영수증 total 일치/불일치 검증 배지. "품목 추가" 보조 버튼 + 결제와 품목 전체를 저장하는 주 버튼. 원본 이미지 재열람 UI는 제공하지 않는다.
 
 6. **내 지갑 — 카드 추가**: 타입(신용카드/현금성) 2택이 맨 위 — 현금성 선택 시 마감일 섹션 숨김(조건부 폼). 이름 입력 → 마감일 1~31 그리드 선택("결제일이 아닌 명세서 마감일" 경고 문구 포함) → 선택 즉시 "현재 사이클: 8/6 – 9/5" 실시간 미리보기 → 색상 6택 (캘린더 마커·대시보드와 연동)
 
@@ -496,7 +508,7 @@ DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 �
 
 아래 JSON 스키마로 추출" (structured output)
 
-+ tax/tip 분리 + 할인/쿠폰 라인(음수 금액) 처리 명시
++ tax/tip은 품목과 분리 추출 (할인/쿠폰 처리 방식은 미정)
 
 + 품목명 정규화("WHL MLK 2%" → "Whole Milk 2%")
 
@@ -504,7 +516,7 @@ DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 �
 
 → categorization_rule 매칭으로 카테고리 덮어쓰기 (개인화)
 
-→ 프론트에 draft 반환 → 사용자 확인/수정 → transaction 일괄 생성
+→ 프론트에 draft 반환 → 사용자 확인/수정 → transaction 1건과 transaction_items N건 함께 생성
 
 ```
 
@@ -518,11 +530,11 @@ DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 �
 
 - 이미지 리사이즈 후 전송으로 장당 원가 절감
 
-**Tax/Tip 처리**: 특정 품목에 속하지 않는 금액은 별도 품목 transaction으로 생성.
+**Tax/Tip 처리**: 특정 일반 품목에 속하지 않는 결제 전체 금액으로 보고 `transactions.tax_cents`·`transactions.tip_cents`에 저장한다. 값이 없으면 0이며, `transaction_items`에 Tax/Tip 행을 만들지 않는다.
 
 - LLM 파싱 시 tax, tip을 품목과 분리 추출 → 확인 화면에 별도 라인으로 표시 (수정 가능)
 
-- 저장 시 각각 transaction row → `SUM(품목) + tax + tip = 영수증 총액` 항상 성립
+- 저장 시 품목은 `transaction_items`에, Tax/Tip은 결제 헤더에 반영한다. `SUM(transaction_items.amount_cents) + tax_cents + tip_cents`를 영수증 총액과 대조한다. 할인/쿠폰이 있는 영수증의 상세 처리 방식은 추후 결정한다.
 
 - 파싱 합계 ≠ 영수증 total이면 확인 화면에서 차액 경고 (파싱 오류 검증 장치)
 

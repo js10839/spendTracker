@@ -4,17 +4,19 @@ from uuid import uuid4
 
 from app.db.models.category import Category
 from app.db.models.transaction import Transaction
+from app.db.models.transaction_item import TransactionItem
 from app.transactions.repository import (
-    add_manual_transaction,
+    add_grouped_manual_transaction,
+    apply_transaction_update,
     find_global_category,
-    find_ledger_manual_transaction,
+    find_ledger_transaction,
     list_ledger_transactions,
-    update_manual_transaction,
+    list_transaction_items,
 )
 
 
 def test_find_global_category_uses_shared_id() -> None:
-    """지출 입력 시 카테고리는 가계부 소속이 아니라 공통 ID로 확인한다."""
+    """카테고리는 가계부 소속이 아니라 공통 ID로 확인한다."""
     category_id = uuid4()
     category = Category(id=category_id, name="Food")
     db = Mock()
@@ -25,26 +27,38 @@ def test_find_global_category_uses_shared_id() -> None:
     assert statement.compile().params == {"id_1": category_id}
 
 
-def test_add_manual_transaction_flushes_without_committing() -> None:
-    """Repository는 수동 지출을 세션에 추가하고 commit은 Service에 맡긴다."""
+def test_add_grouped_transaction_flushes_parent_and_items_without_commit() -> None:
+    """결제를 먼저 flush해 ID를 얻고 품목을 같은 세션에 추가한다."""
+    ledger_id, payment_method_id, category_id, transaction_id = (uuid4() for _ in range(4))
     db = Mock()
-    ledger_id, payment_method_id, category_id = uuid4(), uuid4(), uuid4()
 
-    transaction = add_manual_transaction(db, ledger_id, payment_method_id, category_id, 1299, date(2026, 10, 18), "Lunch")
+    def assign_parent_id() -> None:
+        """DB가 첫 flush에서 부모 PK를 채우는 동작을 흉내 낸다."""
+        if db.flush.call_count == 1:
+            db.add.call_args.args[0].id = transaction_id
+
+    db.flush.side_effect = assign_parent_id
+    transaction, items = add_grouped_manual_transaction(db, ledger_id, payment_method_id, "Cafe", date(2026, 10, 18), None, 100, 200, [("Sandwich", category_id, 1299)])
 
     assert isinstance(transaction, Transaction)
     assert transaction.ledger_id == ledger_id
     assert transaction.payment_method_id == payment_method_id
-    assert transaction.category_id == category_id
-    assert transaction.amount_cents == 1299
+    assert transaction.tax_cents == 100
+    assert transaction.tip_cents == 200
     assert transaction.source == "manual"
+    assert len(items) == 1
+    assert isinstance(items[0], TransactionItem)
+    assert items[0].transaction_id == transaction_id
+    assert items[0].category_id == category_id
+    assert items[0].amount_cents == 1299
     db.add.assert_called_once_with(transaction)
-    db.flush.assert_called_once_with()
+    db.add_all.assert_called_once_with(items)
+    assert db.flush.call_count == 2
     db.commit.assert_not_called()
 
 
 def test_list_ledger_transactions_filters_ledger_dates_and_deleted_rows() -> None:
-    """조회 쿼리는 가계부, 양끝 날짜, 삭제 여부를 기준으로 지출을 제한한다."""
+    """기간 조회는 가계부와 양끝 날짜, 삭제 여부로 결제를 제한한다."""
     ledger_id = uuid4()
     transaction = Transaction(id=uuid4(), ledger_id=ledger_id)
     db = Mock()
@@ -57,44 +71,61 @@ def test_list_ledger_transactions_filters_ledger_dates_and_deleted_rows() -> Non
     sql = str(statement)
     assert "transactions.ledger_id =" in sql
     assert "transactions.deleted_at IS NULL" in sql
-    assert "transactions.transacted_at >=" in sql
-    assert "transactions.transacted_at <=" in sql
+    assert "transactions.transacted_at >= " in sql
+    assert "transactions.transacted_at <= " in sql
     assert "transactions.transacted_at DESC" in sql
     assert set(statement.compile().params.values()) == {ledger_id, date(2026, 10, 1), date(2026, 10, 31)}
     db.commit.assert_not_called()
 
 
-def test_find_ledger_manual_transaction_limits_update_target() -> None:
-    """수정 대상 조회는 거래 ID와 가계부를 함께 확인하고 삭제된 수동 지출을 제외한다."""
+def test_list_transaction_items_uses_parent_ids() -> None:
+    """품목은 조회 대상 결제 ID들로 한 번에 가져온다."""
+    transaction_id = uuid4()
+    item = TransactionItem(id=uuid4(), transaction_id=transaction_id, category_id=uuid4(), name="Coffee", amount_cents=300)
+    db = Mock()
+    db.scalars.return_value = [item]
+
+    assert list_transaction_items(db, [transaction_id]) == [item]
+    statement = db.scalars.call_args.kwargs["statement"]
+    assert "transaction_items.transaction_id IN" in str(statement)
+    assert list(statement.compile().params.values()) == [[transaction_id]]
+    db.commit.assert_not_called()
+
+
+def test_find_ledger_transaction_accepts_any_source_but_not_deleted() -> None:
+    """수정 대상은 가계부와 삭제 여부로 찾고 입력 출처로 제한하지 않는다."""
     ledger_id, transaction_id = uuid4(), uuid4()
-    transaction = Transaction(id=transaction_id, ledger_id=ledger_id, source="manual")
+    transaction = Transaction(id=transaction_id, ledger_id=ledger_id, source="receipt_parse")
     db = Mock()
     db.execute.return_value.scalar_one_or_none.return_value = transaction
 
-    assert find_ledger_manual_transaction(db, ledger_id, transaction_id) is transaction
-
+    assert find_ledger_transaction(db, ledger_id, transaction_id) is transaction
     statement = db.execute.call_args.kwargs["statement"]
     sql = str(statement)
     assert "transactions.id =" in sql
     assert "transactions.ledger_id =" in sql
-    assert "transactions.source =" in sql
     assert "transactions.deleted_at IS NULL" in sql
-    assert set(statement.compile().params.values()) == {transaction_id, ledger_id, "manual"}
+    assert "transactions.source =" not in sql
+    assert set(statement.compile().params.values()) == {transaction_id, ledger_id}
 
 
-def test_update_manual_transaction_flushes_without_committing() -> None:
-    """Repository는 검증된 필드만 바꾸고 commit은 Service에 맡긴다."""
-    transaction = Transaction(id=uuid4(), payment_method_id=uuid4(), category_id=uuid4(), amount_cents=100, transacted_at=date(2026, 10, 1), memo="Before")
-    payment_method_id, category_id = uuid4(), uuid4()
+def test_apply_transaction_update_keeps_parent_and_item_ids() -> None:
+    """Repository는 기존 객체의 필드만 바꾸고 commit하지 않는다."""
+    transaction_id, item_id, payment_method_id, category_id = (uuid4() for _ in range(4))
+    transaction = Transaction(id=transaction_id, payment_method_id=uuid4(), merchant="Old", transacted_at=date(2026, 10, 1), tax_cents=0, tip_cents=0)
+    item = TransactionItem(id=item_id, transaction_id=transaction_id, category_id=uuid4(), name="Old item", amount_cents=100)
     db = Mock()
 
-    result = update_manual_transaction(db, transaction, payment_method_id, category_id, 2500, date(2026, 10, 20), None)
+    apply_transaction_update(db, transaction, payment_method_id, "New", date(2026, 10, 20), "Memo", 200, 300, [(item, "New item", category_id, 2500)])
 
-    assert result is transaction
+    assert transaction.id == transaction_id
+    assert item.id == item_id
     assert transaction.payment_method_id == payment_method_id
-    assert transaction.category_id == category_id
-    assert transaction.amount_cents == 2500
-    assert transaction.transacted_at == date(2026, 10, 20)
-    assert transaction.memo is None
+    assert transaction.merchant == "New"
+    assert transaction.tax_cents == 200
+    assert transaction.tip_cents == 300
+    assert item.name == "New item"
+    assert item.category_id == category_id
+    assert item.amount_cents == 2500
     db.flush.assert_called_once_with()
     db.commit.assert_not_called()
