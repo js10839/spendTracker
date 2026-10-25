@@ -20,9 +20,9 @@ def find_global_category(db:Session, category_id: UUID) -> Category | None:
     statement = select(Category).where(Category.id == category_id)
     return db.execute(statement=statement).scalar_one_or_none()
 
-def add_grouped_manual_transaction(db: Session, ledger_id: UUID, payment_method_id: UUID, merchant: str | None, transacted_at: date, memo: str | None, tax_cents: int, tip_cents: int, items: list[tuple[str, UUID, int]]) -> tuple[Transaction, list[TransactionItem]]:
-    """결제 한 건과 그 품목들을 추가하되 commit은 Service에 맡긴다."""
-    transaction = Transaction(ledger_id=ledger_id, payment_method_id=payment_method_id, merchant=merchant, transacted_at=transacted_at, memo=memo, tax_cents=tax_cents, tip_cents=tip_cents, source="manual")
+def add_grouped_manual_transaction(db: Session, ledger_id: UUID, payment_method_id: UUID, merchant: str | None, transacted_at: date, memo: str | None, total_cents: int, tax_cents: int, tip_cents: int, items: list[tuple[str, UUID, int]]) -> tuple[Transaction, list[TransactionItem]]:
+    """최종 총액과 선택적 품목을 추가하되 commit은 Service에 맡긴다."""
+    transaction = Transaction(ledger_id=ledger_id, payment_method_id=payment_method_id, merchant=merchant, transacted_at=transacted_at, memo=memo, total_cents=total_cents, tax_cents=tax_cents, tip_cents=tip_cents, source="manual")
     db.add(transaction)
     db.flush()
 
@@ -53,12 +53,13 @@ def find_ledger_transaction(db: Session, ledger_id: UUID, transaction_id: UUID) 
     statement = select(Transaction).where(Transaction.id==transaction_id, Transaction.ledger_id==ledger_id, Transaction.deleted_at.is_(None))
     return db.execute(statement=statement).scalar_one_or_none()
 
-def apply_transaction_update(db: Session, transaction: Transaction, payment_method_id: UUID, merchant: str | None, transacted_at: date, memo: str | None, tax_cents: int, tip_cents: int, item_updates: list[tuple[TransactionItem, str, UUID, int]]) -> None:
-    """검증이 끝난 결제와 기존 품목들의 값을 변경하되 commit은 하지 않는다."""
+def apply_transaction_update(db: Session, transaction: Transaction, payment_method_id: UUID, merchant: str | None, transacted_at: date, memo: str | None, total_cents: int, tax_cents: int, tip_cents: int, item_updates: list[tuple[TransactionItem, str, UUID, int]], item_creations: list[tuple[str, UUID, int]], item_deletions: list[TransactionItem]) -> list[TransactionItem]:
+    """결제와 품목의 추가·수정·삭제를 flush하되 commit은 하지 않는다."""
     transaction.payment_method_id = payment_method_id
     transaction.merchant = merchant
     transaction.transacted_at = transacted_at
     transaction.memo = memo
+    transaction.total_cents = total_cents
     transaction.tax_cents = tax_cents
     transaction.tip_cents = tip_cents
 
@@ -67,4 +68,10 @@ def apply_transaction_update(db: Session, transaction: Transaction, payment_meth
         item.category_id = category_id
         item.amount_cents = amount_cents
 
+    for item in item_deletions:
+        db.delete(item)
+
+    created_items = [TransactionItem(transaction_id=transaction.id, name=name, category_id=category_id, amount_cents=amount_cents) for name, category_id, amount_cents in item_creations]
+    db.add_all(created_items)
     db.flush()
+    return created_items

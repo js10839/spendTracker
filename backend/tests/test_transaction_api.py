@@ -25,7 +25,7 @@ def _create_payload(payment_method_id: UUID, category_id: UUID, amount_cents: in
 
 
 def test_create_transaction_returns_grouped_expense(monkeypatch) -> None:
-    """가계부 멤버의 생성 요청은 품목과 계산된 합계를 반환한다."""
+    """가계부 멤버의 생성 요청은 품목과 저장된 총액을 반환한다."""
     user_id, ledger_id, payment_method_id, category_id, item_id = (uuid4() for _ in range(5))
     expected = _group_response(ledger_id, payment_method_id, category_id, item_id)
     create_transaction = Mock(return_value=expected)
@@ -50,6 +50,48 @@ def test_create_transaction_returns_grouped_expense(monkeypatch) -> None:
     assert create_transaction.call_args.kwargs["data"].items[0].amount_cents == 1299
 
 
+def test_create_transaction_rejects_missing_items(monkeypatch) -> None:
+    """수동 거래도 품목 없이 저장할 수 없다."""
+    user_id, ledger_id, payment_method_id, category_id = (uuid4() for _ in range(4))
+    create_transaction = Mock()
+    monkeypatch.setattr(transactions_router, "create_grouped_manual_transaction", create_transaction)
+    app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
+    app.dependency_overrides[get_db] = lambda: Mock()
+
+    try:
+        with TestClient(app) as client:
+            payload = _create_payload(payment_method_id, category_id)
+            payload.pop("items")
+            response = client.post(f"/ledgers/{ledger_id}/transactions", json=payload)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    create_transaction.assert_not_called()
+
+
+def test_create_transaction_rejects_client_total(monkeypatch) -> None:
+    """요청자가 총액을 직접 보내면 저장 전에 거부한다."""
+    user_id, ledger_id = uuid4(), uuid4()
+    create_transaction = Mock()
+    monkeypatch.setattr(transactions_router, "create_grouped_manual_transaction", create_transaction)
+    app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
+    app.dependency_overrides[get_db] = lambda: Mock()
+
+    try:
+        with TestClient(app) as client:
+            payload = _create_payload(uuid4(), uuid4())
+            payload["total_cents"] = 1
+            response = client.post(f"/ledgers/{ledger_id}/transactions", json=payload)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    create_transaction.assert_not_called()
+
+
 def test_create_transaction_rejects_nonmembers(monkeypatch) -> None:
     """가계부에 속하지 않은 사용자는 거래를 만들지 못한다."""
     user_id, ledger_id = uuid4(), uuid4()
@@ -69,10 +111,11 @@ def test_create_transaction_rejects_nonmembers(monkeypatch) -> None:
     create_transaction.assert_not_called()
 
 
-def test_create_transaction_rejects_nonpositive_item_amount(monkeypatch) -> None:
-    """품목 금액이 0이면 Service 호출 전에 요청을 거부한다."""
+@pytest.mark.parametrize("amount_cents", [0, -250])
+def test_create_transaction_accepts_zero_and_negative_item_amount(monkeypatch, amount_cents: int) -> None:
+    """무료 품목과 할인처럼 0 또는 음수인 품목도 Service에 전달한다."""
     user_id, ledger_id = uuid4(), uuid4()
-    create_transaction = Mock()
+    create_transaction = Mock(return_value=_group_response(ledger_id, uuid4(), uuid4(), uuid4()))
     monkeypatch.setattr(transactions_router, "create_grouped_manual_transaction", create_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
@@ -80,12 +123,12 @@ def test_create_transaction_rejects_nonpositive_item_amount(monkeypatch) -> None
 
     try:
         with TestClient(app) as client:
-            response = client.post(f"/ledgers/{ledger_id}/transactions", json=_create_payload(uuid4(), uuid4(), amount_cents=0))
+            response = client.post(f"/ledgers/{ledger_id}/transactions", json=_create_payload(uuid4(), uuid4(), amount_cents=amount_cents))
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 422
-    create_transaction.assert_not_called()
+    assert response.status_code == 201
+    assert create_transaction.call_args.kwargs["data"].items[0].amount_cents == amount_cents
 
 
 def test_list_transactions_returns_grouped_expenses(monkeypatch) -> None:
@@ -136,10 +179,11 @@ def test_update_transaction_keeps_item_id(monkeypatch) -> None:
     assert update_transaction.call_args.kwargs["transaction_id"] == transaction_id
 
 
-def test_update_transaction_rejects_item_without_id(monkeypatch) -> None:
-    """기존 품목 ID가 빠진 PUT 요청은 새 품목 생성으로 해석하지 않는다."""
+def test_update_transaction_accepts_new_item_without_id(monkeypatch) -> None:
+    """ID 없는 PUT 품목은 새 품목으로 Service에 전달한다."""
     user_id, ledger_id = uuid4(), uuid4()
-    update_transaction = Mock()
+    expected = _group_response(ledger_id, uuid4(), uuid4(), uuid4())
+    update_transaction = Mock(return_value=expected)
     monkeypatch.setattr(transactions_router, "update_transaction_group", update_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
@@ -151,13 +195,13 @@ def test_update_transaction_rejects_item_without_id(monkeypatch) -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 422
-    update_transaction.assert_not_called()
+    assert response.status_code == 200
+    assert update_transaction.call_args.kwargs["data"].items[0].id is None
 
 
 @pytest.mark.parametrize("method", ["get", "put"])
 def test_transaction_read_and_update_reject_nonmembers(monkeypatch, method: str) -> None:
-    """가계부 멤버가 아니면 조회와 수정 Service를 호출하지 않는다."""
+    """가계부 멤버가 아니면 조회·수정 Service를 호출하지 않는다."""
     user_id, ledger_id = uuid4(), uuid4()
     list_transactions, update_transaction = Mock(), Mock()
     monkeypatch.setattr(transactions_router, "list_ledger_transactions", list_transactions)
@@ -170,7 +214,7 @@ def test_transaction_read_and_update_reject_nonmembers(monkeypatch, method: str)
         with TestClient(app) as client:
             if method == "get":
                 response = client.get(f"/ledgers/{ledger_id}/transactions", params={"start_date": "2026-10-01", "end_date": "2026-10-31"})
-            else:
+            elif method == "put":
                 payload = _create_payload(uuid4(), uuid4())
                 payload["items"][0]["id"] = str(uuid4())
                 response = client.put(f"/ledgers/{ledger_id}/transactions/{uuid4()}", json=payload)

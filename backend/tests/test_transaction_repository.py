@@ -38,11 +38,12 @@ def test_add_grouped_transaction_flushes_parent_and_items_without_commit() -> No
             db.add.call_args.args[0].id = transaction_id
 
     db.flush.side_effect = assign_parent_id
-    transaction, items = add_grouped_manual_transaction(db, ledger_id, payment_method_id, "Cafe", date(2026, 10, 18), None, 100, 200, [("Sandwich", category_id, 1299)])
+    transaction, items = add_grouped_manual_transaction(db, ledger_id, payment_method_id, "Cafe", date(2026, 10, 18), None, 1599, 100, 200, [("Sandwich", category_id, 1299)])
 
     assert isinstance(transaction, Transaction)
     assert transaction.ledger_id == ledger_id
     assert transaction.payment_method_id == payment_method_id
+    assert transaction.total_cents == 1599
     assert transaction.tax_cents == 100
     assert transaction.tip_cents == 200
     assert transaction.source == "manual"
@@ -110,22 +111,41 @@ def test_find_ledger_transaction_accepts_any_source_but_not_deleted() -> None:
 
 
 def test_apply_transaction_update_keeps_parent_and_item_ids() -> None:
-    """Repository는 기존 객체의 필드만 바꾸고 commit하지 않는다."""
+    """Repository는 기존 품목 ID를 유지하고 총액·품목 금액을 바꾸되 commit하지 않는다."""
     transaction_id, item_id, payment_method_id, category_id = (uuid4() for _ in range(4))
     transaction = Transaction(id=transaction_id, payment_method_id=uuid4(), merchant="Old", transacted_at=date(2026, 10, 1), tax_cents=0, tip_cents=0)
     item = TransactionItem(id=item_id, transaction_id=transaction_id, category_id=uuid4(), name="Old item", amount_cents=100)
     db = Mock()
 
-    apply_transaction_update(db, transaction, payment_method_id, "New", date(2026, 10, 20), "Memo", 200, 300, [(item, "New item", category_id, 2500)])
+    created = apply_transaction_update(db, transaction, payment_method_id, "New", date(2026, 10, 20), "Memo", 3000, 200, 300, [(item, "New item", category_id, 2500)], [], [])
 
+    assert created == []
     assert transaction.id == transaction_id
     assert item.id == item_id
     assert transaction.payment_method_id == payment_method_id
     assert transaction.merchant == "New"
+    assert transaction.total_cents == 3000
     assert transaction.tax_cents == 200
     assert transaction.tip_cents == 300
     assert item.name == "New item"
     assert item.category_id == category_id
     assert item.amount_cents == 2500
     db.flush.assert_called_once_with()
+    db.commit.assert_not_called()
+
+
+def test_apply_transaction_update_adds_and_deletes_items_without_commit() -> None:
+    """요청에서 빠진 품목은 지우고 새 품목은 같은 세션에 추가한다."""
+    transaction = Transaction(id=uuid4(), total_cents=2000)
+    removed_item = TransactionItem(id=uuid4(), transaction_id=transaction.id)
+    category_id = uuid4()
+    db = Mock()
+
+    created = apply_transaction_update(db, transaction, uuid4(), "Shop", date(2026, 10, 20), None, 2000, 0, 0, [], [("Apples", category_id, 500)], [removed_item])
+
+    assert len(created) == 1
+    assert created[0].transaction_id == transaction.id
+    assert created[0].amount_cents == 500
+    db.delete.assert_called_once_with(removed_item)
+    db.add_all.assert_called_once_with(created)
     db.commit.assert_not_called()

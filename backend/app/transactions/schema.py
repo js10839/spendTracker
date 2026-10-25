@@ -8,10 +8,12 @@ class TransactionItemCreate(BaseModel):
     """수동 결제에 포함할 품목 한 개의 입력값이다."""
     name: str = Field(min_length=1)
     category_id: UUID
-    amount_cents: int = Field(gt=0)
+    amount_cents: int
 
 class ManualTransactionGroupCreate(BaseModel):
-    """품목 여러 개와 결제 전체 Tax·Tip을 받는 수동 입력값이다."""
+    """품목 최소 한 개를 받아 총액을 계산할 수 있게 한다."""
+    model_config = ConfigDict(extra="forbid")
+
     payment_method_id: UUID
     merchant: str | None = None
     transacted_at: date
@@ -39,20 +41,22 @@ class TransactionGroupRead(BaseModel):
     transacted_at: date
     memo: str | None
     source: str
+    total_cents: int
     tax_cents: int
     tip_cents: int
-    total_cents: int
     items: list[TransactionItemRead]
 
 class TransactionItemUpdate(BaseModel):
-    """기존 품목 ID를 유지하면서 수정할 값을 받는다."""
-    id: UUID
+    """기존 품목은 ID로 수정하고 ID가 없는 품목은 새로 추가한다."""
+    id: UUID | None = None
     name: str = Field(min_length=1)
     category_id: UUID
-    amount_cents: int = Field(gt=0)
+    amount_cents: int
 
 class TransactionGroupUpdate(BaseModel):
-    """결제 헤더와 기존 품목 전체의 수정값을 받는다."""
+    """기존 ID를 유지할 최종 품목 목록으로 총액을 다시 계산한다."""
+    model_config = ConfigDict(extra="forbid")
+
     payment_method_id: UUID
     merchant: str | None = None
     transacted_at: date

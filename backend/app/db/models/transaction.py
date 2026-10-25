@@ -37,6 +37,7 @@ class Transaction(Base):
     memo: Mapped[str | None] = mapped_column(Text)
     transacted_at: Mapped[date] = mapped_column(Date, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="manual")
+    total_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     tip_cents: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
