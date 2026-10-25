@@ -60,11 +60,11 @@ def test_create_cashback_uses_owned_payment_method(monkeypatch) -> None:
     db.commit.assert_called_once_with()
 
 
-def test_create_refund_applied_to_other_does_not_link_payment_method(monkeypatch) -> None:
-    """Refund의 Other 선택은 결제수단 ID 없이 수입만 저장한다."""
+def test_create_other_income_does_not_link_payment_method(monkeypatch) -> None:
+    """Other 수입은 결제수단 ID 없이 저장한다."""
     db = Mock()
     ledger_id, user_id = uuid4(), uuid4()
-    data = IncomeRecordCreate(income_type="refund", amount_cents=1000, received_at=date(2026, 10, 23), from_name="Store", applied_to="other")
+    data = IncomeRecordCreate(income_type="other", amount_cents=1000, received_at=date(2026, 10, 23))
     find_method = Mock()
     add_record = Mock(return_value=IncomeRecord(id=uuid4(), ledger_id=ledger_id))
     monkeypatch.setattr(repository, "find_user_payment_method", find_method)
@@ -74,7 +74,7 @@ def test_create_refund_applied_to_other_does_not_link_payment_method(monkeypatch
 
     find_method.assert_not_called()
     assert add_record.call_args.kwargs["payment_method_id"] is None
-    assert add_record.call_args.kwargs["income_type"] == "refund"
+    assert add_record.call_args.kwargs["income_type"] == "other"
     db.commit.assert_called_once_with()
 
 
