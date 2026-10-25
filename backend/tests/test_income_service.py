@@ -9,7 +9,7 @@ from app.db.models.income_record import IncomeRecord
 from app.db.models.income_source import IncomeSource
 from app.db.models.payment_method import PaymentMethod
 from app.income import repository, service
-from app.income.schema import IncomeRecordCreate
+from app.income.schema import IncomePlanConfirm, IncomeRecordCreate
 
 
 @pytest.mark.parametrize(("reference_date", "frequency", "expected"), [(date(2026, 10, 23), "biweekly", date(2026, 11, 6)), (date(2026, 1, 31), "monthly", date(2026, 2, 28)), (date(2026, 12, 31), "monthly", date(2027, 1, 31))])
@@ -106,3 +106,26 @@ def test_create_income_record_rolls_back_when_record_insert_fails(monkeypatch) -
 
     db.rollback.assert_called_once_with()
     db.commit.assert_not_called()
+
+
+def test_confirm_monthly_income_keeps_original_day_and_actual_amount(monkeypatch) -> None:
+    """월말 반복 일정은 원래 일자를 유지하고 변경 금액은 이번 기록에만 쓴다."""
+    db = Mock()
+    ledger_id, source_id = uuid4(), uuid4()
+    source = IncomeSource(id=source_id, ledger_id=ledger_id, income_type="paycheck", from_name="Company", expected_amount_cents=20000, frequency="monthly", reference_date=date(2026, 1, 31), next_expected_date=date(2026, 2, 28), is_active=True)
+    record = IncomeRecord(id=uuid4(), ledger_id=ledger_id, income_source_id=source_id)
+
+    monkeypatch.setattr(repository, "find_active_income_source", Mock(return_value=source))
+    add_record = Mock(return_value=record)
+    update_source = Mock()
+    monkeypatch.setattr(repository, "add_income_record", add_record)
+    monkeypatch.setattr(repository, "update_income_source_state", update_source)
+
+    result = service.confirm_income_plan(db, ledger_id, source_id, IncomePlanConfirm(expected_date=date(2026, 2, 28), received_at=date(2026, 3, 1), amount_cents=19500))
+
+    assert result is record
+    assert add_record.call_args.kwargs["amount_cents"] == 19500
+    assert source.expected_amount_cents == 20000
+    assert update_source.call_args.kwargs["next_expected_date"] == date(2026, 3, 31)
+    assert update_source.call_args.kwargs["is_active"] is True
+    db.commit.assert_called_once()

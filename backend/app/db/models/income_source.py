@@ -17,15 +17,18 @@ from app.db.base import Base
 
 
 class IncomeSource(Base):
-    """반복되는 Paycheck의 지급처, 예상 금액, 지급 주기를 저장한다."""
+    """일회성 또는 반복되는 예정 수입을 저장한다."""
 
     __tablename__ = "income_sources"
     __table_args__ = (CheckConstraint("expected_amount_cents > 0", name="ck_income_sources_positive_amount"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     ledger_id: Mapped[UUID] = mapped_column(ForeignKey("ledgers.id"), nullable=False)
-    from_name: Mapped[str] = mapped_column(Text, nullable=False)
+    income_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="paycheck")
+    from_name: Mapped[str | None] = mapped_column(Text)
+    payment_method_id: Mapped[UUID | None] = mapped_column(ForeignKey("payment_methods.id"))
     expected_amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    memo: Mapped[str | None] = mapped_column(Text)
     frequency: Mapped[str] = mapped_column(Text, nullable=False)
     reference_date: Mapped[date] = mapped_column(Date, nullable=False)
     next_expected_date: Mapped[date] = mapped_column(Date, nullable=False)
