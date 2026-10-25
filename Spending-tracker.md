@@ -215,7 +215,9 @@
 
 ## 4. 데이터 모델 (현행 / 계획 구분)
 
-**현행 구현과 확정 목표를 구분한다**: SQLAlchemy/Alembic에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`, `transaction_items`, `income_sources`, `income_records`가 있다. 지출은 결제 헤더 `transactions` 1건과 필수 품목 `transaction_items` 1건 이상으로 저장하며, 수동 생성·기간 조회·품목 ID를 유지하는 추가·수정·제거·거래 soft delete API가 작성됐다. `total_cents`·Refund 카테고리·활성 거래 부분 인덱스 migration은 DB에 적용됐다(현재 head `b84e91d2c673`); 인증 의존성을 대체한 실제 DB API 검증에서 거래 생성·조회·수정·삭제가 통과했고 임시 데이터는 롤백했다. 품목의 수량은 저장하지 않고 `amount_cents`에 해당 줄의 전체 금액을 저장한다. 관리자 복구와 30일 경과 정리는 내부 함수·실행 명령까지만 작성됐고 운영 스케줄러는 미연결이다. 영수증 파싱을 통한 생성도 미구현이다. `receipts`, `categorization_rules`, `transactions.receipt_id`는 Phase 2 계획이며, `categories`는 가계부마다 복제하지 않는 공통 목록이다.
+**현행 구현과 확정 목표를 구분한다**: SQLAlchemy/Alembic에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`, `transaction_items`, `income_sources`, `income_records`가 있다. 지출은 결제 헤더 `transactions` 1건과 필수 품목 `transaction_items` 1건 이상으로 저장하며, 수동 생성·기간 조회·품목 ID를 유지하는 추가·수정·제거·거래 soft delete API가 작성됐다. `total_cents`·Refund 카테고리·활성 거래 부분 인덱스 migration은 DB에 적용됐다; 인증 의존성을 대체한 실제 DB API 검증에서 거래 생성·조회·수정·삭제가 통과했고 임시 데이터는 롤백했다. 품목의 수량은 저장하지 않고 `amount_cents`에 해당 줄의 전체 금액을 저장한다. 관리자 복구와 30일 경과 정리는 내부 함수·실행 명령까지만 작성됐고 운영 스케줄러는 미연결이다. 영수증 파싱을 통한 생성도 미구현이다. `receipts`, `categorization_rules`, `transactions.receipt_id`는 Phase 2 계획이며, `categories`는 가계부마다 복제하지 않는 공통 목록이다.
+
+수입은 실제 기록과 예정 규칙의 생성·조회, 예정 입금 확정 API가 작성됐다. 예정 수입 확장 migration 두 개가 DB에 적용됐고 확인된 Alembic head는 `d9a45c368ebc`이다. 실제 DB에서 임시 가계부의 예정 수입 생성·확정·실제 기록 조회를 확인한 뒤 테스트 데이터를 롤백했다. 수입 수정·삭제 API, 달력의 예정·확정 수입 통합 표시, 알림 실행은 아직 구현되지 않았다.
 
 **핵심 원칙**
 
@@ -225,7 +227,7 @@
 - 모든 금액은 달러 실수가 아니라 **cents 정수**로 저장·전송한다. Flutter는 화면에서 USD로 포맷한다(예: `1099` → `$10.99`, `-1000` → `-$10.00`).
 - `transactions`는 지출 결제 1건의 최종 총액과 결제 전체의 Tax/Tip 금액을, `transaction_items`는 필수 품목 내역을 저장한다. 수동·영수증 출처 모두 저장 시 품목을 최소 1건 유지한다. 수입은 `income_sources` + `income_records`로 분리한다.
 - `transactions`에 `item_ids` 배열을 중복 저장하지 않는다. 각 `transaction_items.transaction_id`가 부모 거래를 참조한다.
-- `income_sources`는 반복 Paycheck 규칙, `income_records`는 실제 수입과 카드에 적용한 Cashback 기록이다. Refund는 `transaction_items`의 공통 지출 카테고리다.
+- `income_sources`는 일회성·반복 예정 수입, `income_records`는 실제 수입과 카드에 적용한 Cashback 기록이다. Refund는 `transaction_items`의 공통 지출 카테고리다.
 
 ```text
 auth.users                         # Supabase Auth가 관리
@@ -332,14 +334,17 @@ categorization_rules
 - updated_at timestamp
 
 
-income_sources                     # Repeats를 설정한 Paycheck 규칙
+income_sources                     # 일회성·반복 예정 수입
 - id uuid PK
 - ledger_id uuid FK -> ledgers.id
-- from_name text NOT NULL          # 지급처, 예: Acme Inc.
+- income_type text NOT NULL        # paycheck | cashback | other; 기존 규칙은 paycheck으로 유지
+- from_name text nullable          # Paycheck 지급처, 예: Acme Inc.
+- payment_method_id uuid nullable FK -> payment_methods.id  # Cashback 적용 수단
 - expected_amount_cents int NOT NULL
-- frequency text NOT NULL          # biweekly | monthly
-- reference_date date NOT NULL     # 실제 수입 주기 계산 기준일
-- next_expected_date date NOT NULL # Backend가 계산
+- memo text nullable
+- frequency text NOT NULL          # once | biweekly | monthly; 기존 반복 규칙에는 biweekly | monthly
+- reference_date date NOT NULL     # 최초 예정일 또는 기존 반복 규칙의 계산 기준일
+- next_expected_date date NOT NULL # 다음 미확인 예정일
 - is_active bool NOT NULL default true
 - created_at timestamp
 - updated_at timestamp
@@ -370,9 +375,11 @@ income_records                     # 실제 수입 기록
 ### 4.0.1 Income 설계 원칙
 
 - **유형별 입력**: Paycheck는 금액·From·날짜·메모와 선택적 Repeats, Cashback은 금액·Applied to(등록 결제수단)·날짜·메모, Other는 금액·날짜·메모만 받는다. Refund는 수입 유형에서 제외하고 지출 품목으로 입력한다.
-- **반복 Paycheck**: Repeats가 `Every 2 weeks` 또는 `Monthly`일 때만 `income_sources`에 규칙을 만든다. `Never`는 규칙을 만들지 않는다는 뜻이다. `income_sources`는 Paycheck 전용이므로 별도의 `income_type` 컬럼을 두지 않는다.
-- 반복 규칙의 `frequency`와 `reference_date`는 둘 다 **required / NOT NULL**. `next_expected_date`는 사용자가 입력하지 않고 FastAPI가 계산한다. 예상 날짜를 달력에 표시해도 실제 입금 `income_records`를 자동 생성하지는 않는다.
-- 실제 Paycheck 입금은 `income_records`에 기록한다. 예상 금액은 `income_sources.expected_amount_cents`, 실제 금액은 `income_records.amount_cents`에 별도로 저장한다. 반복 기록은 지급처 `from_name`을 당시 값으로 보존하고 `income_source_id`로 규칙에 연결한다.
+- **실제 수입 입력**: `POST /ledgers/{ledger_id}/income-records`는 `income_records`에 즉시 기록한다. Paycheck의 Repeats가 `Every 2 weeks` 또는 `Monthly`이면 `income_sources`에도 다음 회차 규칙을 만든다. `Never`이면 반복 규칙을 만들지 않는다.
+- **예정 수입 입력**: `POST /ledgers/{ledger_id}/income-plans`는 실제 입금 기록 없이 `income_sources`를 만든다. Paycheck는 `once`, `biweekly`, `monthly`를 선택할 수 있고 Cashback·Other는 `once`만 허용한다. 요청의 `expected_date`를 최초 `reference_date`와 `next_expected_date`로 저장한다. `frequency`와 `reference_date`는 둘 다 NOT NULL이다.
+- **입금 확정**: `POST /ledgers/{ledger_id}/income-plans/{source_id}/confirm`은 요청의 `expected_date`가 저장된 다음 예정일과 같을 때만 `income_records`를 생성한다. `amount_cents`를 생략하면 예상 금액을, 제공하면 그 회차의 실제 금액을 기록한다. `received_at`은 실제 입금일이다. 일회성 규칙은 `is_active=false`로 남기고, 반복 규칙은 최초 기준일을 유지하며 다음 예정일로 이동한다. 이미 지난 회차 요청은 거부한다. "아직 안 받았어요"는 실제 기록을 만들거나 예정일을 변경하지 않는다.
+- 예상 금액은 `income_sources.expected_amount_cents`, 실제 금액은 `income_records.amount_cents`에 별도로 저장한다. 확정 기록은 당시의 `from_name`·`memo`·결제수단을 복사하고 `income_source_id`로 규칙에 연결한다. 예정일만으로 실제 수입을 자동 생성하지 않는다.
+- 주말·공휴일에 따른 입금 예정일 조정 규칙은 미정이다. 현재는 날짜를 자동으로 앞당기거나 늦추지 않으며, 후속 결정은 [수입 일정 미결정 사항](docs/income-schedule-decisions.md)에 기록한다.
 - **Cashback**: 등록 결제수단의 ID를 `income_records.payment_method_id`에 저장하고 현재 사용자 소유인지 확인한다. 신용카드에 적용하면 `received_at`이 속한 카드 사이클의 순 청구 예상액에서 차감하며, 현금성 수단은 신용카드 사이클 금액을 바꾸지 않는다.
 - **Refund**: 공통 `Refund` 카테고리를 선택한 지출 품목은 `amount_cents = -abs(입력 금액)`으로 저장한다. 해당 거래의 `payment_method_id`는 현재 사용자 소유여야 하며, 신용카드 Refund는 거래 `transacted_at`이 속한 사이클의 지출 합계에서 차감한다. 원래 구매 거래를 수정하거나 원 구매일로 소급하지 않는다. 과거 `income_records`의 Refund 행은 자동 변환하지 않으며 데이터가 있으면 별도 정리가 필요하다.
 - 수입 알림 시간은 사용자별 DB 설정으로 받지 않고 앱 정책으로 고정한다.
@@ -391,7 +398,7 @@ reference_date = 2026-10-16
 → next_expected_date = 2026-11-16
 ```
 
-월별 계산에서 다음 달에 같은 날짜가 없으면 해당 월의 마지막 날로 fallback하는 규칙을 사용한다.
+월별 계산에서 다음 달에 같은 날짜가 없으면 해당 월의 마지막 날로 fallback한다. 반복 규칙을 확정할 때는 실제 입금일이 아닌 기존 예정일을 기준으로 다음 회차를 계산하며, 1월 31일 → 2월 28일 → 3월 31일처럼 최초 기준일을 유지한다.
 
 **게이팅 구현 원칙 (⚠️ 등급 구조와 함께 미확정)**: 별도 카운터 테이블/컬럼 없이 파생 계산.
 
