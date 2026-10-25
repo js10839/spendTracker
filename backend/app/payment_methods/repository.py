@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models.payment_method import PaymentMethod
@@ -12,6 +12,11 @@ def add_payment_method(db: Session, user_id: UUID, name: str, method_type: str, 
     db.add(payment_method)
     db.flush()
     return payment_method
+
+def find_cash_payment_method(db: Session, user_id: UUID) -> PaymentMethod | None:
+    """사용자 지갑에 이미 현금 결제수단이 있는지 확인한다."""
+    statement = select(PaymentMethod).where(PaymentMethod.user_id==user_id, PaymentMethod.type=="cash-like", func.lower(PaymentMethod.name)=="cash").limit(1)
+    return db.execute(statement).scalar_one_or_none()
 
 def list_payment_methods(db: Session, user_id: UUID) -> list[PaymentMethod]:
     """현재 사용자에게 속한 결제수단을 가계부와 무관하게 조회한다."""

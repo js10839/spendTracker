@@ -27,7 +27,7 @@
 
 - **경쟁 앱 리뷰·릴리즈 노트에서 배운 것** (설계 요구사항으로 반영):
 
-- 할인/쿠폰 라인(음수 금액) 처리 실패 → 합계 불일치가 주요 불만. 할인/쿠폰 처리 방식은 아직 설계하지 않았으며, total 불일치 검증은 유지한다.
+- 할인/쿠폰 라인(음수 금액) 처리 실패 → 합계 불일치가 주요 불만. 음수 품목 금액은 허용하고, 할인/쿠폰을 별도 유형으로 구분하지 않으며, 파싱 후 total 불일치 안내는 유지한다.
 
 - 영수증 축약 표기("WHL MLK 2% 1G")가 그대로 저장되는 불만 → 프롬프트에 품목명 정규화(읽기 좋게 풀어 쓰기) 명시
 
@@ -85,7 +85,7 @@
 
 - [ ] 통합 대시보드: 최근 30일 전체 지출, 카드 vs 현금 비율, 카테고리별 분포
 
-- [ ] 카테고리 목록 조회 (운영팀이 정한 기본 12개 제공: Food, Living, Electronics, Fashion, Dining, Transport, Subscription, Utilities·Bills, Health, Entertainment, Travel, Etc). 사용자는 카테고리를 추가·수정·삭제하지 않는다.
+- [ ] 카테고리 목록 조회 (운영팀이 정한 기본 13개 제공: Food, Living, Electronics, Fashion, Dining, Transport, Subscription, Utilities·Bills, Health, Entertainment, Travel, Etc, Refund). 사용자는 카테고리를 추가·수정·삭제하지 않는다.
 
 ### Phase 2 — 핵심 차별화 (Wow Factor)
 
@@ -215,17 +215,17 @@
 
 ## 4. 데이터 모델 (현행 / 계획 구분)
 
-**현행 구현과 확정 목표를 구분한다**: SQLAlchemy/Alembic에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`, `transaction_items`, `income_sources`, `income_records`가 있다. 지출은 결제 헤더 `transactions` 1건과 품목 `transaction_items` N건으로 저장하며, 수동 생성·기간 조회·기존 품목 ID를 유지하는 수정 API가 구현됐다. 품목 추가·제거와 거래 삭제 API는 아직 없고, 영수증 파싱을 통한 생성도 미구현이다. `receipts`, `categorization_rules`, `transactions.receipt_id`는 Phase 2 계획이며, `categories`는 가계부마다 복제하지 않는 공통 목록이다.
+**현행 구현과 확정 목표를 구분한다**: SQLAlchemy/Alembic에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`, `transaction_items`, `income_sources`, `income_records`가 있다. 지출은 결제 헤더 `transactions` 1건과 필수 품목 `transaction_items` 1건 이상으로 저장하며, 수동 생성·기간 조회·품목 ID를 유지하는 추가·수정·제거·거래 soft delete API가 작성됐다. `total_cents`·Refund 카테고리·활성 거래 부분 인덱스 migration은 DB에 적용됐다(현재 head `b84e91d2c673`); 인증 의존성을 대체한 실제 DB API 검증에서 거래 생성·조회·수정·삭제가 통과했고 임시 데이터는 롤백했다. 품목의 수량은 저장하지 않고 `amount_cents`에 해당 줄의 전체 금액을 저장한다. 관리자 복구와 30일 경과 정리는 내부 함수·실행 명령까지만 작성됐고 운영 스케줄러는 미연결이다. 영수증 파싱을 통한 생성도 미구현이다. `receipts`, `categorization_rules`, `transactions.receipt_id`는 Phase 2 계획이며, `categories`는 가계부마다 복제하지 않는 공통 목록이다.
 
 **핵심 원칙**
 
 - Supabase Auth의 `auth.users`는 로그인 credential과 identity를 관리한다.
 - 앱 전용 사용자 정보는 `public.users`에서 관리한다.
 - `public.users.id`는 Supabase Auth의 `auth.users.id`와 동일한 UUID를 사용한다.
-- 모든 금액은 달러 실수가 아니라 **cents 정수**로 저장한다.
-- `transactions`는 지출 결제 1건의 공통 정보와 결제 전체의 Tax/Tip 금액을, `transaction_items`는 그 결제의 품목 N건을 저장한다. 수동 입력과 영수증 파싱은 생성 경로만 다르다. 수입은 `income_sources` + `income_records`로 분리한다.
+- 모든 금액은 달러 실수가 아니라 **cents 정수**로 저장·전송한다. Flutter는 화면에서 USD로 포맷한다(예: `1099` → `$10.99`, `-1000` → `-$10.00`).
+- `transactions`는 지출 결제 1건의 최종 총액과 결제 전체의 Tax/Tip 금액을, `transaction_items`는 필수 품목 내역을 저장한다. 수동·영수증 출처 모두 저장 시 품목을 최소 1건 유지한다. 수입은 `income_sources` + `income_records`로 분리한다.
 - `transactions`에 `item_ids` 배열을 중복 저장하지 않는다. 각 `transaction_items.transaction_id`가 부모 거래를 참조한다.
-- `income_sources`는 반복 Paycheck 규칙, `income_records`는 실제로 들어온 수입과 카드에 적용한 Cashback·Refund 기록이다.
+- `income_sources`는 반복 Paycheck 규칙, `income_records`는 실제 수입과 카드에 적용한 Cashback 기록이다. Refund는 `transaction_items`의 공통 지출 카테고리다.
 
 ```text
 auth.users                         # Supabase Auth가 관리
@@ -269,6 +269,10 @@ payment_methods
 - created_at timestamp
 - updated_at timestamp
 
+# 사용자 bootstrap 시 Cash를 cash-like로 한 번 생성한다. Cash는 현금 결제만 뜻하며,
+# 은행 이체로 지출한 경우 별도의 cash-like 결제수단을 지갑에 추가한다.
+# 결제수단 색상은 프론트엔드에서 선택·표시하고 DB에 저장한다.
+
 
 categories
 - id uuid PK
@@ -285,6 +289,7 @@ transactions                       # 현행: 지출 결제 헤더 1건
 - ledger_id uuid FK -> ledgers.id
 - payment_method_id uuid FK -> payment_methods.id
 - receipt_id uuid nullable FK -> receipts.id  # Phase 2 계획, 현행 DB에는 없음
+- total_cents int NOT NULL             # 품목 합계와 Tax/Tip으로 계산한 최종 금액
 - tax_cents int NOT NULL default 0    # 결제 전체의 Tax
 - tip_cents int NOT NULL default 0    # 결제 전체의 Tip
 - currency text NOT NULL default 'USD'
@@ -297,12 +302,12 @@ transactions                       # 현행: 지출 결제 헤더 1건
 - deleted_at timestamp nullable
 
 
-transaction_items                  # 현행: 결제 1건의 품목 N건
+transaction_items                  # 현행: 결제 1건의 필수 품목 1..N건
 - id uuid PK
 - transaction_id uuid FK -> transactions.id
 - category_id uuid FK -> categories.id  # 품목 카테고리 필수
 - name text NOT NULL
-- amount_cents int NOT NULL
+- amount_cents int NOT NULL          # 개당 가격이 아닌 이 품목 줄의 합산 금액
 - created_at timestamp
 - updated_at timestamp
 
@@ -344,9 +349,9 @@ income_records                     # 실제 수입 기록
 - id uuid PK
 - ledger_id uuid FK -> ledgers.id
 - income_source_id uuid nullable FK -> income_sources.id
-- payment_method_id uuid nullable FK -> payment_methods.id  # Cashback·Refund 적용 수단
-- income_type text NOT NULL        # paycheck | cashback | refund | other
-- from_name text nullable          # Paycheck·Refund의 지급처; 반복 기록은 당시 값 snapshot
+- payment_method_id uuid nullable FK -> payment_methods.id  # Cashback 적용 수단
+- income_type text NOT NULL        # 신규 API: paycheck | cashback | other; 기존 refund 행은 별도 정리 전까지 남을 수 있음
+- from_name text nullable          # Paycheck 지급처; 반복 기록은 당시 값 snapshot
 - amount_cents int NOT NULL
 - received_at date NOT NULL
 - memo text nullable
@@ -354,21 +359,22 @@ income_records                     # 실제 수입 기록
 - updated_at timestamp
 ```
 
-**확정 관계와 집계 기준**: `ledgers` 1:N `transactions`, `payment_methods` 1:N `transactions`, `transactions` 1:N `transaction_items`이며, 품목은 `categories`의 공통 카테고리를 참조한다. 영수증 파싱 결제를 `transactions.receipt_id`로 파싱 기록에 연결하는 것은 Phase 2 계획이며, 정확한 제약 조건도 그때 정한다. 결제 합계는 `SUM(transaction_items.amount_cents) + transactions.tax_cents + transactions.tip_cents`로 계산하며 부모에 별도의 `total_cents`를 중복 저장하지 않는다. 조회·사이클·대시보드는 `transactions.deleted_at IS NULL`인 결제의 합계를 결제당 한 번만 집계해 헤더가 품목 수만큼 중복 계산되지 않도록 한다. 현행 PUT은 모든 기존 품목 ID를 요청에 포함해야 하며 ID를 유지한 채 이름·금액·카테고리를 수정한다. 품목 추가·제거와 결제 전체 삭제는 아직 구현·정책 확정 전이다. 영수증 처리 상태와 일괄 저장의 상세 계약은 Phase 2에서 정한다. 할인/쿠폰은 아직 모델·파싱 규칙에 포함하지 않는다.
+**확정 관계와 집계 기준**: `ledgers` 1:N `transactions`, `payment_methods` 1:N `transactions`, `transactions` 1:N `transaction_items`이며, 활성 거래는 품목을 최소 1건 유지한다. 품목은 `categories`의 공통 카테고리를 참조한다. 영수증 파싱 결제를 `transactions.receipt_id`로 파싱 기록에 연결하는 것은 Phase 2 계획이며, 정확한 제약 조건도 그때 정한다. `transactions.total_cents`는 백엔드가 품목 줄 금액 합계와 Tax/Tip을 더해 저장하는 최종 금액이다. 생성·수정 요청에는 `total_cents`를 받지 않으며, 품목을 수정·제거할 때도 남은 품목과 Tax/Tip으로 다시 계산한다. 마지막 품목을 제거한 상태는 저장할 수 없다. 품목 금액은 0이나 음수도 허용하고 Refund 카테고리 품목은 입력 부호와 무관하게 음수로 저장한다. 음수 품목은 할인/쿠폰 유형으로 따로 분류하지 않는다. 조회·사이클·대시보드는 삭제되지 않은 결제를 한 번만 집계한다. 현행 PUT은 기존 품목 ID를 유지하고 ID 없는 품목을 추가하며 요청에서 빠진 품목을 영구 삭제한다. 원본 영수증 금액과의 불일치 여부는 현재 거래 API에서 검증하지 않는다. 영수증 처리 상태와 원본 금액 비교의 상세 계약은 Phase 2에서 정한다.
 
-**기존 거래가 있는 DB의 이전 조건**: 현재 migration은 기존 `transactions`가 0건인 환경에서만 적용된다. 이미 거래가 있는 DB에는 금액·카테고리를 품목으로 옮기는 별도 백필 migration을 작성해야 하며, 데이터를 버리고 현재 migration을 강제로 적용하지 않는다.
+**기존 거래가 있는 DB의 이전 조건**: 결제·품목 구조를 처음 만드는 migration(`cab1751301e3`)은 기존 `transactions`가 0건인 환경에서만 적용된다. 이미 거래가 있는 이전 스키마의 DB에는 금액·카테고리를 품목으로 옮기는 별도 백필 migration이 필요하며, 데이터를 버리고 강제로 적용하지 않는다.
+
+**총액·Refund migration**: `e8a91f4c2d73`은 기존 품목 줄 합계와 Tax/Tip으로 `transactions.total_cents`를 채우고, `d6419e8c0a27`은 공통 Refund 카테고리를 추가한다. 품목 수량 컬럼은 추가하지 않는다. 두 migration의 DB 적용과 Refund 카테고리 존재를 확인했다. 기존 거래·Refund 수입 기록은 각각 0건이었고, 이후 실제 DB 연결 API 검증에서는 임시 거래를 만들고 롤백했다.
 
 **날짜별 메모 (미구현·설계 TBD)**: 2026-10-17 미팅에서 날짜에 메모를 남기는 방향에 합의했다. 현행 `transactions.memo`는 개별 지출 메모이며 날짜 메모를 대체하지 않는다. 사용자 개인/가계부 중 소유 범위, 시간대, 같은 날짜의 복수 메모 허용 여부와 저장 구조는 미정이므로 여기서 새 테이블·컬럼을 확정하지 않는다. 영수증 원본 이미지는 영구 보관하지 않으며, `receipts`의 임시 이미지 참조 필요 여부도 TBD다.
 
 ### 4.0.1 Income 설계 원칙
 
-- **유형별 입력**: Paycheck는 금액·From·날짜·메모와 선택적 Repeats, Cashback은 금액·Applied to(등록 결제수단)·날짜·메모, Refund는 금액·From·Applied to·날짜·메모, Other는 금액·날짜·메모만 받는다. `Other` 수입 유형과 Refund의 `Applied to: Other`는 서로 다른 선택지다.
+- **유형별 입력**: Paycheck는 금액·From·날짜·메모와 선택적 Repeats, Cashback은 금액·Applied to(등록 결제수단)·날짜·메모, Other는 금액·날짜·메모만 받는다. Refund는 수입 유형에서 제외하고 지출 품목으로 입력한다.
 - **반복 Paycheck**: Repeats가 `Every 2 weeks` 또는 `Monthly`일 때만 `income_sources`에 규칙을 만든다. `Never`는 규칙을 만들지 않는다는 뜻이다. `income_sources`는 Paycheck 전용이므로 별도의 `income_type` 컬럼을 두지 않는다.
 - 반복 규칙의 `frequency`와 `reference_date`는 둘 다 **required / NOT NULL**. `next_expected_date`는 사용자가 입력하지 않고 FastAPI가 계산한다. 예상 날짜를 달력에 표시해도 실제 입금 `income_records`를 자동 생성하지는 않는다.
 - 실제 Paycheck 입금은 `income_records`에 기록한다. 예상 금액은 `income_sources.expected_amount_cents`, 실제 금액은 `income_records.amount_cents`에 별도로 저장한다. 반복 기록은 지급처 `from_name`을 당시 값으로 보존하고 `income_source_id`로 규칙에 연결한다.
-- **Cashback·Refund**: 등록 결제수단을 고르면 그 ID를 `payment_method_id`에 저장한다. Refund의 `Applied to`는 필수 선택이며, 등록 수단이 아닌 `Other`를 명시적으로 고르면 `payment_method_id = NULL`로 저장한다. 따라서 `NULL`이 선택 누락이 되지 않도록 API에서 검증한다. 등록 수단을 고르면 현재 사용자의 소유인지 확인한다.
-- 등록된 신용카드에 적용한 Cashback·Refund는 `received_at`이 속한 카드 사이클의 순 청구 예상액에서 차감한다. 현금·체크카드(`cash-like`) 또는 Refund의 `Applied to: Other`는 신용카드 사이클 금액을 바꾸지 않는다. 원래 `transactions` 지출 행이나 원 구매일의 사이클로 환불을 소급 배치하지 않으며, 총 지출과 차감 후 예상 청구액을 구분한다.
-- Refund는 새로 번 돈이 아니므로 Paycheck와 같은 순수입 합계에 무조건 더하지 않는다. Cashback·Refund의 대시보드 집계 방식은 담당자와 API 계약에서 구분한다.
+- **Cashback**: 등록 결제수단의 ID를 `income_records.payment_method_id`에 저장하고 현재 사용자 소유인지 확인한다. 신용카드에 적용하면 `received_at`이 속한 카드 사이클의 순 청구 예상액에서 차감하며, 현금성 수단은 신용카드 사이클 금액을 바꾸지 않는다.
+- **Refund**: 공통 `Refund` 카테고리를 선택한 지출 품목은 `amount_cents = -abs(입력 금액)`으로 저장한다. 해당 거래의 `payment_method_id`는 현재 사용자 소유여야 하며, 신용카드 Refund는 거래 `transacted_at`이 속한 사이클의 지출 합계에서 차감한다. 원래 구매 거래를 수정하거나 원 구매일로 소급하지 않는다. 과거 `income_records`의 Refund 행은 자동 변환하지 않으며 데이터가 있으면 별도 정리가 필요하다.
 - 수입 알림 시간은 사용자별 DB 설정으로 받지 않고 앱 정책으로 고정한다.
 - Flutter는 `next_expected_date`를 받아 앱에서 정한 시간에 local notification을 예약한다.
 - MVP에서는 별도 notification table을 만들지 않는다.
@@ -407,7 +413,7 @@ reference_date = 2026-10-16
 
 ## 4.1 기본 카테고리 정의
 
-DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 정의는 `categories.description`에 저장되며 LLM 파싱 프롬프트에 사용된다. 카테고리 목록은 운영팀이 관리하고 사용자는 `transaction_items`의 품목에 적용할 카테고리만 선택한다. Tax/Tip은 결제 전체 금액이므로 품목 카테고리를 붙이지 않는다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다.
+DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와 Refund). 각 정의는 `categories.description`에 저장되며 LLM 파싱 프롬프트에 사용된다. 카테고리 목록은 운영팀이 관리하고 사용자는 `transaction_items`의 품목에 적용할 카테고리만 선택한다. Tax/Tip은 결제 전체 금액이므로 품목 카테고리를 붙이지 않는다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다. Refund 카테고리의 DB 적용을 확인했다.
 
 | 카테고리 | 담당 범위 | 예시 | 아닌 것 (경계) |
 |---|---|---|---|
@@ -423,6 +429,7 @@ DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 �
 | **Entertainment** | 여가·취미 소비 | 영화, 공연, 게임, 책, 취미용품 | 반복 결제형(게임 구독 등)은 Subscription |
 | **Travel** | 여행 관련 지출 일체 | 항공권, 호텔, 여행지 액티비티 | 일상 이동은 Transport |
 | **Etc** | 위 어디에도 속하지 않는 것 | 선물, 기부, 수수료, 분류 애매한 지출 | — |
+| **Refund** | 돌려받은 구매 금액을 지출에서 차감 | 반품 환불, 결제 취소 금액 | 새로 번 돈은 Income |
 
 **분류 원칙**: 경계가 애매하면 "어디서 샀는가"가 아니라 "무엇을 샀는가" 기준. 같은 Target 영수증이라도 사과는 Food, 세제는 Living, 티셔츠는 Fashion으로 품목별 분류 (영수증 파싱의 존재 이유).
 
@@ -474,13 +481,13 @@ DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 �
 
 - **후보·미확정**: 결제수단별 breakdown, 두 막대의 동일 경과 구간 사이클 비교, 선택형 위젯·순서 변경. 추세는 Daily/Monthly를 우선 검토하고 Weekly는 제외하는 방향이다. Monthly 범위(최근 12개월/해당 연도), 위젯 구성 저장 위치는 TBD이며 기본 대시보드 확정 항목으로 취급하지 않는다.
 
-3. **지출 입력 (직접 입력)**: 상점·날짜·결제수단·Tax·Tip은 결제 헤더에, 이름·가격·카테고리는 품목별로 입력한다. 한 번의 수동 입력에 여러 품목을 담고 품목 금액과 Tax/Tip으로 합계를 계산한다. 카드 칩 색상은 등록 시 지정한 색과 일치한다.
+3. **지출 입력 (직접 입력)**: 상점·날짜·결제수단·Tax·Tip은 결제 헤더에, 이름·줄 합계·카테고리는 최소 한 개의 품목에 입력한다. 같은 품목을 여러 개 사도 `amount_cents`에는 해당 줄의 전체 금액을 적으며 수량은 별도 저장하지 않는다. Total은 품목 금액과 Tax/Tip을 합산해 표시하며 직접 수정할 수 없다. 품목이 없으면 저장을 비활성화한다. 카드 칩 색상은 등록 시 지정한 색과 일치한다.
 
-- **현행 백엔드 API**: 수동 입력은 결제 1건과 품목 N건을 함께 생성한다. 기간 조회는 품목과 계산된 합계를 반환하며, PUT은 입력 출처와 무관하게 기존 품목 ID를 유지한 채 결제 헤더와 모든 기존 품목을 수정한다. 품목 추가·제거, 결제 삭제, 영수증 파싱 생성 경로 및 Flutter 연동은 아직 구현되지 않았다. 편집 진입 UI와 삭제 정책은 별도로 정한다.
+- **현행 백엔드 API**: 수동 입력은 품목을 최소 1건 받아 총액을 계산한다. 기간 조회는 저장된 총액과 품목을 반환한다. PUT은 기존 품목 ID를 유지하며 ID 없는 품목 추가와 요청에서 빠진 품목의 영구 삭제를 함께 처리하고, 남은 품목과 Tax/Tip으로 총액을 다시 계산한다. 수동·영수증 거래 모두 품목 0건을 허용하지 않는다. DELETE는 거래 전체에 `deleted_at`을 기록한다. 실제 DB 연결 API 검증에서 POST 201(총액 1100 cents)·GET 200·PUT 200(Refund 총액 -300 cents)·DELETE 204와 삭제 후 비노출을 확인했고 임시 데이터는 롤백했다. 이 거래 검증은 인증 의존성을 대체했다. 별도의 읽기 전용 검증에서 실제 Supabase 토큰으로 `GET /categories` 200, 토큰 없음·변조 토큰으로 각각 401을 확인했다. 영수증 파싱 생성 경로·Flutter 연동은 아직 구현되지 않았다.
 
 4. **입력 선택 시트**: ➕ 탭 시 "직접 입력 / 영수증 촬영" 2택. 영수증 옵션에 남은 무료 파싱 수 상시 노출 (예: "이번 달 7장 남음") — 한도를 미리 인지시켜 초과 시 반감 완화
 
-5. **영수증 파싱 확인**: merchant/날짜/결제수단 헤더 + "AI 분류" 배지. 품목 리스트 각각 이름/가격/카테고리 칩(탭하여 변경). Tax·Tip은 회색 라인으로 구분. 하단에 합계 + 영수증 total 일치/불일치 검증 배지. "품목 추가" 보조 버튼 + 결제와 품목 전체를 저장하는 주 버튼. 원본 이미지 재열람 UI는 제공하지 않는다.
+5. **영수증 파싱 확인**: merchant/날짜/결제수단 헤더 + "AI 분류" 배지. 품목 리스트 각각 이름/줄 합계/카테고리 칩(탭하여 변경). Tax·Tip은 회색 라인으로 구분한다. 편집 중 품목 금액·Tax·Tip으로 계산한 Total과 원본 영수증 금액의 차이를 보여주되 어디가 잘못됐는지는 단정하지 않는다. 품목 0건은 저장하지 않고, 차이가 있어도 안내문과 저장 재확인 후 사용자가 확정할 수 있다. 품목 제거 직후 Undo는 저장 전 화면 상태를 되돌리는 동작이며, 저장 후 제거된 품목은 복구하지 않는다. 원본 이미지 재열람 UI는 제공하지 않는다.
 
 6. **내 지갑 — 카드 추가**: 타입(신용카드/현금성) 2택이 맨 위 — 현금성 선택 시 마감일 섹션 숨김(조건부 폼). 이름 입력 → 마감일 1~31 그리드 선택("결제일이 아닌 명세서 마감일" 경고 문구 포함) → 선택 즉시 "현재 사이클: 8/6 – 9/5" 실시간 미리보기 → 색상 6택 (캘린더 마커·대시보드와 연동)
 
@@ -504,13 +511,15 @@ DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 �
 
 → 백엔드에서 Vision LLM API 호출
 
-프롬프트: "영수증에서 merchant, 날짜, 품목별 {name, price, 추정 category}를
+프롬프트: "영수증에서 merchant, 날짜, 품목별 {name, 줄 합계, 추정 category}를
 
 아래 JSON 스키마로 추출" (structured output)
 
-+ tax/tip은 품목과 분리 추출 (할인/쿠폰 처리 방식은 미정)
++ tax/tip은 품목과 분리 추출; 음수 품목 금액도 받고 할인/쿠폰 유형은 별도로 구분하지 않음
 
 + 품목명 정규화("WHL MLK 2%" → "Whole Milk 2%")
+
++ 품목 금액은 개당 가격이 아닌 해당 줄의 전체 금액으로 정규화하고 수량은 저장하지 않음
 
 + PII(이름·카드번호·멤버십 번호) 추출 금지
 
@@ -534,15 +543,15 @@ DB migration에서 한 번 생성하는 공통 기본 카테고리 12개. 각 �
 
 - LLM 파싱 시 tax, tip을 품목과 분리 추출 → 확인 화면에 별도 라인으로 표시 (수정 가능)
 
-- 저장 시 품목은 `transaction_items`에, Tax/Tip은 결제 헤더에 반영한다. `SUM(transaction_items.amount_cents) + tax_cents + tip_cents`를 영수증 총액과 대조한다. 할인/쿠폰이 있는 영수증의 상세 처리 방식은 추후 결정한다.
+- 저장 시 품목은 `transaction_items`에, Tax/Tip과 최종 `total_cents`는 결제 헤더에 반영한다. 음수 품목도 합계에 그대로 포함하며 할인/쿠폰을 별도 유형으로 구분하지 않는다. 편집 중 합계 `SUM(transaction_items.amount_cents) + tax_cents + tip_cents`를 원본 영수증 총액과 대조하고, 차이가 있어도 안내·재확인을 거쳐 저장을 허용한다. 원본 영수증 총액의 저장·연결 방식은 영수증 파싱 구현 시 정한다.
 
-- 파싱 합계 ≠ 영수증 total이면 확인 화면에서 차액 경고 (파싱 오류 검증 장치)
+- 파싱 합계 ≠ 영수증 total이면 확인 화면에서 차액만 알리고, 어떤 품목이나 필드가 틀렸는지는 추정하지 않는다.
 
 **카테고리 운영 원칙**:
 
-1. 기본 카테고리: DB migration에서 공통 목록으로 생성 (`is_default = true`) — 확정 세트 (12개):
+1. 기본 카테고리: DB migration에서 공통 목록으로 생성 (`is_default = true`) — 확정 세트 (13개):
 
-Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, 수건, 주방용품 등) / Electronics (전자기기·주변기기 하드웨어) / Fashion (옷·신발·액세서리) / Dining (외식·카페·배달) / Transport / Subscription / Utilities·Bills / Health / Entertainment / Travel / Etc
+Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, 수건, 주방용품 등) / Electronics (전자기기·주변기기 하드웨어) / Fashion (옷·신발·액세서리) / Dining (외식·카페·배달) / Transport / Subscription / Utilities·Bills / Health / Entertainment / Travel / Etc / Refund (구매 금액 반환)
 
 - `categories.description` 컬럼 추가: 각 카테고리의 한 줄 정의. LLM 파싱 프롬프트에 이름+설명을 함께 제공해 분류 정확도 확보 (예: Target 영수증에서 detergent → Living, 사과 → Food)
 
@@ -584,9 +593,12 @@ Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, �
 
 ## 6.2 운영·시스템 원칙
 
-**삭제 정책 (거래 개별 삭제 방식은 TBD)**:
+**삭제 정책 (거래 개별 삭제 확정, 운영 연결 진행 중)**:
 
-- 저장된 거래의 삭제 경로는 필요하다. 현행 `transactions.deleted_at` 컬럼은 있으나 soft delete와 hard delete 중 실제 정책, 영수증 품목·quota와의 관계는 확정되지 않았고 삭제 API도 없다.
+- 저장된 거래 전체는 soft delete로 `transactions.deleted_at`에 UTC 시각을 기록하고 일반 조회에서 숨긴다. 30일 이내 복구 문의는 관리자 운영 절차에서 처리하며 사용자용 복구 API는 만들지 않는다. 30일 경과 후에는 품목을 먼저, 거래를 다음에 영구 삭제한다. DELETE API·내부 복구 함수·1,000건 단위 정리 명령을 작성했다. 실제 DB에서 만료 1건의 거래·품목 삭제, 최근 삭제 거래와 활성 거래 보존, 최근 삭제 거래 복구를 확인하고 임시 데이터를 롤백했다. 관리자 운영 경로와 매일 새벽 3시 정리 스케줄러는 배포 환경에서 연결해야 한다.
+- 일반 기간 조회에는 `deleted_at IS NULL`을 조건으로 사용하고, 활성 거래의 `(ledger_id, transacted_at)`에 PostgreSQL 부분 인덱스를 둔다. DB에서 인덱스 정의와 migration head `b84e91d2c673`을 확인했다.
+
+- 품목의 제거는 Save 전 Undo만 허용하고, Save 후 요청에서 빠진 품목은 영구 삭제한다. 삭제 거래의 30일 보관은 복구 목적에 한정하며 내부 AI 학습용으로 별도 보관하지 않는다. 영수증 파싱 사용량·quota와의 관계는 Phase 2에서 정한다.
 
 - 계정 삭제 시 데이터 전체 삭제 방향은 유지한다. 원본 이미지는 영구 보관하지 않으므로, 임시 이미지가 남아 있다면 함께 폐기해야 한다.
 
@@ -689,3 +701,31 @@ draft·failed 이미지의 7일 보관은 이번 원본 비보관 방향과 충�
 - **currency**: ✅ 결정 — USD 단일. 본인 + 초기 테스터 모두 미국 거주. `transaction.currency` 컬럼은 'USD' 기본값으로 유지해 향후 다중 통화 확장 여지만 남김 (지금 복잡도 0)
 
 - **인증 범위**: ✅ 방향 결정 — Guest 사용 허용 + 회원은 Email/Password + Email Verification을 기본으로 사용. credential은 Supabase Auth가 관리하고 앱 데이터는 Supabase `user_id` 기준으로 연결. Google/Apple 로그인과 Account Linking은 일정에 따라 확장
+
+---
+
+## 개발 인계 메모 (2026-10-25)
+
+이 절은 대화가 끊겨도 현재 작업을 이어가기 위한 **시점별 상태 기록**이다. 제품 정책은 위 본문을 기준으로 확인하고, 이후 구현·검증 결과가 바뀌면 이 메모도 갱신한다.
+
+### 확정한 거래 계약
+
+- 수동 입력과 영수증 파싱 거래는 같은 `transactions` / `transaction_items` 구조를 사용한다. 저장 시 품목이 최소 1개 필요하며, 품목 `amount_cents`는 수량별 단가가 아니라 **해당 줄의 전체 금액**이다. 수량 컬럼은 두지 않는다. 중복 품목은 각각 한 줄로 남기고 0·음수 금액도 허용한다.
+- 클라이언트는 `total_cents`를 보내거나 수정하지 않는다. 백엔드가 `sum(item.amount_cents) + tax_cents + tip_cents`로 계산해 저장한다. 품목을 추가·수정·제거하면 다시 계산하고, 품목 제거만으로 Tax/Tip은 바뀌지 않는다. 총액은 0 또는 음수일 수 있다. API는 정수 cents를 사용하고 Flutter가 달러로 표시한다.
+- Refund는 Income이 아니라 공통 지출 카테고리다. Refund 품목은 입력 부호와 관계없이 `-abs(amount_cents)`로 저장한다. 신용카드 Refund는 **환불 거래일**이 속한 카드 사이클에서 차감하고 원 구매 거래는 수정하지 않는다.
+- PUT에서 기존 품목 ID를 전달하면 ID를 유지해 수정하고, ID가 없는 품목은 추가하며, 요청에서 빠진 품목은 영구 삭제한다. 화면의 Undo는 Save 전까지만 적용한다. 거래 DELETE는 `deleted_at`을 기록해 숨긴다. 거래는 30일 보관 후 품목과 함께 영구 삭제하고, 복구는 관리자 내부 절차로만 한다.
+- `내 지갑`의 결제수단은 사용자 소유다. 기본 Cash는 현금 결제를 뜻하는 `cash-like` 결제수단이며 색상 `#FCA05A`를 DB에 저장한다. 은행 이체 지출은 별도 `cash-like` 결제수단을 추가해 기록한다.
+
+### 구현·검증된 범위
+
+- 수동 거래 생성·기간 조회·품목 ID를 유지하는 수정·거래 soft delete, 내부 관리자 복구 함수, 30일 경과 거래를 1,000건씩 정리하는 명령이 있다. 영수증에서 거래를 생성하는 경로는 아직 없다.
+- `e8a91f4c2d73`(총액), `d6419e8c0a27`(Refund 카테고리), `b84e91d2c673`(활성 거래 부분 인덱스) migration을 연결된 Supabase PostgreSQL에 적용했다. 확인한 Alembic head는 `b84e91d2c673`이며, 실제 부분 인덱스 조건은 `deleted_at IS NULL`이다. 적용 전 기존 거래와 Refund 수입 기록은 각각 0건이었다.
+- 마지막 확인 결과: Ruff 통과, pytest **100 passed**, `git diff --check` 통과. 실제 DB를 이용한 거래 POST/GET/PUT/DELETE와 cleanup·복구 검증은 외부 트랜잭션에서 실행하고 롤백했다. 거래 API 검증은 인증 의존성을 대체했다. 별도 실제 Supabase 토큰 검사에서 `GET /categories`의 유효 토큰 200, 토큰 없음·변조 토큰 401을 확인했다. 따라서 거래 API의 실제 JWT 통합 검증까지 완료됐다는 뜻은 아니다.
+
+### 남은 일과 미확정 사항
+
+- **영수증 담당 영역**: 이미지 업로드·검증·재인코딩·EXIF 제거, private 임시 저장, Gemini 파싱, 확인 전 draft, 카테고리화, 저장 시 공통 거래 로직 연결이 미구현이다. `transactions.receipt_id`와 영수증 상태·원본 총액 불일치 처리 계약은 Phase 2에서 구체화한다. 파싱 결과의 중복 품목·음수 품목을 그대로 표현하고 사용자가 확인할 수 있어야 한다.
+- **사이클·대시보드**: 카드 마감일 기준 사이클 계산과 집계 API가 미구현이다. 사이클 기간은 저장하지 않고 계산한다. Flutter 화면·API 연동은 별도 진행 대상이다.
+- **삭제 운영**: cleanup 명령을 매일 새벽 3시에 실행할 배포 스케줄러가 연결되지 않았다. 관리자 복구는 내부 함수만 있으므로 CS 담당자가 안전하게 실행할 운영 절차도 필요하다. 삭제 API의 사용자별 rate limit은 과거 제안이었으나 확정·구현된 정책은 아니다.
+- **환경별 데이터**: 현재 DB에는 옛 Refund 수입 행이 없어서 자동 변환 migration을 만들지 않았다. 다른 환경에 그런 행이 있다면 결제수단 연결을 포함한 별도 데이터 이전 방침을 먼저 정해야 한다.
+- **Git 인계**: 이 메모 작성 시점에 위 세 migration 파일과 `backend/app/transactions/cleanup.py`는 아직 untracked이며, 거래 코드·테스트·제품 문서 변경도 커밋되지 않았다. DB에는 migration이 이미 적용됐으므로 다음 작업자는 **파일을 Git에 포함한 뒤** 자신의 환경에서 `alembic current` / `alembic upgrade head`를 확인해야 한다. 사용자 지시에 따라 Codex는 stage·commit·push하지 않는다.

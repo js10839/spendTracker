@@ -6,6 +6,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Text,
     func,
@@ -25,6 +26,7 @@ class Transaction(Base):
             "source IN ('manual', 'receipt_parse')",
             name="ck_transactions_source",
         ),
+        Index("ix_transactions_active_ledger_date", "ledger_id", "transacted_at", postgresql_where=text("deleted_at IS NULL")),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -37,6 +39,7 @@ class Transaction(Base):
     memo: Mapped[str | None] = mapped_column(Text)
     transacted_at: Mapped[date] = mapped_column(Date, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="manual")
+    total_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     tip_cents: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(

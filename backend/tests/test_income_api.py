@@ -71,8 +71,8 @@ def test_create_income_record_requires_authentication(monkeypatch) -> None:
     create_record.assert_not_called()
 
 
-def test_create_income_record_rejects_missing_refund_destination(monkeypatch) -> None:
-    """Refund의 Applied to가 빠지면 Service 호출 전에 요청을 거부한다."""
+def test_create_income_record_rejects_refund_type(monkeypatch) -> None:
+    """Refund는 더 이상 수입 유형이 아니므로 Service 호출 전에 거부한다."""
     user_id, ledger_id = uuid4(), uuid4()
     ledger = Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
     create_record = Mock()
@@ -83,7 +83,7 @@ def test_create_income_record_rejects_missing_refund_destination(monkeypatch) ->
 
     try:
         with TestClient(app) as client:
-            response = client.post(f"/ledgers/{ledger_id}/income-records", json={"income_type": "refund", "amount_cents": 1000, "received_at": "2026-10-23", "from_name": "Store"})
+            response = client.post(f"/ledgers/{ledger_id}/income-records", json={"income_type": "refund", "amount_cents": 1000, "received_at": "2026-10-23", "from_name": "Store", "applied_to": str(uuid4())})
     finally:
         app.dependency_overrides.clear()
 
