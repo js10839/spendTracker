@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -8,8 +8,10 @@ from app.db.models.transaction_item import TransactionItem
 from app.transactions.repository import (
     add_grouped_manual_transaction,
     apply_transaction_update,
+    delete_expired_transaction_batch,
     find_global_category,
     find_ledger_transaction,
+    find_restorable_transaction,
     list_ledger_transactions,
     list_transaction_items,
 )
@@ -148,4 +150,38 @@ def test_apply_transaction_update_adds_and_deletes_items_without_commit() -> Non
     assert created[0].amount_cents == 500
     db.delete.assert_called_once_with(removed_item)
     db.add_all.assert_called_once_with(created)
+    db.commit.assert_not_called()
+
+
+def test_find_restorable_transaction_filters_expired_rows() -> None:
+    """복구 조회는 해당 가계부와 30일 컷오프를 함께 적용한다."""
+    ledger_id, transaction_id = uuid4(), uuid4()
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    db = Mock()
+
+    find_restorable_transaction(db, ledger_id, transaction_id, cutoff)
+
+    statement = db.execute.call_args.kwargs["statement"]
+    sql = str(statement)
+    assert "transactions.deleted_at IS NOT NULL" in sql
+    assert "transactions.deleted_at >" in sql
+    assert set(statement.compile().params.values()) == {ledger_id, transaction_id, cutoff}
+
+
+def test_delete_expired_transaction_batch_removes_items_first() -> None:
+    """만료된 거래 ID만 고르고 품목을 부모보다 먼저 지운다."""
+    transaction_id = uuid4()
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    db = Mock()
+    db.scalars.return_value = [transaction_id]
+
+    result = delete_expired_transaction_batch(db, cutoff, 1000)
+
+    assert result == 1
+    select_statement = db.scalars.call_args.args[0]
+    assert "transactions.deleted_at <=" in str(select_statement)
+    assert "FOR UPDATE" in str(select_statement)
+    statements = [call.args[0] for call in db.execute.call_args_list]
+    assert "DELETE FROM transaction_items" in str(statements[0])
+    assert "DELETE FROM transactions" in str(statements[1])
     db.commit.assert_not_called()

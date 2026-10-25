@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from time import sleep
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -110,3 +111,48 @@ def update_transaction_group(db: Session, ledger_id: UUID, transaction_id: UUID,
     except Exception:
         db.rollback()
         raise
+
+def soft_delete_transaction(db: Session, ledger_id: UUID, transaction_id: UUID) -> None:
+    """가계부의 활성 거래에 삭제 시각을 기록해 일반 조회에서 숨긴다."""
+    transaction = repository.find_ledger_transaction(db, ledger_id=ledger_id, transaction_id=transaction_id)
+    if transaction is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+
+    try:
+        repository.mark_transaction_deleted(db, transaction=transaction, deleted_at=datetime.now(UTC))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+def restore_deleted_transaction_for_admin(db: Session, ledger_id: UUID, transaction_id: UUID) -> None:
+    """관리자 운영 절차에서만 호출해 30일 이내 삭제 거래를 복구한다."""
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    transaction = repository.find_restorable_transaction(db, ledger_id=ledger_id, transaction_id=transaction_id, cutoff=cutoff)
+    if transaction is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restorable transaction not found")
+
+    try:
+        repository.restore_transaction(db, transaction=transaction)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+def purge_expired_transactions(db: Session, batch_size: int = 1000, pause_seconds: float = 0.1) -> int:
+    """30일이 지난 거래와 품목을 묶음별로 삭제하고 각각 commit한다."""
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    total_deleted = 0
+
+    while True:
+        try:
+            deleted_count = repository.delete_expired_transaction_batch(db, cutoff=cutoff, batch_size=batch_size)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        total_deleted += deleted_count
+        if deleted_count < batch_size:
+            return total_deleted
+        sleep(pause_seconds)

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import Mock
 from uuid import UUID, uuid4
 
@@ -378,3 +378,77 @@ def test_update_transaction_adds_item_without_replacing_existing_id(monkeypatch)
     assert apply_update.call_args.kwargs["item_creations"] == [("Apples", category_id, 500)]
     assert apply_update.call_args.kwargs["total_cents"] == 3500
     db.commit.assert_called_once_with()
+
+
+def test_soft_delete_transaction_records_utc_time(monkeypatch) -> None:
+    """거래 삭제는 품목을 지우지 않고 삭제 시각만 기록해 commit한다."""
+    ledger_id = uuid4()
+    transaction = Transaction(id=uuid4(), ledger_id=ledger_id)
+    db = Mock()
+    mark_deleted = Mock()
+    monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
+    monkeypatch.setattr(repository, "mark_transaction_deleted", mark_deleted)
+
+    service.soft_delete_transaction(db, ledger_id, transaction.id)
+
+    assert mark_deleted.call_args.kwargs["transaction"] is transaction
+    assert mark_deleted.call_args.kwargs["deleted_at"].tzinfo == UTC
+    db.commit.assert_called_once_with()
+
+
+def test_restore_transaction_only_within_30_days(monkeypatch) -> None:
+    """관리자 내부 복구는 30일 이내 삭제된 거래만 대상으로 한다."""
+    ledger_id = uuid4()
+    transaction = Transaction(id=uuid4(), ledger_id=ledger_id, deleted_at=datetime.now(UTC) - timedelta(days=1))
+    db = Mock()
+    find_restorable = Mock(return_value=transaction)
+    restore = Mock()
+    monkeypatch.setattr(repository, "find_restorable_transaction", find_restorable)
+    monkeypatch.setattr(repository, "restore_transaction", restore)
+
+    service.restore_deleted_transaction_for_admin(db, ledger_id, transaction.id)
+
+    assert find_restorable.call_args.kwargs["cutoff"].tzinfo == UTC
+    restore.assert_called_once_with(db, transaction=transaction)
+    db.commit.assert_called_once_with()
+
+
+def test_restore_transaction_rejects_expired_or_missing_record(monkeypatch) -> None:
+    """복구 대상이 없으면 삭제 시각을 변경하지 않는다."""
+    restore = Mock()
+    monkeypatch.setattr(repository, "find_restorable_transaction", Mock(return_value=None))
+    monkeypatch.setattr(repository, "restore_transaction", restore)
+
+    with pytest.raises(HTTPException) as raised:
+        service.restore_deleted_transaction_for_admin(Mock(), uuid4(), uuid4())
+
+    assert raised.value.status_code == 404
+    restore.assert_not_called()
+
+
+def test_purge_expired_transactions_commits_each_batch(monkeypatch) -> None:
+    """만료 거래를 묶음별로 commit하고 가득 찬 묶음 뒤에만 쉰다."""
+    db = Mock()
+    delete_batch = Mock(side_effect=[2, 1])
+    pause = Mock()
+    monkeypatch.setattr(repository, "delete_expired_transaction_batch", delete_batch)
+    monkeypatch.setattr(service, "sleep", pause)
+
+    result = service.purge_expired_transactions(db, batch_size=2, pause_seconds=0.1)
+
+    assert result == 3
+    assert db.commit.call_count == 2
+    assert delete_batch.call_args_list[0].kwargs["cutoff"] == delete_batch.call_args_list[1].kwargs["cutoff"]
+    pause.assert_called_once_with(0.1)
+
+
+def test_purge_expired_transactions_rolls_back_failed_batch(monkeypatch) -> None:
+    """영구 삭제 중 오류가 나면 그 묶음만 rollback한다."""
+    db = Mock()
+    monkeypatch.setattr(repository, "delete_expired_transaction_batch", Mock(side_effect=RuntimeError("DB error")))
+
+    with pytest.raises(RuntimeError, match="DB error"):
+        service.purge_expired_transactions(db)
+
+    db.rollback.assert_called_once_with()
+    db.commit.assert_not_called()

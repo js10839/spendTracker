@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db.models.category import Category
@@ -52,6 +52,32 @@ def find_ledger_transaction(db: Session, ledger_id: UUID, transaction_id: UUID) 
     """가계부에 속한 삭제되지 않은 결제를 입력 방식과 무관하게 조회한다."""
     statement = select(Transaction).where(Transaction.id==transaction_id, Transaction.ledger_id==ledger_id, Transaction.deleted_at.is_(None))
     return db.execute(statement=statement).scalar_one_or_none()
+
+def mark_transaction_deleted(db: Session, transaction: Transaction, deleted_at: datetime) -> None:
+    """결제 삭제 시각만 기록하고 품목은 복구를 위해 보관한다."""
+    transaction.deleted_at = deleted_at
+    db.flush()
+
+def find_restorable_transaction(db: Session, ledger_id: UUID, transaction_id: UUID, cutoff: datetime) -> Transaction | None:
+    """해당 가계부에서 30일 보관 기간이 남은 삭제 거래를 조회한다."""
+    statement = select(Transaction).where(Transaction.id==transaction_id, Transaction.ledger_id==ledger_id, Transaction.deleted_at.is_not(None), Transaction.deleted_at > cutoff)
+    return db.execute(statement=statement).scalar_one_or_none()
+
+def restore_transaction(db: Session, transaction: Transaction) -> None:
+    """삭제 시각을 지워 거래와 보관 중인 품목을 다시 조회 가능하게 한다."""
+    transaction.deleted_at = None
+    db.flush()
+
+def delete_expired_transaction_batch(db: Session, cutoff: datetime, batch_size: int) -> int:
+    """30일이 지난 거래를 한 묶음 잠그고 품목부터 영구 삭제한다."""
+    statement = select(Transaction.id).where(Transaction.deleted_at.is_not(None), Transaction.deleted_at <= cutoff).order_by(Transaction.deleted_at, Transaction.id).limit(batch_size).with_for_update()
+    transaction_ids = list(db.scalars(statement))
+    if not transaction_ids:
+        return 0
+
+    db.execute(delete(TransactionItem).where(TransactionItem.transaction_id.in_(transaction_ids)))
+    db.execute(delete(Transaction).where(Transaction.id.in_(transaction_ids)))
+    return len(transaction_ids)
 
 def apply_transaction_update(db: Session, transaction: Transaction, payment_method_id: UUID, merchant: str | None, transacted_at: date, memo: str | None, total_cents: int, tax_cents: int, tip_cents: int, item_updates: list[tuple[TransactionItem, str, UUID, int]], item_creations: list[tuple[str, UUID, int]], item_deletions: list[TransactionItem]) -> list[TransactionItem]:
     """결제와 품목의 추가·수정·삭제를 flush하되 commit은 하지 않는다."""

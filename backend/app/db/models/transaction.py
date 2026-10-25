@@ -6,6 +6,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Text,
     func,
@@ -25,6 +26,7 @@ class Transaction(Base):
             "source IN ('manual', 'receipt_parse')",
             name="ck_transactions_source",
         ),
+        Index("ix_transactions_active_ledger_date", "ledger_id", "transacted_at", postgresql_where=text("deleted_at IS NULL")),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
