@@ -19,6 +19,7 @@ from app.payment_methods.schema import PaymentMethodCreate
         {"name": "Visa", "type": "credit", "color": "#123456"},
         {"name": "Visa", "type": "credit", "closing_day": 32, "color": "#123456"},
         {"name": "Cash", "type": "cash-like", "closing_day": 1, "color": "#123456"},
+        {"name": "Cash", "type": "cash-like", "color": "#123456"},
     ],
 )
 def test_create_schema_rejects_invalid_closing_day(data: dict) -> None:
@@ -162,6 +163,21 @@ def test_repository_lists_only_users_payment_methods() -> None:
 
     assert repository.list_payment_methods(db, user_id) == [payment_method]
     assert db.execute.call_args.args[0].compile().params["user_id_1"] == user_id
+    db.commit.assert_not_called()
+
+
+def test_repository_finds_existing_cash_for_user() -> None:
+    """기본 Cash 중복 생성을 막기 위해 사용자 소유의 현금 항목을 찾는다."""
+    user_id = uuid4()
+    cash = PaymentMethod(id=uuid4(), user_id=user_id, name="Cash", type="cash-like", color="#FCA05A")
+    db = Mock()
+    db.execute.return_value.scalar_one_or_none.return_value = cash
+
+    assert repository.find_cash_payment_method(db, user_id) is cash
+    statement = db.execute.call_args.args[0]
+    assert "payment_methods.user_id =" in str(statement)
+    assert "lower(payment_methods.name) =" in str(statement)
+    assert user_id in statement.compile().params.values()
     db.commit.assert_not_called()
 
 
