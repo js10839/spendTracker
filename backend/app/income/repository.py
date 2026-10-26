@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.income_record import IncomeRecord
@@ -48,6 +48,16 @@ def find_active_income_source(db: Session, ledger_id: UUID, source_id: UUID) -> 
     ).with_for_update()
     return db.scalars(statement).one_or_none()
 
+def find_restorable_income_source(db: Session, ledger_id: UUID, source_id: UUID, cutoff: datetime) -> IncomeSource | None:
+    """해당 가계부에서 삭제 후 30일이 지나지 않은 예정 수입을 찾는다."""
+    statement = select(IncomeSource).where(IncomeSource.id == source_id, IncomeSource.ledger_id == ledger_id, IncomeSource.deleted_at.is_not(None), IncomeSource.deleted_at > cutoff)
+    return db.scalars(statement).one_or_none()
+
+def find_income_source_for_undo(db: Session, ledger_id: UUID, source_id: UUID) -> IncomeSource | None:
+    """확정 취소를 위해 비활성 상태의 일회성 예정 수입도 잠가서 조회한다."""
+    statement = select(IncomeSource).where(IncomeSource.id == source_id, IncomeSource.ledger_id == ledger_id, IncomeSource.deleted_at.is_(None)).with_for_update()
+    return db.scalars(statement).one_or_none()
+
 def update_income_source_state(db: Session, source: IncomeSource, next_expected_date: date, is_active: bool) -> None:
     """확정 결과에 따라 다음 예정일과 활성 상태를 저장한다."""
     source.next_expected_date = next_expected_date
@@ -69,6 +79,11 @@ def update_income_record(db: Session, record: IncomeRecord, amount_cents: int, r
     db.flush()
     return record
 
+def find_restorable_income_record(db: Session, ledger_id: UUID, record_id: UUID, cutoff: datetime) -> IncomeRecord | None:
+    """해당 가계부에서 삭제 후 30일이 지나지 않은 실제 수입을 찾는다."""
+    statement = select(IncomeRecord).where(IncomeRecord.id == record_id, IncomeRecord.ledger_id == ledger_id, IncomeRecord.deleted_at.is_not(None), IncomeRecord.deleted_at > cutoff)
+    return db.scalars(statement).one_or_none()
+
 def update_income_source_details(db: Session, source: IncomeSource, expected_amount_cents: int, frequency: str, reference_date: date, next_expected_date: date, memo: str | None, from_name: str | None, payment_method_id: UUID | None) -> IncomeSource:
     """검증된 예정 수입의 앞으로 적용할 설정을 저장한다."""
     source.expected_amount_cents = expected_amount_cents
@@ -81,17 +96,48 @@ def update_income_source_details(db: Session, source: IncomeSource, expected_amo
     db.flush()
     return source
 
-def find_income_source_for_undo(db: Session, ledger_id: UUID, source_id: UUID) -> IncomeSource | None:
-    """확정 취소를 위해 비활성 상태의 일회성 예정 수입도 잠가서 조회한다."""
-    statement = select(IncomeSource).where(IncomeSource.id == source_id, IncomeSource.ledger_id == ledger_id, IncomeSource.deleted_at.is_(None)).with_for_update()
-    return db.scalars(statement).one_or_none()
-
 def mark_income_record_deleted(db: Session, record: IncomeRecord, deleted_at: datetime) -> None:
     """실제 수입을 복구 가능하도록 삭제 시각만 기록한다."""
     record.deleted_at = deleted_at
+    db.flush()
+
+def restore_income_record(db: Session, record: IncomeRecord) -> None:
+    """실제 수입의 삭제 시각을 지워 다시 조회 가능하게 한다."""
+    record.deleted_at = None
     db.flush()
 
 def mark_income_source_deleted(db: Session, source: IncomeSource, deleted_at: datetime) -> None:
     """예정 수입을 숨기되 연결된 과거 실제 수입은 유지한다."""
     source.deleted_at = deleted_at
     db.flush()
+
+def restore_income_source(db: Session, source: IncomeSource) -> None:
+    """예정 수입의 삭제 시각을 지워 다시 조회 가능하게 한다."""
+    source.deleted_at = None
+    db.flush()
+
+def has_active_income_record_for_occurrence(db: Session, ledger_id: UUID, source_id: UUID, expected_date: date) -> bool:
+    """같은 예정 회차에 이미 표시 중인 실제 수입이 있는지 확인한다."""
+    statement = select(IncomeRecord.id).where(IncomeRecord.ledger_id == ledger_id, IncomeRecord.income_source_id == source_id, IncomeRecord.expected_date == expected_date, IncomeRecord.deleted_at.is_(None)).limit(1)
+    return db.scalar(statement) is not None
+
+def delete_expired_income_record_batch(db: Session, cutoff: datetime, batch_size: int) -> int:
+    """보관 기간이 끝난 실제 수입을 한 묶음 잠가 영구 삭제한다."""
+    statement = select(IncomeRecord.id).where(IncomeRecord.deleted_at.is_not(None), IncomeRecord.deleted_at <= cutoff).order_by(IncomeRecord.deleted_at, IncomeRecord.id).limit(batch_size).with_for_update()
+    record_ids = list(db.scalars(statement))
+    if not record_ids:
+        return 0
+
+    db.execute(delete(IncomeRecord).where(IncomeRecord.id.in_(record_ids)))
+    return len(record_ids)
+
+def delete_expired_income_source_batch(db: Session, cutoff: datetime, batch_size: int) -> int:
+    """만료된 예정 수입의 기록 참조를 해제한 뒤 규칙을 영구 삭제한다."""
+    statement = select(IncomeSource.id).where(IncomeSource.deleted_at.is_not(None), IncomeSource.deleted_at <= cutoff).order_by(IncomeSource.deleted_at, IncomeSource.id).limit(batch_size).with_for_update()
+    source_ids = list(db.scalars(statement))
+    if not source_ids:
+        return 0
+
+    db.execute(update(IncomeRecord).where(IncomeRecord.income_source_id.in_(source_ids)).values(income_source_id=None))
+    db.execute(delete(IncomeSource).where(IncomeSource.id.in_(source_ids)))
+    return len(source_ids)

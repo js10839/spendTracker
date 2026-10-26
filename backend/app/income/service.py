@@ -1,5 +1,6 @@
 from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
+from time import sleep
 from typing import Literal
 from uuid import UUID
 
@@ -185,6 +186,41 @@ def soft_delete_income_plan(db: Session, ledger_id: UUID, source_id: UUID) -> No
         db.rollback()
         raise
 
+def restore_deleted_income_plan_for_admin(db: Session, ledger_id: UUID, source_id: UUID) -> None:
+    """관리자 운영 절차에서 삭제 후 30일 이내인 예정 수입을 복구한다."""
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    source = repository.find_restorable_income_source(db, ledger_id=ledger_id, source_id=source_id, cutoff=cutoff)
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restorable income plan not found")
+
+    try:
+        repository.restore_income_source(db, source=source)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+def restore_deleted_income_record_for_admin(db: Session, ledger_id: UUID, record_id: UUID) -> None:
+    """관리자 운영 절차에서 30일 이내의 실제 수입을 중복 없이 복구한다."""
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    record = repository.find_restorable_income_record(db, ledger_id=ledger_id, record_id=record_id, cutoff=cutoff)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restorable income record not found")
+
+    try:
+        if record.income_source_id is not None and record.expected_date is not None:
+            source = repository.find_income_source_for_undo(db, ledger_id=ledger_id, source_id=record.income_source_id)
+            if source is not None and source.is_active and source.next_expected_date == record.expected_date:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Income occurrence is open")
+            if repository.has_active_income_record_for_occurrence(db, ledger_id=ledger_id, source_id=record.income_source_id, expected_date=record.expected_date):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Income occurrence already confirmed")
+
+        repository.restore_income_record(db, record=record)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
 def undo_income_confirmation(db: Session, ledger_id: UUID, record_id: UUID) -> IncomeSource:
     """방금 확정한 수입 기록을 숨기고 해당 예정 회차를 다시 연다."""
     try:
@@ -212,3 +248,37 @@ def undo_income_confirmation(db: Session, ledger_id: UUID, record_id: UUID) -> I
     except Exception:
         db.rollback()
         raise
+
+def purge_expired_income(db: Session, batch_size: int = 1000, pause_seconds: float = 0.1) -> tuple[int, int]:
+    """30일이 지난 실제 수입과 예정 규칙을 순서대로 묶음 정리한다."""
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    records_deleted = 0
+    sources_deleted = 0
+
+    while True:
+        try:
+            count = repository.delete_expired_income_record_batch(db, cutoff=cutoff, batch_size=batch_size)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        records_deleted += count
+        if count < batch_size:
+            break
+        sleep(pause_seconds)
+
+    while True:
+        try:
+            count = repository.delete_expired_income_source_batch(db, cutoff=cutoff, batch_size=batch_size)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        sources_deleted += count
+        if count < batch_size:
+            break
+        sleep(pause_seconds)
+
+    return records_deleted, sources_deleted
