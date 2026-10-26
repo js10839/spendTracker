@@ -531,7 +531,8 @@ html{scroll-behavior:auto}
 <div class="sec-head"><span class="sec-ico">🗄️</span><h2>데이터 모델</h2></div>
 <p class="lead">지출 결제는 <code>ledger</code>에, 내 지갑의 결제수단은 <code>user</code>에 귀속된다. 카테고리는 전체 공통 목록이며 각 일반 품목이 이를 참조한다. 로그인 credential은 Supabase Auth가 별도로 관리한다. <code>public.users.id = auth.users.id</code>로 연결한다. 금액은 <em>cents 정수</em>로 저장·전송하고 Flutter 화면에서는 USD로 포맷한다(예: 1099 → $10.99, -1000 → -$10.00).</p>
 <p>사용자 bootstrap 시 기본 <code>Cash</code> 결제수단을 한 번 생성한다. Cash는 현금 결제만 뜻하고, 은행 이체로 지출할 때는 별도의 <code>cash-like</code> 결제수단을 지갑에 등록한다. 계좌 사이의 단순 이체는 지출 거래가 아니다.</p>
-<p><strong>현행 구현과 확정 목표를 구분한다.</strong> SQLAlchemy/Alembic에는 <code>income_sources</code>·<code>income_records</code>를 포함한 모델과 결제 헤더 <code>transactions</code> 1건 + 필수 품목 <code>transaction_items</code> 1건 이상 구조가 있다. 수동 결제 생성·기간 조회·품목 추가·수정·제거·거래 soft delete API가 작성됐다. <code>total_cents</code>·Refund 카테고리·활성 거래 부분 인덱스 migration은 DB에 적용됐다(현재 head <code>b84e91d2c673</code>); 인증 의존성을 대체한 실제 DB API 검증에서 생성·조회·수정·삭제가 통과했고 임시 데이터는 롤백했다. 품목 수량은 저장하지 않고 한 줄의 전체 금액을 <code>amount_cents</code>에 저장한다. 영수증 파싱 생성은 미구현이고, 관리자 복구·30일 경과 정리는 내부 코드만 있어 운영 연결 전이다. <code>receipts</code>·<code>categorization_rules</code>·<code>transactions.receipt_id</code>는 Phase 2 계획이며, <code>categories</code>는 공통 목록이다.</p>
+<p><strong>현행 구현과 확정 목표를 구분한다.</strong> SQLAlchemy/Alembic에는 <code>income_sources</code>·<code>income_records</code>를 포함한 모델과 결제 헤더 <code>transactions</code> 1건 + 필수 품목 <code>transaction_items</code> 1건 이상 구조가 있다. 수동 결제 생성·기간 조회·품목 추가·수정·제거·거래 soft delete API가 작성됐다. <code>total_cents</code>·Refund 카테고리·활성 거래 부분 인덱스 migration은 DB에 적용됐다; 인증 의존성을 대체한 실제 DB API 검증에서 생성·조회·수정·삭제가 통과했고 임시 데이터는 롤백했다. 품목 수량은 저장하지 않고 한 줄의 전체 금액을 <code>amount_cents</code>에 저장한다. 영수증 파싱 생성은 미구현이고, 관리자 복구·30일 경과 정리는 내부 코드만 있어 운영 연결 전이다. <code>receipts</code>·<code>categorization_rules</code>·<code>transactions.receipt_id</code>는 Phase 2 계획이며, <code>categories</code>는 공통 목록이다.</p>
+<p>수입은 실제 기록과 예정 규칙의 생성·조회·수정, 입금 확정, 두 종류의 soft delete와 확정 Undo API가 있다. 삭제 시각과 원래 예정일을 추가한 migration까지 DB에 적용됐고 확인된 head는 <code>c2b9befbaace</code>이다. HTTP 경로는 임시 SQLite에서, Service·Repository의 예정 생성·확정·Undo·삭제·관리자 복구 흐름은 임시 프로필·가계부를 이용해 실제 PostgreSQL에서 확인했다. 외부 트랜잭션을 롤백한 후 관련 테이블이 0건임을 확인했다. 실제 JWT를 이용한 수입 API 검증은 아직 하지 않았다. 30일 이내 관리자 복구 함수와 만료 정리 명령을 작성하고 FK 제약을 켠 임시 DB에서 기록 보존을 확인했다. 배포 스케줄러·관리자 운영 절차·달력 통합 표시·알림 실행은 후속 작업이다.</p>
 <div class="demo" style="padding-bottom:18px">
 <div class="demo-tag">현행 거래·품목 관계도 · 영수증 연결은 계획</div>
 <div class="demo-title">테이블 관계에 마우스를 올리면 연결된 테이블이 하이라이트됩니다</div>
@@ -645,16 +646,20 @@ html{scroll-behavior:auto}
 </div>
 </div>
 <div class="ent" data-t="income_source" style="grid-area:i">
-<div class="ent-h hv"><span>💰 income_sources</span><em>반복 Paycheck · 현행 모델</em></div>
+<div class="ent-h hv"><span>💰 income_sources</span><em>일회성·반복 예정 수입</em></div>
 <div class="ent-b">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
-<div class="fld"><span>from_name</span><i>text</i></div>
+<div class="fld"><span>income_type</span><i>paycheck|cashback|other</i></div>
+<div class="fld"><span>from_name</span><i>text·null</i></div>
+<div class="fld"><span>payment_method_id <b class="fk">FK</b></span><i>uuid·null</i></div>
 <div class="fld"><span>expected_amount_cents</span><i>int</i></div>
-<div class="fld"><span>frequency</span><i>biweekly|monthly</i></div>
+<div class="fld"><span>memo</span><i>text·null</i></div>
+<div class="fld"><span>frequency</span><i>once|biweekly|monthly</i></div>
 <div class="fld"><span>reference_date</span><i>date·NOT NULL</i></div>
-<div class="fld"><span>next_expected_date</span><i>date·calculated</i></div>
+<div class="fld"><span>next_expected_date</span><i>date·next</i></div>
 <div class="fld"><span>is_active</span><i>bool</i></div>
+<div class="fld"><span>deleted_at</span><i>ts·null</i></div>
 <div class="fld"><span>created_at</span><i>ts</i></div>
 <div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
@@ -670,7 +675,9 @@ html{scroll-behavior:auto}
 <div class="fld"><span>from_name</span><i>text·null</i></div>
 <div class="fld"><span>amount_cents</span><i>int</i></div>
 <div class="fld"><span>received_at</span><i>date</i></div>
+<div class="fld"><span>expected_date</span><i>date·null</i></div>
 <div class="fld"><span>memo</span><i>text·null</i></div>
+<div class="fld"><span>deleted_at</span><i>ts·null</i></div>
 <div class="fld"><span>created_at</span><i>ts</i></div>
 <div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
@@ -708,7 +715,7 @@ html{scroll-behavior:auto}
 <h3 style="margin-top:0">설계 원칙</h3>
 <ul style="margin-bottom:0">
 <li><strong>사이클은 저장하지 않는다</strong> <span class="chip ok">확정</span> — <code>closing_day</code> 하나로 조회 시점에 계산(Demo A = 이 명세). 마감일 변경 시 과거 재계산 불필요. UI 용어는 "결제일"이 아닌 <em>"명세서 마감일"</em>.</li>
-<li><strong>지출과 수입을 분리</strong> — <code>transactions</code>는 지출과 Refund 품목을 저장한다. 반복 Paycheck 규칙은 <code>income_sources</code>, 실제 입금과 Cashback은 <code>income_records</code>에 저장한다. 반복하지 않는 기록은 source 없이 생성한다.</li>
+<li><strong>지출과 수입을 분리</strong> — <code>transactions</code>는 지출과 Refund 품목을 저장한다. 일회성·반복 예정 수입은 <code>income_sources</code>, 실제 입금과 Cashback은 <code>income_records</code>에 저장한다. 예정 없이 입력한 일회성 실제 수입은 source 없이 생성한다.</li>
 <li><strong>Receipt는 파싱 기록 (계획)</strong> — 원본 이미지는 영구 보관하지 않는다. 스캔 결제는 파싱 기록을 선택적으로 참조하고 품목은 <code>transaction_items</code>에 저장한다. 영수증-결제 제약 및 임시 이미지 참조 방식은 Phase 2에서 설계한다.</li>
 <li><strong>인증 정보는 Auth에 격리</strong> — 비밀번호·identity·session은 Supabase Auth가 관리하고 <code>public.users</code>에는 앱 프로필만 저장.</li>
 <li><strong>카운터 컬럼을 두지 않는다</strong> — 파싱 사용량은 <code>receipts</code> COUNT, 카드 수는 <code>payment_method</code> COUNT로 파생. 카운터는 동기화 버그의 원천. <span class="chip open">게이팅 수치는 미확정</span></li>
@@ -717,7 +724,9 @@ html{scroll-behavior:auto}
 
 <div class="callout blue">
 <div class="co-title">💰 Income 규칙</div>
-<strong>Paycheck · Cashback · Other</strong> 세 유형을 사용한다. Paycheck는 금액·From·날짜·메모와 선택적 Repeats를 받으며, Repeats가 Every 2 weeks 또는 Monthly일 때만 <code>income_sources</code>를 만든다. <code>frequency + reference_date</code>로 FastAPI가 <code>next_expected_date</code>를 계산하지만, 예상 날짜만으로 실제 입금 기록을 자동 생성하지 않는다. Other는 금액·날짜·메모만 받는다.
+<strong>Paycheck · Cashback · Other</strong> 세 유형을 사용한다. 실제 입금을 바로 기록할 수도 있고, <code>income_sources</code>에 일회성·반복 예정 수입을 먼저 저장할 수도 있다. Paycheck의 반복은 격주·월간이며 Cashback·Other 예정 수입은 일회성이다. 예정일만으로 실제 입금을 자동 생성하지 않고 사용자의 확정으로 <code>income_records</code>를 만든다. Other는 금액·날짜·메모만 받는다.
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">실제 수입 수정은 해당 기록의 금액·입금일·메모와 유형별 입력값만 바꾼다. 활성 예정 수입 수정은 앞으로 적용할 예상 금액·예정일·반복 주기를 바꾸며 과거 확정 기록은 유지한다. 예정일이나 주기를 바꿀 때만 반복 기준일을 새로 잡는다.</div>
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">일반 DELETE는 실제 기록 또는 활성 예정 항목의 <code>deleted_at</code>을 기록해 조회에서 숨긴다. 실제 기록만 삭제하면 예정 상태는 바뀌지 않고, 예정을 삭제해도 과거 실제 기록은 남는다. 확정 직후 Undo는 별도 <code>POST /income-records/{record_id}/undo-confirmation</code>으로 실제 기록을 숨기고 원래 예정일을 다시 연다. 다음 회차가 이미 진행됐거나 예정 규칙이 바뀌었다면 거부한다. 관리자 내부 함수는 30일 이내 삭제 수입을 복구하되 열린 회차·재확정 회차의 중복 기록 복구를 막는다. 정리 명령은 만료 기록과 규칙을 순서대로 영구 삭제하고 남은 기록의 규칙 FK를 해제한다. 배포 스케줄러와 관리자 운영 절차는 미연결이다.</div>
 <div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">Cashback은 금액·Applied to(등록 결제수단)·날짜·메모를 받으며 해당 결제수단이 현재 사용자 소유인지 확인한다. Refund는 Income 입력에서 제외하고 공통 지출 카테고리로 제공한다.</div>
 <div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">신용카드 Cashback은 <code>received_at</code>이 속한 사이클의 순 청구 예상액에서 차감한다. Refund 품목은 음수로 저장하며 거래의 <code>transacted_at</code>이 속한 사이클에서 지출을 차감한다. 원래 구매 거래는 수정하지 않는다. 과거 <code>income_records</code>의 Refund 행은 자동 변환하지 않는다.</div>
 <div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">알림 시간은 사용자별 설정으로 저장하지 않고 앱 정책으로 고정한다. Flutter가 <code>next_expected_date</code>를 받아 정해진 시간에 local notification을 예약하며 MVP에서는 별도 notification table을 만들지 않는다.</div>
@@ -1206,7 +1215,7 @@ const RELS=[
 ['transaction','ledger'],['transaction','payment_method'],['transaction','receipt'],
 ['transaction_item','transaction'],['transaction_item','category'],
 ['categorization_rule','ledger'],['categorization_rule','category'],
-['income_source','ledger'],['income_record','ledger'],['income_record','income_source'],['income_record','payment_method']
+['income_source','ledger'],['income_source','payment_method'],['income_record','ledger'],['income_record','income_source'],['income_record','payment_method']
 ];
 function erdDraw(){
 if(!erd||getComputedStyle(erdSvg).display==='none')return;
