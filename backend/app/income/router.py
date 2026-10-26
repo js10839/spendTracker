@@ -11,8 +11,10 @@ from app.income.schema import (
     IncomePlanConfirm,
     IncomePlanCreate,
     IncomePlanRead,
+    IncomePlanUpdate,
     IncomeRecordCreate,
     IncomeRecordRead,
+    IncomeRecordUpdate,
 )
 from app.income.service import (
     confirm_income_plan,
@@ -20,6 +22,8 @@ from app.income.service import (
     create_income_record,
     list_ledger_income_records,
     list_ledger_income_sources,
+    update_ledger_income_plan,
+    update_ledger_income_record,
 )
 from app.ledgers.dependencies import get_user_ledger
 
@@ -54,3 +58,15 @@ def confirm_planned_income(source_id: UUID, data: IncomePlanConfirm, ledger: Ann
     """접근 가능한 가계부의 예정 입금을 실제 수입으로 확정한다."""
     record = confirm_income_plan(db, ledger_id=ledger.id, source_id=source_id, data=data)
     return IncomeRecordRead.model_validate(record)
+
+@router.put("/income-records/{record_id}", response_model=IncomeRecordRead)
+def edit_income_record(record_id: UUID, data: IncomeRecordUpdate, ledger: Annotated[Ledger, Depends(get_user_ledger)], user_id: Annotated[UUID, Depends(get_current_user_id)], db: Annotated[Session, Depends(get_db)]) -> IncomeRecordRead:
+    """가계부 접근 권한을 확인한 뒤 실제 수입 기록을 수정한다."""
+    record = update_ledger_income_record(db, ledger_id=ledger.id, user_id=user_id, record_id=record_id, data=data)
+    return IncomeRecordRead.model_validate(record)
+
+@router.put("/income-plans/{source_id}", response_model=IncomePlanRead)
+def edit_income_plan(source_id: UUID, data: IncomePlanUpdate, ledger: Annotated[Ledger, Depends(get_user_ledger)], user_id: Annotated[UUID, Depends(get_current_user_id)], db: Annotated[Session, Depends(get_db)]) -> IncomePlanRead:
+    """가계부 접근 권한을 확인한 뒤 활성 예정 수입의 설정을 수정한다."""
+    source = update_ledger_income_plan(db, ledger_id=ledger.id, user_id=user_id, source_id=source_id, data=data)
+    return IncomePlanRead.model_validate(source)

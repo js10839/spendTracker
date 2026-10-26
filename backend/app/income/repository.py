@@ -52,3 +52,30 @@ def update_income_source_state(db: Session, source: IncomeSource, next_expected_
     source.next_expected_date = next_expected_date
     source.is_active = is_active
     db.flush()
+
+def find_income_record(db: Session, ledger_id: UUID, record_id: UUID) -> IncomeRecord | None:
+    """해당 가계부에 속한 실제 수입 기록을 찾는다."""
+    statement = select(IncomeRecord).where(IncomeRecord.id == record_id, IncomeRecord.ledger_id == ledger_id, IncomeRecord.deleted_at.is_(None))
+    return db.scalars(statement).one_or_none()
+
+def update_income_record(db: Session, record: IncomeRecord, amount_cents: int, received_at: date, memo: str | None, from_name: str | None, payment_method_id: UUID | None) -> IncomeRecord:
+    """검증된 실제 입금값을 저장하되 연결된 예정 규칙은 유지한다."""
+    record.amount_cents = amount_cents
+    record.received_at = received_at
+    record.memo = memo
+    record.from_name = from_name
+    record.payment_method_id = payment_method_id
+    db.flush()
+    return record
+
+def update_income_source_details(db: Session, source: IncomeSource, expected_amount_cents: int, frequency: str, reference_date: date, next_expected_date: date, memo: str | None, from_name: str | None, payment_method_id: UUID | None) -> IncomeSource:
+    """검증된 예정 수입의 앞으로 적용할 설정을 저장한다."""
+    source.expected_amount_cents = expected_amount_cents
+    source.frequency = frequency
+    source.reference_date = reference_date
+    source.next_expected_date = next_expected_date
+    source.memo = memo
+    source.from_name = from_name
+    source.payment_method_id = payment_method_id
+    db.flush()
+    return source

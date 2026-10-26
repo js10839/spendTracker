@@ -9,7 +9,12 @@ from app.db.models.income_record import IncomeRecord
 from app.db.models.income_source import IncomeSource
 from app.db.models.payment_method import PaymentMethod
 from app.income import repository, service
-from app.income.schema import IncomePlanConfirm, IncomeRecordCreate
+from app.income.schema import (
+    IncomePlanConfirm,
+    IncomePlanUpdate,
+    IncomeRecordCreate,
+    IncomeRecordUpdate,
+)
 
 
 @pytest.mark.parametrize(("reference_date", "frequency", "expected"), [(date(2026, 10, 23), "biweekly", date(2026, 11, 6)), (date(2026, 1, 31), "monthly", date(2026, 2, 28)), (date(2026, 12, 31), "monthly", date(2027, 1, 31))])
@@ -129,3 +134,42 @@ def test_confirm_monthly_income_keeps_original_day_and_actual_amount(monkeypatch
     assert update_source.call_args.kwargs["next_expected_date"] == date(2026, 3, 31)
     assert update_source.call_args.kwargs["is_active"] is True
     db.commit.assert_called_once()
+
+@pytest.mark.parametrize(("expected_date", "frequency", "reference_date"), [(date(2026, 2, 28), "monthly", date(2026, 1, 31)), (date(2026, 3, 5), "monthly", date(2026, 3, 5)), (date(2026, 2, 28), "biweekly", date(2026, 2, 28))])
+def test_update_income_plan_preserves_or_resets_schedule_anchor(monkeypatch, expected_date, frequency, reference_date) -> None:
+    """금액만 바꾸면 월말 기준일을 유지하고 날짜·주기를 바꾸면 새 기준일을 쓴다."""
+    db = Mock()
+    ledger_id, user_id, source_id = uuid4(), uuid4(), uuid4()
+    source = IncomeSource(id=source_id, ledger_id=ledger_id, income_type="paycheck", from_name="Company", expected_amount_cents=20000, frequency="monthly", reference_date=date(2026, 1, 31), next_expected_date=date(2026, 2, 28), is_active=True)
+    monkeypatch.setattr(repository, "find_active_income_source", Mock(return_value=source))
+    update_source = Mock(return_value=source)
+    monkeypatch.setattr(repository, "update_income_source_details", update_source)
+    data = IncomePlanUpdate(expected_amount_cents=22000, expected_date=expected_date, frequency=frequency, from_name="Company")
+
+    assert service.update_ledger_income_plan(db, ledger_id, user_id, source_id, data) is source
+
+    assert update_source.call_args.kwargs["reference_date"] == reference_date
+    assert update_source.call_args.kwargs["next_expected_date"] == expected_date
+    db.commit.assert_called_once()
+
+
+def test_update_cashback_record_rejects_unowned_payment_method(monkeypatch) -> None:
+    """Cashback 기록 수정으로 다른 사용자의 결제수단을 연결하지 못한다."""
+    db = Mock()
+    ledger_id, user_id, record_id, payment_method_id = uuid4(), uuid4(), uuid4(), uuid4()
+    record = IncomeRecord(id=record_id, ledger_id=ledger_id, income_type="cashback", amount_cents=500, received_at=date(2026, 10, 23))
+    monkeypatch.setattr(repository, "find_income_record", Mock(return_value=record))
+    find_method = Mock(return_value=None)
+    update_record = Mock()
+    monkeypatch.setattr(repository, "find_user_payment_method", find_method)
+    monkeypatch.setattr(repository, "update_income_record", update_record)
+    data = IncomeRecordUpdate(amount_cents=600, received_at=date(2026, 10, 24), applied_to=payment_method_id)
+
+    with pytest.raises(HTTPException) as raised:
+        service.update_ledger_income_record(db, ledger_id, user_id, record_id, data)
+
+    assert raised.value.status_code == 404
+    find_method.assert_called_once_with(db, payment_method_id=payment_method_id, user_id=user_id)
+    update_record.assert_not_called()
+    db.rollback.assert_called_once()
+    db.commit.assert_not_called()

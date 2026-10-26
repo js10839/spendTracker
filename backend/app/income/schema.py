@@ -98,3 +98,22 @@ class IncomePlanConfirm(BaseModel):
     expected_date: date
     received_at: date
     amount_cents: int | None = Field(default=None, gt=0)
+
+class IncomeRecordUpdate(BaseModel):
+    """기존 수입 유형을 유지하며 실제 입금 내용을 수정할 입력값을 받는다."""
+
+    amount_cents: int = Field(gt=0)
+    received_at: date
+    memo: str | None = None
+    from_name: str | None = Field(default=None, min_length=1)
+    applied_to: UUID | None = None
+
+class IncomePlanUpdate(BaseModel):
+    """활성 예정 수입의 다음 일정과 입력값을 수정할 때 받는다."""
+
+    expected_amount_cents: int = Field(gt=0)
+    expected_date: date
+    frequency: Literal["once", "biweekly", "monthly"]
+    memo: str | None = None
+    from_name: str | None = Field(default=None, min_length=1)
+    applied_to: UUID | None = None

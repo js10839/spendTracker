@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 from app.db.models.income_record import IncomeRecord
 from app.db.models.income_source import IncomeSource
 from app.income import repository
-from app.income.schema import IncomePlanConfirm, IncomePlanCreate, IncomeRecordCreate
+from app.income.schema import (
+    IncomePlanConfirm,
+    IncomePlanCreate,
+    IncomePlanUpdate,
+    IncomeRecordCreate,
+    IncomeRecordUpdate,
+)
 
 
 def calculate_next_expected_date(reference_date: date, frequency: Literal["biweekly", "monthly"], anchor_day: int | None = None) -> date:
@@ -92,3 +98,63 @@ def list_ledger_income_sources(db: Session, ledger_id: UUID) -> list[IncomeSourc
 def list_ledger_income_records(db: Session, ledger_id: UUID) -> list[IncomeRecord]:
     """가계부에 실제로 입금된 수입 기록을 조회한다."""
     return repository.list_income_records(db, ledger_id=ledger_id)
+
+def update_ledger_income_record(db: Session, ledger_id: UUID, user_id: UUID, record_id: UUID, data: IncomeRecordUpdate) -> IncomeRecord:
+    """기존 수입 유형과 예정 규칙을 유지하며 실제 입금 내용을 수정한다."""
+    try:
+        record = repository.find_income_record(db, ledger_id=ledger_id, record_id=record_id)
+        if record is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Income record not found")
+
+        payment_method_id = None
+        if record.income_type == "paycheck":
+            if data.from_name is None or data.applied_to is not None:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Paycheck requires From and cannot have Applied to")
+        elif record.income_type == "cashback":
+            if data.from_name is not None or data.applied_to is None:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cashback requires a registered payment method")
+            method = repository.find_user_payment_method(db, payment_method_id=data.applied_to, user_id=user_id)
+            if method is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment method not found")
+            payment_method_id = method.id
+        elif data.from_name is not None or data.applied_to is not None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Other accepts only amount, date, and note")
+
+        updated = repository.update_income_record(db, record=record, amount_cents=data.amount_cents, received_at=data.received_at, memo=data.memo, from_name=data.from_name, payment_method_id=payment_method_id)
+        db.commit()
+        return updated
+    except Exception:
+        db.rollback()
+        raise
+
+def update_ledger_income_plan(db: Session, ledger_id: UUID, user_id: UUID, source_id: UUID, data: IncomePlanUpdate) -> IncomeSource:
+    """활성 예정 수입의 앞으로 적용할 금액과 일정을 수정한다."""
+    try:
+        source = repository.find_active_income_source(db, ledger_id=ledger_id, source_id=source_id)
+        if source is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Income plan not found")
+
+        payment_method_id = None
+        if source.income_type == "paycheck":
+            if data.from_name is None or data.applied_to is not None:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Paycheck requires From and cannot have Applied to")
+        elif source.income_type == "cashback":
+            if data.from_name is not None or data.applied_to is None or data.frequency != "once":
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cashback requires a payment method and cannot repeat")
+            method = repository.find_user_payment_method(db, payment_method_id=data.applied_to, user_id=user_id)
+            if method is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment method not found")
+            payment_method_id = method.id
+        elif data.from_name is not None or data.applied_to is not None or data.frequency != "once":
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Other accepts only amount, date, and note")
+
+        reference_date = source.reference_date
+        if data.expected_date != source.next_expected_date or data.frequency != source.frequency:
+            reference_date = data.expected_date
+
+        updated = repository.update_income_source_details(db, source=source, expected_amount_cents=data.expected_amount_cents, frequency=data.frequency, reference_date=reference_date, next_expected_date=data.expected_date, memo=data.memo, from_name=data.from_name, payment_method_id=payment_method_id)
+        db.commit()
+        return updated
+    except Exception:
+        db.rollback()
+        raise
