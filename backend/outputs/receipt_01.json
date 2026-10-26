@@ -1,0 +1,45 @@
+{
+  "receipt": {
+    "merchant": "MET FRESH MARKET",
+    "date": "2026-10-01",
+    "currency": "USD",
+    "items": [
+      {
+        "name": "COCA COLA ZERO COLA 2L",
+        "price": "2.50",
+        "category": "Food"
+      },
+      {
+        "name": "BOTTLE DEPOSIT FEE @ 5",
+        "price": "0.05",
+        "category": "Food"
+      },
+      {
+        "name": "COCA COLA CLASSIC COLA 3",
+        "price": "7.50",
+        "category": "Food"
+      },
+      {
+        "name": "BOTTLE DEPOSIT FEE @ 5 3 @ 0.05 EA",
+        "price": "0.15",
+        "category": "Food"
+      },
+      {
+        "name": "BOTTLE RETURN",
+        "price": "-0.55",
+        "category": "Food"
+      }
+    ],
+    "tax": "0.88",
+    "tip": "0",
+    "total": "10.53"
+  },
+  "validation": {
+    "status": "pass",
+    "calculated_total": "10.53",
+    "receipt_total": "10.53",
+    "difference": "0.00",
+    "item_count": 5,
+    "issues": []
+  }
+}
