@@ -7,6 +7,7 @@ from pathlib import Path
 
 from openai import OpenAI
 from PIL import Image, ImageOps, UnidentifiedImageError
+
 from .prompts import SYSTEM_PROMPT
 from .schemas import ReceiptData
 
