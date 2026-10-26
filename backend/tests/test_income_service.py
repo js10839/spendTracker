@@ -173,3 +173,63 @@ def test_update_cashback_record_rejects_unowned_payment_method(monkeypatch) -> N
     update_record.assert_not_called()
     db.rollback.assert_called_once()
     db.commit.assert_not_called()
+
+@pytest.mark.parametrize(("frequency", "is_active", "next_expected_date"), [("once", False, date(2026, 10, 25)), ("monthly", True, date(2026, 11, 25))])
+def test_undo_income_confirmation_reopens_original_occurrence(monkeypatch, frequency, is_active, next_expected_date) -> None:
+    """일회성·반복 입금 확정 취소는 실제 기록을 숨기고 원래 예정일을 복원한다."""
+    db = Mock()
+    ledger_id, source_id, record_id = uuid4(), uuid4(), uuid4()
+    record = IncomeRecord(id=record_id, ledger_id=ledger_id, income_source_id=source_id, expected_date=date(2026, 10, 25))
+    source = IncomeSource(id=source_id, ledger_id=ledger_id, frequency=frequency, reference_date=date(2026, 10, 25), next_expected_date=next_expected_date, is_active=is_active)
+    monkeypatch.setattr(repository, "find_income_record", Mock(return_value=record))
+    monkeypatch.setattr(repository, "find_income_source_for_undo", Mock(return_value=source))
+    mark_deleted = Mock()
+    update_source = Mock()
+    monkeypatch.setattr(repository, "mark_income_record_deleted", mark_deleted)
+    monkeypatch.setattr(repository, "update_income_source_state", update_source)
+
+    assert service.undo_income_confirmation(db, ledger_id, record_id) is source
+
+    assert mark_deleted.call_args.kwargs["record"] is record
+    assert mark_deleted.call_args.kwargs["deleted_at"].tzinfo is not None
+    update_source.assert_called_once_with(db, source=source, next_expected_date=date(2026, 10, 25), is_active=True)
+    db.commit.assert_called_once_with()
+    db.rollback.assert_not_called()
+
+
+def test_undo_income_confirmation_rejects_changed_plan(monkeypatch) -> None:
+    """다음 회차가 이미 진행된 경우 이전 확정의 Undo가 예정 상태를 되감지 않는다."""
+    db = Mock()
+    ledger_id, source_id, record_id = uuid4(), uuid4(), uuid4()
+    record = IncomeRecord(id=record_id, ledger_id=ledger_id, income_source_id=source_id, expected_date=date(2026, 10, 25))
+    source = IncomeSource(id=source_id, ledger_id=ledger_id, frequency="monthly", reference_date=date(2026, 10, 25), next_expected_date=date(2026, 12, 25), is_active=True)
+    monkeypatch.setattr(repository, "find_income_record", Mock(return_value=record))
+    monkeypatch.setattr(repository, "find_income_source_for_undo", Mock(return_value=source))
+    mark_deleted = Mock()
+    monkeypatch.setattr(repository, "mark_income_record_deleted", mark_deleted)
+
+    with pytest.raises(HTTPException) as raised:
+        service.undo_income_confirmation(db, ledger_id, record_id)
+
+    assert raised.value.status_code == 409
+    mark_deleted.assert_not_called()
+    db.commit.assert_not_called()
+    db.rollback.assert_called_once_with()
+
+
+def test_soft_delete_income_record_does_not_change_plan(monkeypatch) -> None:
+    """일반 기록 삭제는 계획의 예정 회차를 다시 열지 않는다."""
+    db = Mock()
+    ledger_id, record_id = uuid4(), uuid4()
+    record = IncomeRecord(id=record_id, ledger_id=ledger_id, income_source_id=uuid4())
+    monkeypatch.setattr(repository, "find_income_record", Mock(return_value=record))
+    mark_deleted = Mock()
+    update_source = Mock()
+    monkeypatch.setattr(repository, "mark_income_record_deleted", mark_deleted)
+    monkeypatch.setattr(repository, "update_income_source_state", update_source)
+
+    service.soft_delete_income_record(db, ledger_id, record_id)
+
+    assert mark_deleted.call_args.kwargs["record"] is record
+    update_source.assert_not_called()
+    db.commit.assert_called_once_with()

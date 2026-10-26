@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -21,21 +21,21 @@ def add_income_source(db: Session, ledger_id: UUID, from_name: str | None, expec
     db.flush()
     return source
 
-def add_income_record(db: Session, ledger_id: UUID, income_source_id: UUID | None, payment_method_id: UUID | None, income_type: str, from_name: str | None, amount_cents: int, received_at: date, memo: str | None) -> IncomeRecord:
-    """실제로 받은 금액을 기록하고 생성된 ID를 확보한다."""
-    record = IncomeRecord(ledger_id=ledger_id, income_source_id=income_source_id, payment_method_id=payment_method_id, income_type=income_type, from_name=from_name, amount_cents=amount_cents, received_at=received_at, memo=memo)
+def add_income_record(db: Session, ledger_id: UUID, income_source_id: UUID | None, payment_method_id: UUID | None, income_type: str, from_name: str | None, amount_cents: int, received_at: date, memo: str | None, expected_date: date | None = None) -> IncomeRecord:
+    """실제 수입을 저장하고 예정 수입에서 확정했다면 원래 예정일도 보존한다."""
+    record = IncomeRecord(ledger_id=ledger_id, income_source_id=income_source_id, payment_method_id=payment_method_id, income_type=income_type, from_name=from_name, amount_cents=amount_cents, received_at=received_at, memo=memo, expected_date=expected_date)
     db.add(record)
     db.flush()
     return record
 
 def list_income_records(db: Session, ledger_id: UUID) -> list[IncomeRecord]:
     """가계부의 실제 수입 기록을 입금일 최신순으로 조회한다."""
-    statement = select(IncomeRecord).where(IncomeRecord.ledger_id==ledger_id).order_by(IncomeRecord.received_at.desc(), IncomeRecord.created_at.desc())
+    statement = select(IncomeRecord).where(IncomeRecord.ledger_id==ledger_id, IncomeRecord.deleted_at.is_(None)).order_by(IncomeRecord.received_at.desc(), IncomeRecord.created_at.desc())
     return list(db.scalars(statement=statement))
 
 def list_active_income_sources(db: Session, ledger_id: UUID) -> list[IncomeSource]:
     """가계부의 입금 예정 항목을 지난 예정일을 포함해 날짜순으로 조회한다."""
-    statement = select(IncomeSource).where(IncomeSource.ledger_id == ledger_id, IncomeSource.is_active.is_(True)).order_by(IncomeSource.next_expected_date, IncomeSource.id)
+    statement = select(IncomeSource).where(IncomeSource.ledger_id == ledger_id, IncomeSource.is_active.is_(True), IncomeSource.deleted_at.is_(None)).order_by(IncomeSource.next_expected_date, IncomeSource.id)
     return list(db.scalars(statement))
 
 def find_active_income_source(db: Session, ledger_id: UUID, source_id: UUID) -> IncomeSource | None:
@@ -44,6 +44,7 @@ def find_active_income_source(db: Session, ledger_id: UUID, source_id: UUID) -> 
         IncomeSource.id == source_id,
         IncomeSource.ledger_id == ledger_id,
         IncomeSource.is_active.is_(True),
+        IncomeSource.deleted_at.is_(None),
     ).with_for_update()
     return db.scalars(statement).one_or_none()
 
@@ -79,3 +80,18 @@ def update_income_source_details(db: Session, source: IncomeSource, expected_amo
     source.payment_method_id = payment_method_id
     db.flush()
     return source
+
+def find_income_source_for_undo(db: Session, ledger_id: UUID, source_id: UUID) -> IncomeSource | None:
+    """확정 취소를 위해 비활성 상태의 일회성 예정 수입도 잠가서 조회한다."""
+    statement = select(IncomeSource).where(IncomeSource.id == source_id, IncomeSource.ledger_id == ledger_id, IncomeSource.deleted_at.is_(None)).with_for_update()
+    return db.scalars(statement).one_or_none()
+
+def mark_income_record_deleted(db: Session, record: IncomeRecord, deleted_at: datetime) -> None:
+    """실제 수입을 복구 가능하도록 삭제 시각만 기록한다."""
+    record.deleted_at = deleted_at
+    db.flush()
+
+def mark_income_source_deleted(db: Session, source: IncomeSource, deleted_at: datetime) -> None:
+    """예정 수입을 숨기되 연결된 과거 실제 수입은 유지한다."""
+    source.deleted_at = deleted_at
+    db.flush()

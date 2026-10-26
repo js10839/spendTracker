@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -38,7 +38,7 @@ def confirm_income_plan(db: Session, ledger_id: UUID, source_id: UUID, data: Inc
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Income plan date has changed")
 
         amount_cents = data.amount_cents if data.amount_cents is not None else source.expected_amount_cents
-        record = repository.add_income_record(db, ledger_id=ledger_id, income_source_id=source.id, payment_method_id=source.payment_method_id, income_type=source.income_type, from_name=source.from_name, amount_cents=amount_cents, received_at=data.received_at, memo=source.memo)
+        record = repository.add_income_record(db, ledger_id=ledger_id, income_source_id=source.id, payment_method_id=source.payment_method_id, income_type=source.income_type, from_name=source.from_name, amount_cents=amount_cents, received_at=data.received_at, memo=source.memo, expected_date=data.expected_date)
 
         is_active = source.frequency != "once"
         next_expected_date = source.next_expected_date
@@ -155,6 +155,60 @@ def update_ledger_income_plan(db: Session, ledger_id: UUID, user_id: UUID, sourc
         updated = repository.update_income_source_details(db, source=source, expected_amount_cents=data.expected_amount_cents, frequency=data.frequency, reference_date=reference_date, next_expected_date=data.expected_date, memo=data.memo, from_name=data.from_name, payment_method_id=payment_method_id)
         db.commit()
         return updated
+    except Exception:
+        db.rollback()
+        raise
+
+def soft_delete_income_record(db: Session, ledger_id: UUID, record_id: UUID) -> None:
+    """실제 수입을 숨기고 30일 복구를 위해 삭제 시각을 남긴다."""
+    record = repository.find_income_record(db, ledger_id=ledger_id, record_id=record_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Income record not found")
+
+    try:
+        repository.mark_income_record_deleted(db, record=record, deleted_at=datetime.now(UTC))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+def soft_delete_income_plan(db: Session, ledger_id: UUID, source_id: UUID) -> None:
+    """예정 수입을 숨기고 이미 확정된 실제 기록은 유지한다."""
+    source = repository.find_active_income_source(db, ledger_id=ledger_id, source_id=source_id)
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Income plan not found")
+
+    try:
+        repository.mark_income_source_deleted(db, source=source, deleted_at=datetime.now(UTC))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+def undo_income_confirmation(db: Session, ledger_id: UUID, record_id: UUID) -> IncomeSource:
+    """방금 확정한 수입 기록을 숨기고 해당 예정 회차를 다시 연다."""
+    try:
+        record = repository.find_income_record(db, ledger_id=ledger_id, record_id=record_id)
+        if record is None or record.income_source_id is None or record.expected_date is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Confirmed income record not found")
+
+        source = repository.find_income_source_for_undo(db, ledger_id=ledger_id, source_id=record.income_source_id)
+        if source is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Income plan not found")
+
+        if source.frequency == "once":
+            can_undo = not source.is_active and source.next_expected_date == record.expected_date
+        else:
+            next_date = calculate_next_expected_date(record.expected_date, source.frequency, anchor_day=source.reference_date.day)
+            can_undo = source.is_active and source.next_expected_date == next_date
+
+        if not can_undo:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Income plan has changed since confirmation")
+
+        repository.mark_income_record_deleted(db, record=record, deleted_at=datetime.now(UTC))
+        repository.update_income_source_state(db, source=source, next_expected_date=record.expected_date, is_active=True)
+        db.commit()
+        return source
     except Exception:
         db.rollback()
         raise
