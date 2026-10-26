@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_router.dart';
+
 // Flutter 앱의 진입점이다.
 void main() {
   runApp(const SpendingTrackerApp());
@@ -10,10 +12,10 @@ class SpendingTrackerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 기능 화면이 정해지기 전에는 실행 확인을 위한 최소 홈 화면만 제공한다.
-    return const MaterialApp(
+    // 실제 페이지가 정해지기 전까지 기존 첫 화면을 라우터의 홈으로 사용한다.
+    return MaterialApp.router(
       title: 'Spending Tracker',
-      home: Scaffold(body: Center(child: Text('Spending Tracker'))),
+      routerConfig: appRouter,
     );
   }
 }

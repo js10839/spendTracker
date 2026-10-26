@@ -8,7 +8,7 @@ from app.db.base import Base
 
 
 class PaymentMethod(Base):
-    """신용카드 또는 현금성 결제수단과 선택적 마감일을 저장한다."""
+    """사용자 지갑의 신용카드 또는 현금성 결제수단을 저장한다."""
 
     __tablename__ = "payment_methods"
     __table_args__ = (
@@ -20,7 +20,7 @@ class PaymentMethod(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    ledger_id: Mapped[UUID] = mapped_column(ForeignKey("ledgers.id"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(Text, nullable=False)
     closing_day: Mapped[int | None] = mapped_column(Integer)
