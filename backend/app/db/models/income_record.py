@@ -8,7 +8,7 @@ from app.db.base import Base
 
 
 class IncomeRecord(Base):
-    """실제 수입과 카드에 적용되는 Cashback을 기록한다."""
+    """실제 수입과 Cashback을 저장하고 원래 예정일·삭제 시각을 보관한다."""
 
     __tablename__ = "income_records"
     __table_args__ = (CheckConstraint("amount_cents>0", name="ck_income_records_positive_amount"),)
@@ -24,4 +24,6 @@ class IncomeRecord(Base):
     memo: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
+    # 예정 수입을 확정해 만든 기록의 원래 예정일이다. 직접 입력한 수입은 NULL이다.
+    expected_date: Mapped[date | None] = mapped_column(Date)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

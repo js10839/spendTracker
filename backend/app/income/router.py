@@ -11,8 +11,10 @@ from app.income.schema import (
     IncomePlanConfirm,
     IncomePlanCreate,
     IncomePlanRead,
+    IncomePlanUpdate,
     IncomeRecordCreate,
     IncomeRecordRead,
+    IncomeRecordUpdate,
 )
 from app.income.service import (
     confirm_income_plan,
@@ -20,6 +22,11 @@ from app.income.service import (
     create_income_record,
     list_ledger_income_records,
     list_ledger_income_sources,
+    soft_delete_income_plan,
+    soft_delete_income_record,
+    undo_income_confirmation,
+    update_ledger_income_plan,
+    update_ledger_income_record,
 )
 from app.ledgers.dependencies import get_user_ledger
 
@@ -36,6 +43,12 @@ def get_income_records(ledger: Annotated[Ledger, Depends(get_user_ledger)], db: 
     """접근 가능한 가계부에서 실제로 받은 수입 기록을 반환한다."""
     records = list_ledger_income_records(db, ledger_id=ledger.id)
     return [IncomeRecordRead.model_validate(record) for record in records]
+
+@router.put("/income-records/{record_id}", response_model=IncomeRecordRead)
+def edit_income_record(record_id: UUID, data: IncomeRecordUpdate, ledger: Annotated[Ledger, Depends(get_user_ledger)], user_id: Annotated[UUID, Depends(get_current_user_id)], db: Annotated[Session, Depends(get_db)]) -> IncomeRecordRead:
+    """가계부 접근 권한을 확인한 뒤 실제 수입 기록을 수정한다."""
+    record = update_ledger_income_record(db, ledger_id=ledger.id, user_id=user_id, record_id=record_id, data=data)
+    return IncomeRecordRead.model_validate(record)
 
 @router.post("/income-plans", status_code=status.HTTP_201_CREATED, response_model=IncomePlanRead)
 def add_income_plan(data: IncomePlanCreate, ledger: Annotated[Ledger, Depends(get_user_ledger)], user_id: Annotated[UUID, Depends(get_current_user_id)], db: Annotated[Session, Depends(get_db)]) -> IncomePlanRead:
@@ -54,3 +67,25 @@ def confirm_planned_income(source_id: UUID, data: IncomePlanConfirm, ledger: Ann
     """접근 가능한 가계부의 예정 입금을 실제 수입으로 확정한다."""
     record = confirm_income_plan(db, ledger_id=ledger.id, source_id=source_id, data=data)
     return IncomeRecordRead.model_validate(record)
+
+@router.put("/income-plans/{source_id}", response_model=IncomePlanRead)
+def edit_income_plan(source_id: UUID, data: IncomePlanUpdate, ledger: Annotated[Ledger, Depends(get_user_ledger)], user_id: Annotated[UUID, Depends(get_current_user_id)], db: Annotated[Session, Depends(get_db)]) -> IncomePlanRead:
+    """가계부 접근 권한을 확인한 뒤 활성 예정 수입의 설정을 수정한다."""
+    source = update_ledger_income_plan(db, ledger_id=ledger.id, user_id=user_id, source_id=source_id, data=data)
+    return IncomePlanRead.model_validate(source)
+
+@router.delete("/income-records/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_income_record(record_id: UUID, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> None:
+    """접근 가능한 가계부의 실제 수입을 soft delete한다."""
+    soft_delete_income_record(db, ledger_id=ledger.id, record_id=record_id)
+
+@router.delete("/income-plans/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_income_plan(source_id: UUID, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> None:
+    """접근 가능한 가계부의 예정 수입을 soft delete한다."""
+    soft_delete_income_plan(db, ledger_id=ledger.id, source_id=source_id)
+
+@router.post("/income-records/{record_id}/undo-confirmation", response_model=IncomePlanRead)
+def undo_planned_income_confirmation(record_id: UUID, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> IncomePlanRead:
+    """접근 가능한 가계부에서 수입 확정을 취소하고 예정 항목을 다시 표시한다."""
+    source = undo_income_confirmation(db, ledger_id=ledger.id, record_id=record_id)
+    return IncomePlanRead.model_validate(source)

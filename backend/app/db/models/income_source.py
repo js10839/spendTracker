@@ -17,7 +17,7 @@ from app.db.base import Base
 
 
 class IncomeSource(Base):
-    """일회성 또는 반복되는 예정 수입을 저장한다."""
+    """일회성 또는 반복 예정 수입과 삭제 시각을 저장한다."""
 
     __tablename__ = "income_sources"
     __table_args__ = (CheckConstraint("expected_amount_cents > 0", name="ck_income_sources_positive_amount"),)
@@ -35,3 +35,4 @@ class IncomeSource(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

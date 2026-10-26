@@ -217,7 +217,7 @@
 
 **현행 구현과 확정 목표를 구분한다**: SQLAlchemy/Alembic에는 `users`, `ledgers`, `ledger_members`, `payment_methods`, `categories`, `transactions`, `transaction_items`, `income_sources`, `income_records`가 있다. 지출은 결제 헤더 `transactions` 1건과 필수 품목 `transaction_items` 1건 이상으로 저장하며, 수동 생성·기간 조회·품목 ID를 유지하는 추가·수정·제거·거래 soft delete API가 작성됐다. `total_cents`·Refund 카테고리·활성 거래 부분 인덱스 migration은 DB에 적용됐다; 인증 의존성을 대체한 실제 DB API 검증에서 거래 생성·조회·수정·삭제가 통과했고 임시 데이터는 롤백했다. 품목의 수량은 저장하지 않고 `amount_cents`에 해당 줄의 전체 금액을 저장한다. 관리자 복구와 30일 경과 정리는 내부 함수·실행 명령까지만 작성됐고 운영 스케줄러는 미연결이다. 영수증 파싱을 통한 생성도 미구현이다. `receipts`, `categorization_rules`, `transactions.receipt_id`는 Phase 2 계획이며, `categories`는 가계부마다 복제하지 않는 공통 목록이다.
 
-수입은 실제 기록과 예정 규칙의 생성·조회, 예정 입금 확정 API가 작성됐다. 예정 수입 확장 migration 두 개가 DB에 적용됐고 확인된 Alembic head는 `d9a45c368ebc`이다. 실제 DB에서 임시 가계부의 예정 수입 생성·확정·실제 기록 조회를 확인한 뒤 테스트 데이터를 롤백했다. 수입 수정·삭제 API, 달력의 예정·확정 수입 통합 표시, 알림 실행은 아직 구현되지 않았다.
+수입은 실제 기록과 예정 규칙의 생성·조회·수정, 예정 입금 확정, 두 종류의 soft delete 및 확정 Undo API가 작성됐다. 삭제 시각과 확정 당시 예정일을 추가한 migration까지 DB에 적용됐고 확인된 Alembic head는 `c2b9befbaace`이다. HTTP 경로는 임시 SQLite에서, Service·Repository의 예정 생성·확정·Undo·삭제·관리자 복구 흐름은 기존 Auth 계정을 참조한 임시 프로필·가계부로 실제 PostgreSQL에서 확인했다. 외부 트랜잭션을 롤백한 후 프로필·가계부·수입 테이블이 모두 0건임을 확인했다. 실제 JWT를 이용한 수입 API 검증은 아직 하지 않았다. 수입의 30일 이내 관리자 복구 함수와 1,000건 단위 만료 정리 명령은 작성됐고, FK 제약을 켠 임시 DB에서 과거 실제 기록 보존을 확인했다. 배포 스케줄러와 관리자 운영 절차, 달력의 예정·확정 수입 통합 표시, 알림 실행은 아직 연결되지 않았다.
 
 **핵심 원칙**
 
@@ -346,6 +346,7 @@ income_sources                     # 일회성·반복 예정 수입
 - reference_date date NOT NULL     # 최초 예정일 또는 기존 반복 규칙의 계산 기준일
 - next_expected_date date NOT NULL # 다음 미확인 예정일
 - is_active bool NOT NULL default true
+- deleted_at timestamp nullable
 - created_at timestamp
 - updated_at timestamp
 
@@ -359,7 +360,9 @@ income_records                     # 실제 수입 기록
 - from_name text nullable          # Paycheck 지급처; 반복 기록은 당시 값 snapshot
 - amount_cents int NOT NULL
 - received_at date NOT NULL
+- expected_date date nullable      # 예정에서 확정한 기록의 원래 예정일; 직접 입력은 NULL
 - memo text nullable
+- deleted_at timestamp nullable
 - created_at timestamp
 - updated_at timestamp
 ```
@@ -378,6 +381,11 @@ income_records                     # 실제 수입 기록
 - **실제 수입 입력**: `POST /ledgers/{ledger_id}/income-records`는 `income_records`에 즉시 기록한다. Paycheck의 Repeats가 `Every 2 weeks` 또는 `Monthly`이면 `income_sources`에도 다음 회차 규칙을 만든다. `Never`이면 반복 규칙을 만들지 않는다.
 - **예정 수입 입력**: `POST /ledgers/{ledger_id}/income-plans`는 실제 입금 기록 없이 `income_sources`를 만든다. Paycheck는 `once`, `biweekly`, `monthly`를 선택할 수 있고 Cashback·Other는 `once`만 허용한다. 요청의 `expected_date`를 최초 `reference_date`와 `next_expected_date`로 저장한다. `frequency`와 `reference_date`는 둘 다 NOT NULL이다.
 - **입금 확정**: `POST /ledgers/{ledger_id}/income-plans/{source_id}/confirm`은 요청의 `expected_date`가 저장된 다음 예정일과 같을 때만 `income_records`를 생성한다. `amount_cents`를 생략하면 예상 금액을, 제공하면 그 회차의 실제 금액을 기록한다. `received_at`은 실제 입금일이다. 일회성 규칙은 `is_active=false`로 남기고, 반복 규칙은 최초 기준일을 유지하며 다음 예정일로 이동한다. 이미 지난 회차 요청은 거부한다. "아직 안 받았어요"는 실제 기록을 만들거나 예정일을 변경하지 않는다.
+- **실제 수입 수정**: `PUT /ledgers/{ledger_id}/income-records/{record_id}`는 기존 수입 유형과 `income_source_id`를 유지하면서 금액·입금일·메모 및 유형별 지급처/결제수단을 수정한다. Cashback 결제수단은 수정 요청자의 소유권을 다시 확인한다. 연결된 예정 규칙의 예상 금액과 다음 예정일은 바꾸지 않는다. 금액 0은 허용하지 않는다.
+- **예정 수입 수정**: `PUT /ledgers/{ledger_id}/income-plans/{source_id}`는 활성 규칙의 예상 금액·다음 예정일·반복 주기·메모 및 유형별 필드를 수정한다. 이미 확정된 실제 기록은 자동 변경하지 않는다. 예상 금액만 수정하면 기존 `reference_date`를 유지하고, 예정일이나 반복 주기를 바꾸면 새 `expected_date`를 기준일로 삼는다. Paycheck만 반복을 허용한다.
+- **일반 삭제**: `DELETE /ledgers/{ledger_id}/income-records/{record_id}`는 실제 수입의 `deleted_at`만 기록하며 예정 규칙을 되돌리지 않는다. `DELETE /ledgers/{ledger_id}/income-plans/{source_id}`는 활성 예정 수입을 숨기되 이미 확정된 기록을 유지한다. 일반 조회는 각각 `deleted_at IS NULL`인 항목만 반환한다.
+- **확정 직후 Undo**: `POST /ledgers/{ledger_id}/income-records/{record_id}/undo-confirmation`은 예정 수입에서 만든 실제 기록을 숨기고 원래 `expected_date` 회차를 다시 활성화한다. 두 변경은 한 DB 트랜잭션이다. 이후 회차가 진행되거나 예정 규칙이 바뀌었다면 409로 거부한다. 직접 입력한 기록에는 적용하지 않는다. 프론트의 즉시 Undo와 일반 기록 삭제는 서로 다른 동작이다.
+- **삭제 보관 운영**: 수입 기록·예정 규칙은 삭제 시각을 남겨 30일 보관한다. 사용자용 복구 API는 두지 않는다. 관리자 내부 함수는 보관 기간 내 기록·규칙을 복구하며, 확정 Undo로 열린 회차 또는 재확정된 회차의 기록 중복 복구는 거부한다. `python -m app.income.cleanup` 명령은 만료된 실제 기록을 먼저, 예정 규칙을 다음에 1,000건 단위로 영구 삭제한다. 예정 규칙을 삭제할 때 남아 있는 과거 기록의 `income_source_id`를 `NULL`로 바꿔 실제 수입을 보존한다. 배포 스케줄러와 관리자 운영 절차는 미연결이다.
 - 예상 금액은 `income_sources.expected_amount_cents`, 실제 금액은 `income_records.amount_cents`에 별도로 저장한다. 확정 기록은 당시의 `from_name`·`memo`·결제수단을 복사하고 `income_source_id`로 규칙에 연결한다. 예정일만으로 실제 수입을 자동 생성하지 않는다.
 - 주말·공휴일에 따른 입금 예정일 조정 규칙은 미정이다. 현재는 날짜를 자동으로 앞당기거나 늦추지 않으며, 후속 결정은 [수입 일정 미결정 사항](docs/income-schedule-decisions.md)에 기록한다.
 - **Cashback**: 등록 결제수단의 ID를 `income_records.payment_method_id`에 저장하고 현재 사용자 소유인지 확인한다. 신용카드에 적용하면 `received_at`이 속한 카드 사이클의 순 청구 예상액에서 차감하며, 현금성 수단은 신용카드 사이클 금액을 바꾸지 않는다.
@@ -726,8 +734,8 @@ draft·failed 이미지의 7일 보관은 이번 원본 비보관 방향과 충�
 ### 구현·검증된 범위
 
 - 수동 거래 생성·기간 조회·품목 ID를 유지하는 수정·거래 soft delete, 내부 관리자 복구 함수, 30일 경과 거래를 1,000건씩 정리하는 명령이 있다. 영수증에서 거래를 생성하는 경로는 아직 없다.
-- `e8a91f4c2d73`(총액), `d6419e8c0a27`(Refund 카테고리), `b84e91d2c673`(활성 거래 부분 인덱스) migration을 연결된 Supabase PostgreSQL에 적용했다. 확인한 Alembic head는 `b84e91d2c673`이며, 실제 부분 인덱스 조건은 `deleted_at IS NULL`이다. 적용 전 기존 거래와 Refund 수입 기록은 각각 0건이었다.
-- 마지막 확인 결과: Ruff 통과, pytest **100 passed**, `git diff --check` 통과. 실제 DB를 이용한 거래 POST/GET/PUT/DELETE와 cleanup·복구 검증은 외부 트랜잭션에서 실행하고 롤백했다. 거래 API 검증은 인증 의존성을 대체했다. 별도 실제 Supabase 토큰 검사에서 `GET /categories`의 유효 토큰 200, 토큰 없음·변조 토큰 401을 확인했다. 따라서 거래 API의 실제 JWT 통합 검증까지 완료됐다는 뜻은 아니다.
+- `e8a91f4c2d73`(총액), `d6419e8c0a27`(Refund 카테고리), `b84e91d2c673`(활성 거래 부분 인덱스) migration을 연결된 Supabase PostgreSQL에 적용했다. 이 거래 변경을 검증하던 당시 Alembic head는 `b84e91d2c673`이었고, 실제 부분 인덱스 조건은 `deleted_at IS NULL`이다. 적용 전 기존 거래와 Refund 수입 기록은 각각 0건이었다. 이후 수입 삭제 migration까지 적용한 확인 head는 위의 `c2b9befbaace`이다.
+- 마지막 확인 결과: Ruff 통과, pytest **115 passed**, `git diff --check` 통과. 실제 DB를 이용한 거래 POST/GET/PUT/DELETE와 cleanup·복구 검증은 외부 트랜잭션에서 실행하고 롤백했다. 거래 API 검증은 인증 의존성을 대체했다. 별도 실제 Supabase 토큰 검사에서 `GET /categories`의 유효 토큰 200, 토큰 없음·변조 토큰 401을 확인했다. 따라서 거래 API의 실제 JWT 통합 검증까지 완료됐다는 뜻은 아니다. 수입은 임시 SQLite HTTP 경로와 실제 PostgreSQL Service·Repository 흐름을 검증하고 롤백했으며, 수입의 실제 JWT HTTP 호출은 아직 검증하지 않았다. 수입 만료 정리는 FK 제약을 켠 임시 DB에서 검증했다.
 
 ### 남은 일과 미확정 사항
 
