@@ -168,7 +168,7 @@ pre .tbl{color:#6CB6FF;font-weight:700}
 /* ===== ERD ===== */
 .erd{position:relative;display:grid;gap:26px 20px;margin:14px 0 4px;
 grid-template-columns:repeat(3,1fr);
-grid-template-areas:"u l m" "p t r" "c t g" "i ir ir";}
+grid-template-areas:"u l m" "p t r" "c ti g" "i ir ir";}
 #erdSvg{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
 #erdSvg path{fill:none;stroke:#C9D2DB;stroke-width:2;transition:stroke .15s,opacity .15s}
 #erdSvg path.hot{stroke:var(--blue);stroke-width:2.5}
@@ -192,12 +192,26 @@ grid-template-areas:"u l m" "p t r" "c t g" "i ir ir";}
 .pk{background:var(--blue);color:#fff}
 .fk{background:var(--gray-bg);color:var(--ink-2)}
 .erd-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;font-weight:600;color:var(--ink-2);margin-top:14px}
+/* 확정 목표의 핵심 관계를 메인 ERD 아래에서 간단히 다시 보여준다. */
+.candidate-erd{background:#F8FAFC;border:1px dashed #B9C5D0;border-radius:16px;padding:18px;margin:16px 0}
+.candidate-refs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.candidate-node{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0;font-size:12px;color:var(--ink-2)}
+.candidate-node strong{display:block;font-size:13px;color:var(--ink);margin-bottom:4px}
+.candidate-node code{display:inline-block;margin:2px 2px 0 0;overflow-wrap:anywhere}
+.candidate-node.core{border-color:#A8CFFF;background:#F2F8FF}
+.candidate-node.item{border-color:#B8E6CE;background:#F1FBF6}
+.candidate-arrow{text-align:center;color:var(--ink-2);font-size:12px;font-weight:700;padding:9px 0;line-height:1.4}
+.candidate-arrow span{display:block;color:var(--blue);font-size:17px;line-height:1.1}
+.candidate-bottom{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px}
+.candidate-bottom .candidate-arrow{white-space:nowrap}
 @media (max-width:720px){
-.erd{grid-template-columns:1fr 1fr;grid-template-areas:"u l" "m p" "t t" "c r" "g i" "ir ir"}
+.erd{grid-template-columns:1fr 1fr;grid-template-areas:"u l" "m p" "t t" "ti c" "r g" "i ir"}
 }
 @media (max-width:480px){
-.erd{grid-template-columns:1fr;grid-template-areas:"u" "l" "m" "p" "t" "c" "r" "g" "i" "ir"}
+.erd{grid-template-columns:1fr;grid-template-areas:"u" "l" "m" "p" "t" "ti" "c" "r" "g" "i" "ir"}
 #erdSvg{display:none}
+.candidate-refs,.candidate-bottom{grid-template-columns:1fr}
+.candidate-bottom .candidate-arrow{white-space:normal}
 }
 /* ===== flow stepper ===== */
 .flow{position:relative;margin:18px 0 14px}
@@ -305,6 +319,7 @@ html{scroll-behavior:auto}
 <div class="hero-badge">✦ 카드 사이클 기반 지출 추적</div>
 <h1>이번 카드값이 얼마 나올지,<br><span class="blue">마감일 전에</span> 알 수 있게.</h1>
 <p class="hero-sub">신용카드의 statement closing date 기준으로 지출 사이클을 추적하고, 영수증 사진을 AI로 파싱해 품목별로 자동 기록하는 iOS·Android 모바일 앱. 아래 데모를 직접 눌러보면서 읽어보세요.</p>
+<p class="hero-sub">앱 이름은 <strong>다다리</strong>를 후보로 사용 중입니다. 공식 영문 표기와 최종 로고는 TBD이며, 이 문서의 기존 자산은 그대로 유지합니다.</p>
 <div class="meta">
 <span>플랫폼 <b>Flutter · iOS + Android</b></span>
 <span>스택 <b>Flutter · FastAPI · Supabase</b></span>
@@ -333,7 +348,7 @@ html{scroll-behavior:auto}
 <ul>
 <li><strong>수요 신호</strong>: 커뮤니티에서 카드별 billing cycle 탭을 나눈 직접 제작한 엑셀이 공유됨 — 제품 공백의 전형적 신호. "카드들 사이클이 제각각이라 월말 숫자가 머릿속과 안 맞는" statement-cycle confusion이 명명된 문제로 존재.</li>
 <li><strong>포지셔닝</strong>: 홍보 리드는 파싱이 아니라 <em>사이클</em> — "카드값이 얼마 나올지 마감 전에 아는 앱". 파싱은 "입력이 편한 이유"로 뒤에.</li>
-<li><strong>경쟁 앱 리뷰에서 배운 설계 요구사항</strong>: 할인/음수 라인 처리 실패 → 합계 불일치 불만 (프롬프트에 명시 + total 검증 배지) · 축약 표기("WHL MLK 2%") 그대로 저장되는 불만 (품목명 정규화 명시) · 공격적 페이월 반감 (본 제품은 넉넉한 무료 티어 + 수동 입력 상시 가능) · 데이터 판매 불신 (프라이버시 정책이 셀링 포인트) · 상위 앱도 실측 92~94% (확인 화면 = 필수 안전망).</li>
+<li><strong>경쟁 앱 리뷰에서 배운 설계 요구사항</strong>: 할인/음수 라인 처리 실패 → 합계 불일치 불만 (음수 품목 금액 허용, 할인/쿠폰 유형은 구분하지 않고 total 비교는 유지) · 축약 표기("WHL MLK 2%") 그대로 저장되는 불만 (품목명 정규화 명시) · 공격적 페이월 반감 (본 제품은 넉넉한 무료 티어 + 수동 입력 상시 가능) · 데이터 판매 불신 (프라이버시 정책이 셀링 포인트) · 상위 앱도 실측 92~94% (확인 화면 = 필수 안전망).</li>
 <li><strong>리스크</strong>: 공백의 이유가 "아무도 안 해서"인지 "수요가 작아서"인지 미검증 — 학기 프로젝트 + 캠퍼스 소프트런칭 규모가 검증에 적합.</li>
 </ul>
 </section>
@@ -366,7 +381,7 @@ html{scroll-behavior:auto}
 <p style="font-size:13px;color:var(--ink-3);font-weight:500;margin-bottom:2px">사이클 = 전월 closing date <strong style="color:var(--ink-2)">다음날</strong> ~ 이번 closing date(당일 포함) · 오늘은 2026-08-24로 가정</p>
 <div class="daygrid" id="dayGrid"></div>
 <div class="cyc-out" id="cycOut"></div>
-<p class="demo-note">29~31일을 눌러보세요 — 해당 날짜가 없는 달은 말일로 fallback하는 규칙까지 실제로 동작합니다. 이 로직이 곧 <code>services/cycle.py</code>의 명세.</p>
+<p class="demo-note">29~31일을 눌러보세요 — 해당 날짜가 없는 달은 말일로 fallback합니다. 시작일·종료일은 모두 포함하며 월말·윤년·연도 경계 테스트가 필요합니다. 이 데모는 아직 구현되지 않은 사이클 도메인 모듈의 계산 예시입니다.</p>
 </div>
 <div class="demo">
 <div class="demo-tag">Demo B</div>
@@ -393,10 +408,10 @@ html{scroll-behavior:auto}
 <div class="tabpanes">
 <div class="pane on" id="p1"><ul>
 <li>결제수단 등록: 신용카드(closing date 지정) / 현금성 — 카드별 색상 지정</li>
-<li>지출 수동 입력: 금액·카테고리·결제수단·날짜·메모 (3탭 이내)</li>
+<li>지출 수동 입력: 결제 1건에 상점·결제수단·날짜·메모와 카테고리별 품목 여러 개 저장 (백엔드 API 구현, Flutter 연동 필요)</li>
 <li>카드별 사이클 뷰: 누적액 · D-day · 진행률</li>
 <li>통합 대시보드: 30일 지출, 카드 vs 현금, 카테고리 분포, 일별 바 차트</li>
-<li>카테고리 CRUD — 기본 12개 자동 생성</li>
+<li>운영팀이 정한 카테고리 13개(Refund 포함)를 조회·선택 (사용자 추가·수정·삭제 없음)</li>
 </ul></div>
 <div class="pane" id="p2"><ul>
 <li>영수증 업로드 → Vision LLM 파싱 → 품목/가격/카테고리 JSON</li>
@@ -458,7 +473,7 @@ html{scroll-behavior:auto}
 <tr><td>인증</td><td>Supabase Auth</td><td>Email/Password + Email Verification + Guest. Credential·세션·JWT는 Supabase가 관리하고 앱 데이터는 고유 user_id 기준으로 연결</td></tr>
 <tr><td>인증 이메일</td><td>Resend 등 Transactional Email Provider</td><td>Production 인증 메일 발송용 custom SMTP. 앱 도메인의 auth@... 주소 사용 가능</td></tr>
 <tr><td>모바일 결제</td><td>App Store / Google Play IAP · RevenueCat 검토</td><td>Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. 유료화 전 최종 확정</td></tr>
-<tr><td>이미지</td><td>Supabase Storage</td><td>private bucket + presigned URL · 1GB ≈ 영수증 2,000~5,000장</td></tr>
+<tr><td>이미지</td><td>임시 Storage 사용 여부 TBD</td><td>원본은 영구 보관하지 않음. 임시 저장 시 private bucket·삭제 시점 확정 필요</td></tr>
 <tr><td>확장 경로</td><td>Cloudflare R2</td><td>10GB + egress 무료, S3 호환 — 이미지만 분리 이전 용이</td></tr>
 <tr><td>ORM</td><td>SQLAlchemy + Alembic</td><td>Python 표준 조합</td></tr>
 <tr><td>파싱</td><td>Google Gemini Vision API</td><td>공통 Gemini client는 provider 연결만 담당하고 실제 영수증 prompt·검증 로직은 Receipt Service가 소유</td></tr>
@@ -466,7 +481,7 @@ html{scroll-behavior:auto}
 </table></div>
 <ul>
 <li><strong>Supabase 무료 티어</strong>: 1주 미사용 시 일시정지(웨이크업 지연) → 실사용자 유입 시 Pro($25/월) 전환.</li>
-<li><strong>이미지 보안</strong>: 영수증 = 구매 내역 민감 정보. private bucket + 만료형 presigned URL, DB엔 경로만.</li>
+<li><strong>이미지 보안</strong>: 영수증은 민감 정보. 원본은 영구 보관하지 않으며, 임시 Storage가 필요하면 private bucket과 짧은 접근 기한을 적용. 제3자 AI 전송·임시 파일·로그 정책은 별도 검토.</li>
 </ul>
 
 <div class="spec">
@@ -476,13 +491,14 @@ html{scroll-behavior:auto}
 <div class="si"><div class="si-head">User ≠ Email <span class="tag b">확정</span></div><div class="si-desc">앱 데이터 소유자는 Supabase Auth UUID. public.users.id = auth.users.id로 연결하고 이메일을 FK로 사용하지 않음.</div></div>
 <div class="si"><div class="si-head">Social Login / Account Linking <span class="tag a">확장 가능</span></div><div class="si-desc">Google·Apple Sign-In은 Supabase provider로 추가 가능. 서로 다른 provider 계정 자동 병합은 하지 않고 linking 기능은 별도 요구사항으로 다룸.</div></div>
 <div class="si"><div class="si-head">인증 이메일 발송 <span class="tag b">방향 확정</span></div><div class="si-desc">Production에서는 Resend 같은 Transactional Email Provider를 Supabase custom SMTP에 연결. 인증 메일 요청에 rate limit과 resend cooldown 적용.</div></div>
+<div class="si"><div class="si-head">초기 표시 이름 <span class="tag a">UI 방향 · 생성 규칙 TBD</span></div><div class="si-desc">가입 시 랜덤 이름을 제안하고 수정·건너뛰기를 허용. 이후 프로필에서 변경 가능. 현재는 public.users.nickname 컬럼만 있으며 UI/API는 미구현.</div></div>
 </div>
 <div class="spec">
 <div class="spec-title">Supabase 의존성 경계</div>
 <div class="si"><div class="si-head">Database <span class="tag b">확정</span></div><div class="si-desc">Supabase Managed PostgreSQL을 사용하지만 앱 데이터는 Flutter → FastAPI → Service → Repository → SQLAlchemy → PostgreSQL 경로로만 접근.</div></div>
 <div class="si"><div class="si-head">Auth <span class="tag b">확정</span></div><div class="si-desc">Flutter는 Supabase Auth SDK로 로그인하고 JWT를 FastAPI에 전달. FastAPI 공통 Auth dependency에서 검증.</div></div>
 <div class="si"><div class="si-head">App Profile <span class="tag b">확정</span></div><div class="si-desc">auth.users는 credential/identity를 관리하고 public.users는 nickname·plan 등 앱 전용 프로필을 관리. 동일 UUID로 1:1 연결.</div></div>
-<div class="si"><div class="si-head">Storage <span class="tag b">확정</span></div><div class="si-desc">Supabase Storage 호출은 FastAPI의 Storage Service / Wrapper에 격리하여 추후 S3·R2로 교체 가능하게 유지.</div></div>
+<div class="si"><div class="si-head">Storage <span class="tag a">임시 사용 여부 TBD</span></div><div class="si-desc">임시 이미지 저장이 필요하면 FastAPI의 Storage 경계에 격리. 영수증 원본은 영구 보관하지 않으며 삭제 시점은 구현 전 확정.</div></div>
 <div class="si"><div class="si-head">Gemini <span class="tag b">확정</span></div><div class="si-desc">Gemini SDK·API key·timeout·retry는 공통 integration에서 관리. Prompt·category logic·total validation은 Receipt Service가 관리.</div></div>
 </div>
 <div class="spec">
@@ -495,7 +511,7 @@ html{scroll-behavior:auto}
 </div>
 <div class="si">
 <div class="si-head">이미지 업로드는 서버 경유 <span class="tag b">확정</span></div>
-<div class="si-desc">프론트 → FastAPI → Storage. 모든 이미지가 검역(재인코딩·EXIF 제거·리사이즈)을 반드시 통과.</div>
+<div class="si-desc">Flutter → FastAPI → 검증·재인코딩·EXIF 제거·리사이즈 → Gemini. 임시 Storage가 필요한지는 TBD.</div>
 <div class="si-note">presigned 직접 업로드는 검역 우회 경로라 기각.</div>
 </div>
 <div class="si">
@@ -504,19 +520,22 @@ html{scroll-behavior:auto}
 <div class="si-note">큐 도입 시 프론트 무수정, 백엔드는 인라인 호출→큐 등록만 교체. 오늘 비용 ~0으로 문만 내고 큐는 짓지 않음. 연결 끊김은 상태 머신(draft 서버 보존)이 방어.</div>
 </div>
 <div class="si">
-<div class="si-head">스케줄 작업 (7일 청소) <span class="tag a">미확정 · 유력안</span></div>
-<div class="si-desc">GitHub Actions 스케줄이 보호된 /internal/cleanup을 하루 1회 호출 — 무료, 실행 로그가 GitHub에 남음, 서버 수명 무관.</div>
-<div class="si-note">탈락안: pg_cron 단독(Storage 이미지 못 지움) · lazy cleanup(프라이버시 약속 위반 소지) · APScheduler(무료 티어 재시작 환경 불안정). 정리 로직은 순수 함수라 스케줄러 교체 시 재사용.</div>
+<div class="si-head">임시 이미지 정리 <span class="tag a">미확정</span></div>
+<div class="si-desc">원본은 영구 보관하지 않음. 임시 저장이 필요하다면 성공·실패·중단 시 삭제 시점과 정리 방식을 먼저 확정.</div>
+<div class="si-note">기존 7일 이미지 보관 및 정기 cleanup 가정은 원본 비보관 결정에 맞춰 재검토.</div>
 </div>
 </div>
 </section>
 <!-- ========== 05 ========== -->
 <section id="s5">
 <div class="sec-head"><span class="sec-ico">🗄️</span><h2>데이터 모델</h2></div>
-<p class="lead">앱 데이터는 <code>ledger</code>에 귀속되고, 로그인 credential은 Supabase Auth가 별도로 관리한다. <code>public.users.id = auth.users.id</code>로 연결하며 금액은 <em>cents 정수</em>로 저장한다. 지출은 transactions, 수입은 income_sources + income_records로 분리한다.</p>
+<p class="lead">지출 결제는 <code>ledger</code>에, 내 지갑의 결제수단은 <code>user</code>에 귀속된다. 카테고리는 전체 공통 목록이며 각 일반 품목이 이를 참조한다. 로그인 credential은 Supabase Auth가 별도로 관리한다. <code>public.users.id = auth.users.id</code>로 연결한다. 금액은 <em>cents 정수</em>로 저장·전송하고 Flutter 화면에서는 USD로 포맷한다(예: 1099 → $10.99, -1000 → -$10.00).</p>
+<p>사용자 bootstrap 시 기본 <code>Cash</code> 결제수단을 한 번 생성한다. Cash는 현금 결제만 뜻하고, 은행 이체로 지출할 때는 별도의 <code>cash-like</code> 결제수단을 지갑에 등록한다. 계좌 사이의 단순 이체는 지출 거래가 아니다.</p>
+<p><strong>현행 구현과 확정 목표를 구분한다.</strong> SQLAlchemy/Alembic에는 <code>income_sources</code>·<code>income_records</code>를 포함한 모델과 결제 헤더 <code>transactions</code> 1건 + 필수 품목 <code>transaction_items</code> 1건 이상 구조가 있다. 수동 결제 생성·기간 조회·품목 추가·수정·제거·거래 soft delete API가 작성됐다. <code>total_cents</code>·Refund 카테고리·활성 거래 부분 인덱스 migration은 DB에 적용됐다; 인증 의존성을 대체한 실제 DB API 검증에서 생성·조회·수정·삭제가 통과했고 임시 데이터는 롤백했다. 품목 수량은 저장하지 않고 한 줄의 전체 금액을 <code>amount_cents</code>에 저장한다. 영수증 파싱 생성은 미구현이고, 관리자 복구·30일 경과 정리는 내부 코드만 있어 운영 연결 전이다. <code>receipts</code>·<code>categorization_rules</code>·<code>transactions.receipt_id</code>는 Phase 2 계획이며, <code>categories</code>는 공통 목록이다.</p>
+<p>수입은 실제 기록과 예정 규칙의 생성·조회·수정, 입금 확정, 두 종류의 soft delete와 확정 Undo API가 있다. 삭제 시각과 원래 예정일을 추가한 migration까지 DB에 적용됐고 확인된 head는 <code>c2b9befbaace</code>이다. HTTP 경로는 임시 SQLite에서, Service·Repository의 예정 생성·확정·Undo·삭제·관리자 복구 흐름은 임시 프로필·가계부를 이용해 실제 PostgreSQL에서 확인했다. 외부 트랜잭션을 롤백한 후 관련 테이블이 0건임을 확인했다. 실제 JWT를 이용한 수입 API 검증은 아직 하지 않았다. 30일 이내 관리자 복구 함수와 만료 정리 명령을 작성하고 FK 제약을 켠 임시 DB에서 기록 보존을 확인했다. 배포 스케줄러·관리자 운영 절차·달력 통합 표시·알림 실행은 후속 작업이다.</p>
 <div class="demo" style="padding-bottom:18px">
-<div class="demo-tag">Interactive ERD</div>
-<div class="demo-title">테이블에 마우스를 올려보세요 — 연결된 관계만 하이라이트됩니다</div>
+<div class="demo-tag">현행 거래·품목 관계도 · 영수증 연결은 계획</div>
+<div class="demo-title">테이블 관계에 마우스를 올리면 연결된 테이블이 하이라이트됩니다</div>
 <div class="erd" id="erd">
 <svg id="erdSvg" aria-hidden="true"></svg>
 <div class="ent" data-t="user" style="grid-area:u">
@@ -540,7 +559,7 @@ html{scroll-behavior:auto}
 </div>
 </div>
 <div class="ent" data-t="ledger_member" style="grid-area:m">
-<div class="ent-h hv"><span>👥 ledger_members</span><em>Post-MVP</em></div>
+<div class="ent-h hv"><span>👥 ledger_members</span><em>테이블 현행 · 공유 Future</em></div>
 <div class="ent-b">
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
 <div class="fld"><span>user_id <b class="fk">FK</b></span><i>uuid</i></div>
@@ -551,9 +570,9 @@ html{scroll-behavior:auto}
 <div class="ent-h ho"><span>💳 payment_methods</span></div>
 <div class="ent-b">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
-<div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
+<div class="fld"><span>user_id <b class="fk">FK</b></span><i>uuid</i></div>
 <div class="fld"><span>name</span><i>text</i></div>
-<div class="fld"><span>type</span><i>credit|cash</i></div>
+<div class="fld"><span>type</span><i>credit|cash-like</i></div>
 <div class="fld"><span>closing_day</span><i>1–31·null</i></div>
 <div class="fld"><span>color</span><i>text</i></div>
 <div class="fld"><span>created_at</span><i>ts</i></div>
@@ -561,43 +580,52 @@ html{scroll-behavior:auto}
 </div>
 </div>
 <div class="ent big" data-t="transaction" style="grid-area:t">
-<div class="ent-h hg"><span>🧾 transactions</span><em>중심 팩트</em></div>
+<div class="ent-h hg"><span>🧾 transactions</span><em>결제 헤더 1건</em></div>
 <div class="ent-b two">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
 <div class="fld"><span>payment_method_id <b class="fk">FK</b></span><i>uuid</i></div>
-<div class="fld"><span>category_id <b class="fk">FK</b></span><i>uuid</i></div>
-<div class="fld"><span>receipt_id <b class="fk">FK</b></span><i>null 가능</i></div>
-<div class="fld"><span>amount_cents</span><i>int</i></div>
+<div class="fld"><span>receipt_id <b class="fk">FK</b></span><i>Phase 2 계획</i></div>
+<div class="fld"><span>total_cents</span><i>int · 최종 총액</i></div>
+<div class="fld"><span>tax_cents</span><i>int · 기본 0</i></div>
+<div class="fld"><span>tip_cents</span><i>int · 기본 0</i></div>
 <div class="fld"><span>currency</span><i>USD</i></div>
 <div class="fld"><span>merchant</span><i>text</i></div>
 <div class="fld"><span>memo</span><i>text</i></div>
 <div class="fld"><span>transacted_at</span><i>date</i></div>
-<div class="fld"><span>source</span><i>manual|parse</i></div>
+<div class="fld"><span>source</span><i>manual|receipt_parse</i></div>
 <div class="fld"><span>created_at</span><i>ts</i></div>
 <div class="fld"><span>updated_at</span><i>ts</i></div>
 <div class="fld"><span>deleted_at</span><i>ts·null</i></div>
 </div>
 </div>
+<div class="ent" data-t="transaction_item" style="grid-area:ti">
+<div class="ent-h hg"><span>🛒 transaction_items</span><em>결제당 1..N건</em></div>
+<div class="ent-b">
+<div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
+<div class="fld"><span>transaction_id <b class="fk">FK</b></span><i>uuid</i></div>
+<div class="fld"><span>category_id <b class="fk">FK</b></span><i>일반 품목 필수</i></div>
+<div class="fld"><span>name</span><i>text</i></div>
+<div class="fld"><span>amount_cents</span><i>int</i></div>
+</div>
+</div>
 <div class="ent" data-t="receipt" style="grid-area:r">
-<div class="ent-h hp"><span>📷 receipts</span></div>
+<div class="ent-h hp"><span>📷 receipts</span><em>Phase 2 계획</em></div>
 <div class="ent-b">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
-<div class="fld"><span>image_url</span><i>text</i></div>
 <div class="fld"><span>raw_parse_json</span><i>jsonb</i></div>
 <div class="fld"><span>status</span><i>pending→draft→parsed / failed</i></div>
 <div class="fld"><span>created_at</span><i>ts</i></div>
 <div class="fld"><span>updated_at</span><i>ts</i></div>
-<div class="fld"><span>deleted_at</span><i>soft delete</i></div>
+<div class="fld"><span>deleted_at</span><i>ts·null · 계획</i></div>
 </div>
 </div>
 <div class="ent" data-t="category" style="grid-area:c">
-<div class="ent-h ho"><span>🏷️ categories</span></div>
+<div class="ent-h ho"><span>🏷️ categories</span><em>공통 목록</em></div>
 <div class="ent-b">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
-<div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
-<div class="fld"><span>name</span><i>text</i></div>
+<div class="fld"><span>name</span><i>text·unique</i></div>
 <div class="fld"><span>icon</span><i>text</i></div>
 <div class="fld"><span>is_default</span><i>bool</i></div>
 <div class="fld"><span>description</span><i>LLM 프롬프트용</i></div>
@@ -606,7 +634,7 @@ html{scroll-behavior:auto}
 </div>
 </div>
 <div class="ent" data-t="categorization_rule" style="grid-area:g">
-<div class="ent-h hp"><span>✨ categorization_rules</span><em>개인화</em></div>
+<div class="ent-h hp"><span>✨ categorization_rules</span><em>Phase 2 계획</em></div>
 <div class="ent-b">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
@@ -618,30 +646,38 @@ html{scroll-behavior:auto}
 </div>
 </div>
 <div class="ent" data-t="income_source" style="grid-area:i">
-<div class="ent-h hv"><span>💰 income_sources</span><em>반복 규칙</em></div>
+<div class="ent-h hv"><span>💰 income_sources</span><em>일회성·반복 예정 수입</em></div>
 <div class="ent-b">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
-<div class="fld"><span>name</span><i>text</i></div>
-<div class="fld"><span>income_type</span><i>text</i></div>
+<div class="fld"><span>income_type</span><i>paycheck|cashback|other</i></div>
+<div class="fld"><span>from_name</span><i>text·null</i></div>
+<div class="fld"><span>payment_method_id <b class="fk">FK</b></span><i>uuid·null</i></div>
 <div class="fld"><span>expected_amount_cents</span><i>int</i></div>
-<div class="fld"><span>frequency</span><i>NOT NULL</i></div>
+<div class="fld"><span>memo</span><i>text·null</i></div>
+<div class="fld"><span>frequency</span><i>once|biweekly|monthly</i></div>
 <div class="fld"><span>reference_date</span><i>date·NOT NULL</i></div>
-<div class="fld"><span>next_expected_date</span><i>date·calculated</i></div>
+<div class="fld"><span>next_expected_date</span><i>date·next</i></div>
 <div class="fld"><span>is_active</span><i>bool</i></div>
+<div class="fld"><span>deleted_at</span><i>ts·null</i></div>
+<div class="fld"><span>created_at</span><i>ts</i></div>
+<div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
 </div>
 <div class="ent" data-t="income_record" style="grid-area:ir">
-<div class="ent-h hg"><span>💵 income_records</span><em>실제 수입</em></div>
+<div class="ent-h hg"><span>💵 income_records</span><em>현행 모델</em></div>
 <div class="ent-b two">
 <div class="fld"><span>id <b class="pk">PK</b></span><i>uuid</i></div>
 <div class="fld"><span>ledger_id <b class="fk">FK</b></span><i>uuid</i></div>
 <div class="fld"><span>income_source_id <b class="fk">FK</b></span><i>uuid·null</i></div>
-<div class="fld"><span>name</span><i>text</i></div>
-<div class="fld"><span>income_type</span><i>text</i></div>
+<div class="fld"><span>payment_method_id <b class="fk">FK</b></span><i>uuid·null</i></div>
+<div class="fld"><span>income_type</span><i>paycheck|cashback|other</i></div>
+<div class="fld"><span>from_name</span><i>text·null</i></div>
 <div class="fld"><span>amount_cents</span><i>int</i></div>
 <div class="fld"><span>received_at</span><i>date</i></div>
+<div class="fld"><span>expected_date</span><i>date·null</i></div>
 <div class="fld"><span>memo</span><i>text·null</i></div>
+<div class="fld"><span>deleted_at</span><i>ts·null</i></div>
 <div class="fld"><span>created_at</span><i>ts</i></div>
 <div class="fld"><span>updated_at</span><i>ts</i></div>
 </div>
@@ -650,15 +686,37 @@ html{scroll-behavior:auto}
 <div class="erd-legend">
 <span><b class="pk">PK</b> 기본키</span>
 <span><b class="fk">FK</b> 외래키</span>
-<span style="color:var(--ink-3)">선 = 1 : N 관계 · receipts → transactions는 영수증 한 장이 여러 지출 row를 낳고, income_sources → income_records는 반복 수입 규칙과 실제 수입 기록의 관계</span>
+<span style="color:var(--ink-3)">transactions 1:1..N transaction_items와 품목 N:1 categories는 현행 관계다. receipts 연결은 Phase 2 계획이다.</span>
 </div>
+</div>
+<div class="demo" id="transaction-item-proposal">
+<div class="demo-tag">핵심 관계 요약 · 거래·품목 구조 구현</div>
+<div class="demo-title">결제 1건 아래 필수 품목 내역 <span class="chip ok">구조 확정</span> <span class="chip ok">수동 API 작성</span></div>
+<p class="lead">수동 입력과 영수증 출처 거래 모두 품목을 최소 1건 담는다. <strong>수동 입력 API와 새 컬럼의 DB 적용 및 임시 거래 검증이 완료됐으며, 영수증 파싱 생성 경로는 Phase 2 계획이다.</strong></p>
+<div class="candidate-erd" role="img" aria-label="현행: 가계부와 결제수단은 결제 transactions 한 건에 연결된다. 결제 한 건은 transaction_items 1건 이상을 가지며, 품목은 카테고리 하나를 참조한다. 영수증 연결은 Phase 2 계획이다.">
+<div class="candidate-refs">
+<div class="candidate-node"><strong>📒 ledgers</strong><code>id</code> · 가계부 1개 → 결제 N건</div>
+<div class="candidate-node"><strong>💳 payment_methods</strong><code>id</code> · 결제수단 1개 → 결제 N건</div>
+<div class="candidate-node"><strong>📷 receipts</strong><code>id</code> · Phase 2 연결 계획 · 제약 TBD</div>
+</div>
+<div class="candidate-arrow">가계부·결제수단 ID는 결제 헤더에 저장 · 영수증 연결은 Phase 2<span>↓</span></div>
+<div class="candidate-node core"><strong>🧾 transactions · 결제 헤더</strong><code>id PK</code> <code>ledger_id FK</code> <code>payment_method_id FK</code> <code>receipt_id FK · Phase 2 계획</code><br><code>total_cents · 계산된 최종 금액</code> <code>tax_cents · 기본 0</code> <code>tip_cents · 기본 0</code><br><code>merchant</code> <code>transacted_at</code> <code>memo</code> <code>source</code> <code>deleted_at</code><br>총액 = 품목 금액 합계 + Tax + Tip · 품목 최소 1건</div>
+<div class="candidate-arrow">결제 1건 : 품목 1..N건 · 품목이 <code>transaction_id</code>를 보유<span>↓</span></div>
+<div class="candidate-bottom">
+<div class="candidate-node item"><strong>🛒 transaction_items · 품목</strong><code>id PK</code> <code>transaction_id FK</code> <code>category_id FK</code><br><code>name</code> <code>amount_cents · 줄 합계</code><br>Tax/Tip은 이 테이블에 저장하지 않음</div>
+<div class="candidate-arrow">일반 품목 N : 1 →</div>
+<div class="candidate-node"><strong>🏷️ categories</strong><code>id PK</code> · 일반 품목은 카테고리 필수</div>
+</div>
+</div>
+<p class="demo-note">예: Target에서 Apples(Food)·Dish soap(Living)·T-shirt(Fashion)을 한 번에 결제하면 <code>transactions</code> 1행과 <code>transaction_items</code> 3행이 생긴다. Tax/Tip은 결제 헤더에 따로 기록하고 <code>total_cents</code>는 품목 금액 합계와 Tax/Tip으로 계산해 저장한다. 품목 <code>amount_cents</code>는 수량을 별도로 저장하지 않는 한 줄의 전체 금액이며 0·음수도 허용한다. Refund 카테고리 품목은 입력 부호와 무관하게 음수로 저장하고, 품목을 수정·제거하면 총액도 다시 계산한다. 음수 품목을 할인/쿠폰 유형으로 따로 분류하지 않는다.</p>
+<p class="demo-note"><strong>구현 범위:</strong> 거래 0건 DB에 결제·품목·최종 총액·Refund 카테고리 migration을 적용했다. 수동 생성·기간 조회·품목 ID 유지 및 추가·제거·거래 soft delete API를 실제 DB에 연결해 검증했고 임시 데이터는 롤백했다. 거래 검증은 인증 의존성을 대체했고, 별도의 읽기 전용 검증에서 실제 Supabase 토큰의 카테고리 조회 200과 토큰 없음·변조 토큰 401을 확인했다. 이전 스키마에 거래가 있는 DB에는 별도 품목 백필이 필요하다. 영수증 파싱 생성, 사이클·대시보드 집계 전환, 운영 스케줄러는 후속 작업이다. <code>item_ids</code> 배열은 두지 않는다.</p>
 </div>
 <div class="bigcard">
 <h3 style="margin-top:0">설계 원칙</h3>
 <ul style="margin-bottom:0">
 <li><strong>사이클은 저장하지 않는다</strong> <span class="chip ok">확정</span> — <code>closing_day</code> 하나로 조회 시점에 계산(Demo A = 이 명세). 마감일 변경 시 과거 재계산 불필요. UI 용어는 "결제일"이 아닌 <em>"명세서 마감일"</em>.</li>
-<li><strong>지출과 수입을 분리</strong> — <code>transactions</code>는 지출 전용. 반복 수입 규칙은 <code>income_sources</code>, 실제 수입은 <code>income_records</code>에 저장. 비정기 수입은 source 없이 record만 생성 가능.</li>
-<li><strong>Receipt는 원본 보관함</strong> — 영수증 1장 → 품목별 N개 transaction. Tax·Tip도 별도 row로 저장해 합계 검증 가능.</li>
+<li><strong>지출과 수입을 분리</strong> — <code>transactions</code>는 지출과 Refund 품목을 저장한다. 일회성·반복 예정 수입은 <code>income_sources</code>, 실제 입금과 Cashback은 <code>income_records</code>에 저장한다. 예정 없이 입력한 일회성 실제 수입은 source 없이 생성한다.</li>
+<li><strong>Receipt는 파싱 기록 (계획)</strong> — 원본 이미지는 영구 보관하지 않는다. 스캔 결제는 파싱 기록을 선택적으로 참조하고 품목은 <code>transaction_items</code>에 저장한다. 영수증-결제 제약 및 임시 이미지 참조 방식은 Phase 2에서 설계한다.</li>
 <li><strong>인증 정보는 Auth에 격리</strong> — 비밀번호·identity·session은 Supabase Auth가 관리하고 <code>public.users</code>에는 앱 프로필만 저장.</li>
 <li><strong>카운터 컬럼을 두지 않는다</strong> — 파싱 사용량은 <code>receipts</code> COUNT, 카드 수는 <code>payment_method</code> COUNT로 파생. 카운터는 동기화 버그의 원천. <span class="chip open">게이팅 수치는 미확정</span></li>
 </ul>
@@ -666,7 +724,11 @@ html{scroll-behavior:auto}
 
 <div class="callout blue">
 <div class="co-title">💰 Income 규칙</div>
-정기 수입은 <strong>frequency + reference_date</strong>를 필수로 받고, <code>next_expected_date</code>는 FastAPI가 계산한다. 실제 입금은 <code>income_records</code>에 저장하며 예상 금액과 실제 금액을 분리한다. Tip·cashback 같은 비정기 수입은 <code>income_source_id = null</code>로 직접 기록할 수 있다.
+<strong>Paycheck · Cashback · Other</strong> 세 유형을 사용한다. 실제 입금을 바로 기록할 수도 있고, <code>income_sources</code>에 일회성·반복 예정 수입을 먼저 저장할 수도 있다. Paycheck의 반복은 격주·월간이며 Cashback·Other 예정 수입은 일회성이다. 예정일만으로 실제 입금을 자동 생성하지 않고 사용자의 확정으로 <code>income_records</code>를 만든다. Other는 금액·날짜·메모만 받는다.
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">실제 수입 수정은 해당 기록의 금액·입금일·메모와 유형별 입력값만 바꾼다. 활성 예정 수입 수정은 앞으로 적용할 예상 금액·예정일·반복 주기를 바꾸며 과거 확정 기록은 유지한다. 예정일이나 주기를 바꿀 때만 반복 기준일을 새로 잡는다.</div>
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">일반 DELETE는 실제 기록 또는 활성 예정 항목의 <code>deleted_at</code>을 기록해 조회에서 숨긴다. 실제 기록만 삭제하면 예정 상태는 바뀌지 않고, 예정을 삭제해도 과거 실제 기록은 남는다. 확정 직후 Undo는 별도 <code>POST /income-records/{record_id}/undo-confirmation</code>으로 실제 기록을 숨기고 원래 예정일을 다시 연다. 다음 회차가 이미 진행됐거나 예정 규칙이 바뀌었다면 거부한다. 관리자 내부 함수는 30일 이내 삭제 수입을 복구하되 열린 회차·재확정 회차의 중복 기록 복구를 막는다. 정리 명령은 만료 기록과 규칙을 순서대로 영구 삭제하고 남은 기록의 규칙 FK를 해제한다. 배포 스케줄러와 관리자 운영 절차는 미연결이다.</div>
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">Cashback은 금액·Applied to(등록 결제수단)·날짜·메모를 받으며 해당 결제수단이 현재 사용자 소유인지 확인한다. Refund는 Income 입력에서 제외하고 공통 지출 카테고리로 제공한다.</div>
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">신용카드 Cashback은 <code>received_at</code>이 속한 사이클의 순 청구 예상액에서 차감한다. Refund 품목은 음수로 저장하며 거래의 <code>transacted_at</code>이 속한 사이클에서 지출을 차감한다. 원래 구매 거래는 수정하지 않는다. 과거 <code>income_records</code>의 Refund 행은 자동 변환하지 않는다.</div>
 <div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">알림 시간은 사용자별 설정으로 저장하지 않고 앱 정책으로 고정한다. Flutter가 <code>next_expected_date</code>를 받아 정해진 시간에 local notification을 예약하며 MVP에서는 별도 notification table을 만들지 않는다.</div>
 </div>
 
@@ -674,7 +736,7 @@ html{scroll-behavior:auto}
 <!-- ========== 06 ========== -->
 <section id="s6">
 <div class="sec-head"><span class="sec-ico">🏷️</span><h2>기본 카테고리 <span class="chip ok" style="vertical-align:4px">확정 · 12개</span></h2></div>
-<p class="lead">각 정의는 <code>categories.description</code>에 저장되어 LLM 프롬프트에 그대로 들어간다. 체계의 주인은 사용자 — AI는 이 목록 안에서 추천만.</p>
+<p class="lead">운영팀이 정한 기본 12개를 공통 목록으로 한 번 저장한다. 인증된 앱은 <code>GET /categories</code>로 같은 ID를 조회한다. 사용자는 카테고리를 선택하지만 추가·수정·삭제하지 않는다. 각 정의는 <code>categories.description</code>에 저장되어 LLM 분류 문맥으로 사용된다.</p>
 <div class="demo">
 <div class="demo-tag">Demo C</div>
 <div class="demo-title">분류 시뮬레이터 — 품목을 입력해보세요</div>
@@ -700,13 +762,13 @@ html{scroll-behavior:auto}
 <div class="callout blue">
 <div class="co-title">💡 분류 원칙</div>
 "어디서 샀는가"가 아니라 <strong>"무엇을 샀는가"</strong>. 같은 Target 영수증이라도 사과는 Food, 세제는 Living, 티셔츠는 Fashion — 품목별 분류가 영수증 파싱의 존재 이유.
-<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0"><strong>커스텀 카테고리 예시 — Pet</strong>: 펫 지출은 사료→Food, 약→Health로 분산하지 않고 <strong>Pet 하나로 통합</strong> (사료·목줄·미용·동물병원). 흩으면 펫 총액을 볼 수 없고 사람 식비·의료비도 오염됨. 단 반려인 전용이라 기본 세트엔 미포함 — 사용자가 추가하면 이름+설명이 파싱 프롬프트에 자동 반영되어 이후 자동 분류. Gift, Education, Kids도 동일 패턴.</div>
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0"><strong>향후 카테고리 후보 — Pet</strong>: 펫 지출을 별도로 묶을 필요가 있는지 운영팀이 검토한다. Pet·Gift·Education·Kids는 기본 세트에 없으며 사용자가 직접 추가하지 않는다. 공통 목록에 추가하면 모든 가계부에 동일하게 보인다.</div>
 </div>
 </section>
 <!-- ========== 07 ========== -->
 <section id="s7">
-<div class="sec-head"><span class="sec-ico">📱</span><h2>핵심 화면 <span class="chip ok" style="vertical-align:4px">와이어프레임 확정</span></h2></div>
-<p><strong>네비게이션</strong> — Bottom nav (엄지 도달 범위 · 한 손 조작). MVP에선 데스크톱도 동일.</p>
+<div class="sec-head"><span class="sec-ico">📱</span><h2>핵심 화면 <span class="chip open" style="vertical-align:4px">기본 구성 · 세부 UI TBD</span></h2></div>
+<p><strong>네비게이션</strong> — Bottom nav (엄지 도달 범위 · 한 손 조작). MVP는 iOS·Android 모바일에 집중하며 웹·데스크톱은 범위 밖이다.
 <div class="navpill"><span>🗓 홈</span><span>📊 대시보드</span><span class="plus">＋</span><span>💳 내 지갑</span><span>⚙️ 설정</span></div>
 <div class="callout" style="font-size:13px"><strong>UI 용어</strong> — 화면엔 "결제수단" 대신 <strong>"내 지갑"</strong>, 등록은 <strong>"카드 추가"</strong> (실결제 연동으로 오인 방지). DB/코드는 <code>payment_method</code> 유지 — UI 용어와 코드 용어 분리. 문서 내 "결제수단"은 개념 지칭.</div>
 <div class="acc-tools"><button id="accOpen">모두 펼치기</button><button id="accClose">모두 접기</button></div>
@@ -716,6 +778,9 @@ html{scroll-behavior:auto}
 <li>날짜 셀엔 결제수단별 <em>색 도트만</em> (금액 없음). cash-like도 색 보유. Demo B가 이 명세.</li>
 <li>마감일 셀 = 카드 색 배경 + <em>사이클 누적액만</em> — 카드명 생략, 색이 식별. 하단 색 범례.</li>
 <li>오늘은 테두리 강조. 하단 패널: 선택 날짜 거래 리스트(도트 포함). 상단에 그 달 합계.</li>
+<li>Detail Mode를 기본으로, Simple Mode는 주요 closing date 중심으로 축약한다. 날짜별 메모를 추가하고 존재 여부는 아이콘 상태로 표시하는 방향이다. 거래별 <code>transactions.memo</code>와는 별개이며 저장 구조·전환 UX는 TBD.</li>
+<li>일반 달력은 월 단위로 탐색하고 현재 월의 미래 날짜도 같은 기본 스타일로 표시한다. 카드 선택 시 시작일이 보이는 사이클 범위로 재배치하는 UI는 검토 중이며, 이전/다음 달 날짜 노출은 TBD.</li>
+<li>월간 합계와 카드별 billing-cycle 합계는 서로 다른 기간이다. 사이클은 마감일 다음 날부터 다음 마감일까지 양 끝을 포함하고, 전월·다음 월 날짜까지 걸칠 수 있다. 월말·윤년·연도 경계와 카드별 마감일은 계산 테스트 대상이다.</li>
 </ul></div>
 </details>
 <details class="acc">
@@ -725,21 +790,23 @@ html{scroll-behavior:auto}
 <li>사이클 카드: 색 점 + 이름 + D-day + 누적액(큰 숫자) + 진행률 바 + 기간.</li>
 <li><strong>일별 바 차트(30일)</strong>: 결제수단 색 스택 — 주간 패턴·과소비 구간 시각화.</li>
 <li><span class="chip later">Phase 2~3</span> 사이클 페이스 비교: 지난 사이클 같은 시점 vs 현재 — 카드값 초과를 마감 전 예고.</li>
+<li><span class="chip open">후보</span> 결제수단별 breakdown, 선택형 위젯·순서 변경, Daily/Monthly 추세. Weekly는 제외하는 방향이며 기간·저장 위치는 TBD.</li>
 </ul></div>
 </details>
 <details class="acc">
 <summary><span class="acc-n">S3</span>입력 플로우<span class="acc-arrow">▶</span></summary>
 <div class="acc-body"><ul>
 <li>➕ 탭 → 시트: "직접 입력 / 영수증 촬영". 영수증 옵션에 남은 파싱 수 상시 노출("7장 남음").</li>
-<li>직접 입력: 금액 크게 → 결제수단 칩 → 카테고리 칩 → 날짜/메모. 3탭 이내. 칩 색 = 카드 색.</li>
+<li>직접 입력: 상점·날짜·결제수단·Tax·Tip은 결제 헤더, 이름·줄 합계·카테고리는 최소 한 개의 품목에 입력한다. 금액은 개당 가격이 아닌 해당 줄의 전체 금액이고 수량은 별도 저장하지 않는다. Total은 품목 금액과 Tax/Tip을 합산해 표시하며 직접 수정할 수 없다. 품목이 없으면 저장을 비활성화한다. 칩 색 = 카드 색.</li>
+<li>현행 백엔드 API는 품목 최소 1건의 수동 생성·기간 조회, 기존 품목 ID 유지와 ID 없는 품목 추가·요청에서 빠진 품목 영구 삭제를 처리한다. 생성·수정 요청에서는 Total을 받지 않고 품목과 Tax/Tip으로 계산한다. 거래 전체 DELETE는 30일 soft delete다. 영수증 출처 거래 PUT도 품목 최소 1건을 요구한다. 최종 총액·Refund 카테고리 migration과 임시 거래 API 검증은 완료됐으며 영수증 파싱 생성·Flutter 연동은 후속 작업이다.</li>
 </ul></div>
 </details>
 <details class="acc">
 <summary><span class="acc-n">S4</span>영수증 파싱 확인<span class="acc-arrow">▶</span></summary>
 <div class="acc-body"><ul>
 <li>merchant/날짜/결제수단 헤더 + "AI 분류" 배지. 품목별 이름/가격/카테고리 칩(탭 변경).</li>
-<li>Tax·Tip은 회색 라인 구분. 하단: 합계 + <em>total 일치/불일치 검증 배지</em>.</li>
-<li>"품목 추가" 보조 + "N건 모두 저장" 주 버튼. 원본은 "이미지 보기".</li>
+<li>Tax·Tip은 회색 라인 구분. 편집 중 합계와 원본 영수증 금액의 차액만 안내하고 틀린 필드를 추정하지 않는다. 품목 0건은 저장하지 않으며, 차이가 있어도 안내·재확인 후 저장할 수 있다.</li>
+<li>품목 제거 직후 Undo는 Save 전 화면 상태만 되돌린다. Save 후 제거된 품목은 복구하지 않는다. 영수증 원본은 영구 보관하거나 저장 후 재열람하지 않는다.</li>
 </ul></div>
 </details>
 <details class="acc">
@@ -754,18 +821,23 @@ html{scroll-behavior:auto}
 <details class="acc" data-status="open">
 <summary><span class="acc-n">S6</span>한도 게이트 2종 <span class="chip open" style="margin-left:6px">수치 미확정</span><span class="acc-arrow">▶</span></summary>
 <div class="acc-body"><ul>
-<li><strong>파싱 초과</strong>: "무료 파싱을 모두 사용했어요 (10/10)" — <em>주 버튼 = "직접 입력하기"</em> (막힌 사용자 먼저 구제), 보조 = "Pro 보기 · 월 50장". 이어서 영수증 이미지(핀치 줌) 보며 직접 입력. 이미지는 저장 → "유료 전환 시 과거 영수증도 파싱" 업셀.</li>
+<li><strong>파싱 초과</strong>: "무료 파싱을 모두 사용했어요 (10/10)" — <em>주 버튼 = "직접 입력하기"</em>, 보조 = "Pro 보기 · 월 50장". 현재 입력 세션에서 임시 이미지 표시 여부·폐기 시점은 TBD. 저장 후 원본 재열람이나 과거 영수증 재파싱 업셀은 제공하지 않는다.</li>
 <li><strong>카드 초과</strong>: "무료 플랜은 카드 2개까지" — 파싱 팝업과 동일 패턴 재사용.</li>
 </ul></div>
 </details>
 <details class="acc">
 <summary><span class="acc-n">S7</span>온보딩 (2단계)<span class="acc-arrow">▶</span></summary>
 <div class="acc-body"><ul>
-<li>시작: 가치 제안 + [계속하기: Email OTP / Google / Apple] / [가입 없이 둘러보기] — 기기 저장이며 앱 삭제·기기 변경 시 소실 가능함을 명시.</li>
+<li>시작: 가치 제안 + [이메일/비밀번호로 시작] / [가입 없이 둘러보기]. 이메일 인증 후 활성화하며 Google/Apple은 확장 후보. Guest 데이터는 기기 저장으로 앱 삭제·기기 변경 시 소실 가능함을 명시.</li>
+<li>가입 시 랜덤 표시 이름을 제안하고 수정·건너뛰기를 허용한다. 이후 프로필에서 변경 가능. 생성 규칙과 UI/API는 TBD·미구현.</li>
 <li>첫 카드 등록: <em>"카드번호는 필요 없어요 — 이름과 마감일만"</em>. 빠른 선택(1/5/15일/직접), 건너뛰기 허용.</li>
 <li>비회원 → 회원 전환 시 기기 SQLite → 서버 마이그레이션 (전환율 핵심 장치).</li>
 </ul></div>
 </details>
+<div class="spec">
+<div class="spec-title">검색 범위 <span class="chip open">후보 · 미확정</span></div>
+<p>정확한 품목명 검색과 카테고리·상점 필터를 우선 검토한다. 부분 일치 범위와 검색 대상 데이터 구조는 TBD다. <code>coffee</code> 검색이 <code>latte</code>를 자동으로 찾는 의미 검색은 기본 기능으로 가정하지 않는다.</p>
+</div>
 </section>
 <!-- ========== 08 ========== -->
 <section id="s8">
@@ -784,8 +856,8 @@ html{scroll-behavior:auto}
 </div>
 </div>
 <ul>
-<li><strong>카테고리 소유권 3층</strong>: 앱이 기본 세트 → 사용자 CRUD가 최종 → AI는 목록 안에서 추천만(임의 생성 불가) → 수정은 규칙으로 축적.</li>
-<li><strong>비회원 파싱</strong>: 이미지는 서버 메모리에서만 처리, <em>파싱 즉시 삭제</em> — 디스크에 쓰지 않는 구조.</li>
+<li><strong>카테고리 운영</strong>: 운영팀이 기본 목록을 관리하고 사용자는 품목의 분류를 수정할 수 있다. AI는 해당 가계부 목록 안에서 추천만 하며 새 카테고리를 생성하지 않는다.</li>
+<li><strong>비회원 파싱</strong>: 이미지는 서버를 경유하되 영구 보관하지 않는다. 메모리·임시 파일 사용 방식과 성공·실패·중단 시 삭제 시점은 구현 전 확정한다.</li>
 <li><strong>실패 처리</strong>: 저신뢰/실패 시 수동 입력 fallback. 한도 초과여도 업로드는 항상 가능 — 차단은 AI 파싱뿐.</li>
 <li><strong>모델 선택</strong>: 가격 차이는 무의미(장당 &lt;1¢) — 실제 영수증 10~15장으로 품질 비교 후 결정. 모델명은 config 값.</li>
 </ul>
@@ -802,17 +874,17 @@ html{scroll-behavior:auto}
 </div>
 <div class="si">
 <div class="si-head">약관 · 개인정보처리방침 동의 <span class="tag r">공개 전 필수</span></div>
-<div class="si-desc">온보딩 가입 버튼 하단 동의 한 줄. 방침엔 수집 항목 · 제3자 전송 · 보관 기간(비회원 즉시 삭제) · 삭제 방법 포함.</div>
+<div class="si-desc">온보딩 가입 버튼 하단 동의 한 줄. 방침에는 확인된 수집 항목 · 제3자 전송 · 실제 임시 보관·삭제 시점 · 삭제 방법을 반영.</div>
 <div class="si-note">일반 공개·유료화 전 방침 문구는 전문가/템플릿 검토 필수 — CCPA 및 App Store·Google Play 심사 요건.</div>
 </div>
 <div class="si">
 <div class="si-head">설계로 방어 <span class="tag g">문서보다 강력</span></div>
-<div class="si-desc">파싱 프롬프트가 품목/가격/상호/날짜만 추출 — 이름·카드번호·멤버십 번호는 <strong>추출 금지</strong> 명시. DB에 PII가 애초에 안 들어온다.</div>
-<div class="si-note">LLM은 학습 미사용 API 티어 사용. private bucket + presigned URL, 비회원 이미지 즉시 삭제는 기결정.</div>
+<div class="si-desc">프롬프트에는 이름·카드번호·멤버십 번호 추출 금지를 명시한다. 단, 이미지가 외부 AI에 전송되고 추출 결과·로그에 PII가 들어올 가능성은 별도 검증이 필요하다.</div>
+<div class="si-note">원본 이미지는 영구 보관하지 않는다. Gemini 등의 전송·보존·학습 정책, 임시 파일과 로그 처리, 사용자 고지는 출시 전 확인한다.</div>
 </div>
 <div class="si">
 <div class="si-head">계정 삭제 = 데이터 전체 삭제 <span class="tag r">설정 화면 필수</span></div>
-<div class="si-desc">방침에 쓴 약속을 지키는 실제 버튼. 이미지 포함 hard delete (운영 원칙의 삭제 2층 규칙).</div>
+<div class="si-desc">계정 데이터 전체 삭제 기능이 필요하다. 원본 이미지는 영구 보관하지 않으며 남아 있는 임시 파일이 있다면 함께 폐기한다. 개별 거래의 삭제 방식은 별도 결정한다.</div>
 </div>
 </div>
 </section>
@@ -831,21 +903,22 @@ html{scroll-behavior:auto}
 <span class="st bad">failed · 무차감</span>
 </div>
 <div class="si-desc">차감 기준은 "유저가 파싱의 가치를 받았는가". 결과가 나오면 차감, 시스템이 실패하면 무차감.</div>
-<div class="si-note">저장 시 차감은 기각 — 결과만 읽고 저장 없이 이탈하는 우회를 허용하기 때문. 저장 안 된 이미지(draft·failed)는 7일 보존 후 자동 삭제: draft의 7일은 유저가 이어받을 시간("저장 안 한 영수증" 배너), failed의 7일은 실패 원인을 들여다볼 디버깅 창.</div>
+<div class="si-note">기존 draft·failed 이미지 7일 보관 가정은 원본 비보관 방향과 충돌해 폐기한다. 이미지 없는 draft 재방문과 실패 디버깅, 임시 이미지의 실패·중단 시 삭제 시점은 TBD.</div>
 </div>
 <div class="si">
-<div class="si-head">실패 로그 <span class="tag g">메타데이터 영구</span></div>
-<div class="si-desc">failed의 이미지는 7일 후 삭제하되, 메타데이터(에러 유형·품목 수·이미지 크기·모델명)는 영구 보관 — 개인정보 없이 실패 패턴 분석.</div>
-<div class="si-note">7일 창에서 발견한 실패 유형은 재현 테스트 케이스로 승격(팀 자체 영수증·익명화 샘플). 대규모 실패 이미지 수집이 필요해지면 그때 용도 명시 옵트인으로 — 기본 보관은 하지 않음.</div>
+<div class="si-head">실패 로그 <span class="tag a">보존 정책 TBD</span></div>
+<div class="si-desc">원본 이미지 대신 오류 유형·품목 수·이미지 크기·모델명 등 최소 메타데이터를 검토한다. 개인정보 포함 여부와 보존 기간은 TBD.</div>
+<div class="si-note">이미지 보관을 전제로 한 디버깅 창은 두지 않는다. 재현에는 팀 자체 영수증이나 별도 익명화 샘플을 사용한다.</div>
 </div>
 <div class="si">
 <div class="si-head">차감 고지</div>
 <div class="si-desc">첫 파싱 때 프라이버시 안내와 통합해 1회만 팝업. 이후엔 실행 버튼이 말한다 — "파싱하기 · 9장 남음".</div>
 </div>
 <div class="si">
-<div class="si-head">삭제 2층 규칙</div>
-<div class="si-desc">개별 삭제는 <strong>soft delete</strong>, 계정 삭제는 <strong>hard delete</strong>.</div>
-<div class="si-note">soft = deleted_at 컬럼. quota가 유지되어 "지우고 재파싱" 무한 리필을 차단. hard = 이미지 포함 완전 파기 — 프라이버시 섹션의 약속 이행.</div>
+<div class="si-head">삭제 정책 <span class="tag b">거래 30일 soft delete</span></div>
+<div class="si-desc">거래 전체 DELETE는 <code>transactions.deleted_at</code>에 UTC 시각을 기록하고 일반 조회에서 숨긴다. 30일 이내 복구 문의는 관리자 운영 절차로 처리하며 사용자용 복구 API는 없다. 기한이 지나면 품목부터, 거래를 다음에 영구 삭제한다. 품목은 Save 전 Undo만 가능하고 Save 후 제거된 품목은 영구 삭제한다. 30일 보관 데이터는 AI 학습용으로 별도 유지하지 않는다.</div>
+<div class="si-note">DELETE API·내부 복구 함수·1,000건 단위 정리 명령을 작성했다. 실제 DB에서 만료 거래·품목 삭제, 최근 삭제 거래 보존·복구를 확인한 뒤 임시 데이터를 롤백했다. 관리자 운영 경로와 매일 새벽 3시 스케줄러는 배포 환경에서 연결해야 한다. 영수증 quota와의 관계는 Phase 2에서 정한다. 계정 삭제 시 전체 데이터 삭제 방향과 원본 이미지 비보관 원칙은 유지한다.</div>
+<div class="si-note">일반 조회는 <code>deleted_at IS NULL</code>을 적용하고 활성 거래의 <code>(ledger_id, transacted_at)</code>에 PostgreSQL 부분 인덱스를 둔다. DB에서 인덱스 정의와 migration head <code>b84e91d2c673</code>을 확인했다.</div>
 </div>
 </div>
 <div class="spec">
@@ -890,7 +963,7 @@ html{scroll-behavior:auto}
 </div>
 <div class="si">
 <div class="si-head">상시 스위치 <span class="tag g">상시</span></div>
-<div class="si-desc">CORS는 프론트 도메인만 · presigned URL은 수 분 만료 + 발급 시 멤버십 검사 · 로그와 Sentry에 PII scrub · Dependabot 활성화 · JWT는 서명+만료+audience 검증.</div>
+<div class="si-desc">CORS는 허용한 출처만 · 임시 Storage 접근 URL을 쓴다면 수 분 만료와 권한 검사 · 로그와 Sentry의 PII 처리 검토 · Dependabot 활성화 · JWT는 서명+만료+audience 검증.</div>
 </div>
 </div>
 <div class="spec">
@@ -912,7 +985,7 @@ html{scroll-behavior:auto}
 <div class="sec-head"><span class="sec-ico">🚀</span><h2>마일스톤 &amp; 결정 현황</h2></div>
 <div class="tbl-wrap"><table>
 <tr><th>주차</th><th>목표</th></tr>
-<tr><td>1주</td><td>셋업 (FastAPI+Flutter), Supabase/Auth 기본 설정, DB 스키마, 결제수단/카테고리 CRUD, 모니터링 3종 + rate limit + 지출 캡 + RLS·멤버십 의존성</td></tr>
+<tr><td>1주</td><td>셋업 (FastAPI+Flutter), Supabase/Auth 기본 설정, DB 스키마, 결제수단 생성·조회와 카테고리 목록 조회, 모니터링 3종 + rate limit + 지출 캡 + RLS·멤버십 의존성</td></tr>
 <tr><td>2주</td><td>지출 입력 + 거래 내역 + 사이클 계산 (테스트 포함)</td></tr>
 <tr><td>3주</td><td>대시보드 — <strong>Phase 1 완성</strong></td></tr>
 <tr><td>4주</td><td>파싱 파이프라인 + 확인 UI</td></tr>
@@ -1071,8 +1144,8 @@ t.classList.add('on');document.getElementById(t.dataset.pane).classList.add('on'
 });
 /* ---------- tier cards ---------- */
 const TIER_INFO={
-guest:'<strong>비회원 정책</strong> — 데이터는 기기 SQLite에만 저장 (서버 DB 기록 없음). 파싱 시에만 이미지가 서버를 경유하고 <em>즉시 삭제</em>. 앱 삭제·기기 변경 시 소실 가능 경고 필수. 가입 시 로컬 데이터를 서버로 마이그레이션.',
-free:'<strong>무료 회원</strong> — Email OTP / Google / Apple 중 지원 Identity로 인증. 사용량은 Supabase user_id 기준. 한도 초과 시에도 업로드·수동 입력은 항상 가능, 잠기는 건 AI 파싱뿐. 3번째 카드 추가 시도 시 Pro 게이트 모달.',
+guest:'<strong>비회원 정책</strong> — 데이터는 기기 SQLite에만 저장 (서버 DB 기록 없음). 파싱 시 이미지는 서버를 경유하지만 영구 보관하지 않음. 임시 파일 처리·삭제 시점은 TBD. 앱 삭제·기기 변경 시 소실 가능 경고 필수. 가입 시 로컬 데이터를 서버로 마이그레이션.',
+free:'<strong>무료 회원</strong> — 현행 Email/Password·이메일 인증을 사용. 다른 인증 수단은 별도 검토. 사용량은 Supabase user_id 기준. 한도 초과 시에도 업로드·수동 입력은 가능하고 AI 파싱만 제한. 카드 개수 게이트 수치는 미확정.',
 pro:'<strong>Pro</strong> — 3티어 대신 단일 플랜. 결제는 회원만 가능하며 모바일 스토어 결제 방식은 출시 전 확정. 파싱 원가는 낮게 유지하고, 50장 소진 유저가 유의미하면 크레딧 팩(+20장) 추가 판매 검토.'
 };
 const tierDetail=document.getElementById('tierDetail');
@@ -1086,23 +1159,23 @@ t.classList.add('sel');tierDetail.innerHTML=TIER_INFO[t.dataset.tier];
 const FLOW=[
 {ico:'📤',name:'업로드',title:'1 · 영수증 업로드',
 desc:'사용자가 영수증을 촬영/선택. 업로드 자체는 한도와 무관하게 항상 가능.',
-branch:'분기 — 파싱 한도 초과 시: 게이트 팝업 → "직접 입력하기"(주 버튼) → 이미지 보며 수동 입력. 잠기는 건 AI 파싱뿐.',
+branch:'분기 — 파싱 한도 초과 시: 게이트 팝업 → "직접 입력하기"(주 버튼). 입력 중 임시 이미지 표시 여부·폐기 시점은 TBD이며, AI 파싱만 제한한다.',
 body:'<div class="fp-recon" style="max-width:320px"><div class="fr-row"><span>📷 IMG_2481.jpg</span><span>2.4 MB</span></div><div class="fr-row"><span>카드</span><span>Chase Sapphire</span></div><div class="fr-row"><span>무료 파싱</span><span>이번 달 7장 남음</span></div></div>'},
 {ico:'🖼️',name:'전처리',title:'2 · 이미지 전처리',
-desc:'긴 쪽 기준 리사이즈로 토큰 원가 절감(장당 <1¢). 비회원이면 디스크에 쓰지 않고 서버 메모리에서만 처리 — 파싱 후 즉시 소멸. 회원이면 private bucket에 저장.',
-body:'<div class="fp-recon" style="max-width:320px"><div class="fr-row"><span>리사이즈</span><span>2.4 MB → 310 KB</span></div><div class="fr-row"><span>회원</span><span>Supabase Storage 저장</span></div><div class="fr-row"><span>비회원</span><span>메모리 처리 · 즉시 삭제</span></div></div>'},
+desc:'서버에서 형식·크기를 검증하고 재인코딩·EXIF 제거·리사이즈 후 AI에 전달한다. 원본은 영구 보관하지 않으며, 임시 Storage 사용 여부와 성공·실패·중단 시 삭제 시점은 TBD.',
+body:'<div class="fp-recon" style="max-width:320px"><div class="fr-row"><span>서버 검증</span><span>형식·크기</span></div><div class="fr-row"><span>전처리</span><span>재인코딩 · EXIF 제거 · 리사이즈</span></div><div class="fr-row"><span>임시 저장</span><span>필요 여부·삭제 시점 TBD</span></div></div>'},
 {ico:'🤖',name:'LLM 파싱',title:'3 · Vision LLM 파싱',
-desc:'structured output으로 JSON 강제. 프롬프트에 사용자의 카테고리 목록(이름+정의) 제공 — AI는 그 안에서만 선택. tax/tip 분리, 할인/쿠폰 라인(음수) 처리, 품목명 정규화("WHL MLK 2%"→"Whole Milk 2%"), PII(이름·카드번호) 추출 금지까지 프롬프트에 명시.',
-body:'<div class="fp-json">{ <span class="k">"merchant"</span>: <span class="s">"Trader Joe\'s"</span>, <span class="k">"date"</span>: <span class="s">"2026-08-24"</span>,<br>&nbsp;&nbsp;<span class="k">"items"</span>: [<br>&nbsp;&nbsp;&nbsp;&nbsp;{ <span class="k">"name"</span>: <span class="s">"Chicken thighs"</span>, <span class="k">"price_cents"</span>: 899, <span class="k">"category"</span>: <span class="s">"Food"</span> },<br>&nbsp;&nbsp;&nbsp;&nbsp;{ <span class="k">"name"</span>: <span class="s">"Dish soap"</span>, <span class="k">"price_cents"</span>: 329, <span class="k">"category"</span>: <span class="s">"Living"</span> },<br>&nbsp;&nbsp;&nbsp;&nbsp;{ <span class="k">"name"</span>: <span class="s">"Flower bouquet"</span>, <span class="k">"price_cents"</span>: 599, <span class="k">"category"</span>: <span class="s hl">"Etc"</span> } ],<br>&nbsp;&nbsp;<span class="k">"tax_cents"</span>: 146, <span class="k">"total_cents"</span>: 1973 }</div>'},
+desc:'계획: 구조화 출력으로 JSON을 받고 해당 가계부의 운영팀 정의 카테고리 목록(이름+정의) 안에서 분류하게 한다. tax/tip 분리와 품목명 정규화를 처리하고 PII(이름·카드번호) 추출 금지를 요청한다. 할인/쿠폰 처리는 추후 설계하며, 응답 검증과 분류 fallback은 구현 시 정한다.',
+body:'<div class="fp-json">{ <span class="k">"merchant"</span>: <span class="s">"Trader Joe\'s"</span>, <span class="k">"date"</span>: <span class="s">"2026-08-24"</span>,<br>&nbsp;&nbsp;<span class="k">"items"</span>: [<br>&nbsp;&nbsp;&nbsp;&nbsp;{ <span class="k">"name"</span>: <span class="s">"Chicken thighs"</span>, <span class="k">"price_cents"</span>: 899, <span class="k">"category"</span>: <span class="s">"Food"</span> },<br>&nbsp;&nbsp;&nbsp;&nbsp;{ <span class="k">"name"</span>: <span class="s">"Dish soap"</span>, <span class="k">"price_cents"</span>: 329, <span class="k">"category"</span>: <span class="s">"Food"</span> },<br>&nbsp;&nbsp;&nbsp;&nbsp;{ <span class="k">"name"</span>: <span class="s">"Flower bouquet"</span>, <span class="k">"price_cents"</span>: 599, <span class="k">"category"</span>: <span class="s hl">"Etc"</span> } ],<br>&nbsp;&nbsp;<span class="k">"tax_cents"</span>: 146, <span class="k">"total_cents"</span>: 1973 }</div>'},
 {ico:'✨',name:'규칙 적용',title:'4 · 개인화 규칙 덮어쓰기',
-desc:'categorization_rules 매칭 — 과거에 사용자가 수정했던 분류를 우선 적용. 예: 이 사용자는 예전에 Trader Joe\'s의 flower를 Gift로 바꾼 적이 있음.',
-body:'<div class="fp-json"><span class="cm">// rule: merchant="Trader Joe\'s" + keyword="flower" → Gift</span><br>{ <span class="k">"name"</span>: <span class="s">"Flower bouquet"</span>, <span class="k">"category"</span>: <span class="s hl">"Etc" → "Gift"</span> }</div>'},
+desc:'계획: 과거에 사용자가 고친 분류를 규칙으로 반영할 수 있다. 예시는 Dish soap의 Food 오분류를 기존 Living 카테고리로 바꾸는 경우다. 규칙 범위와 저장 정책은 Phase 2에서 정한다.',
+body:'<div class="fp-json"><span class="cm">// 예시 규칙: merchant="Trader Joe\'s" + keyword="soap" → Living</span><br>{ <span class="k">"name"</span>: <span class="s">"Dish soap"</span>, <span class="k">"category"</span>: <span class="s hl">"Food" → "Living"</span> }</div>'},
 {ico:'👀',name:'사용자 확인',title:'5 · 확인 화면 (필수 안전망)',
-desc:'품목별 카테고리 칩·가격 수정 가능. 합계와 영수증 total을 대조해 검증 배지 표시 — 불일치면 차액 경고(파싱 오류 탐지). 여기서의 수정이 다음 규칙이 된다.',
-body:'<div class="fp-recon"><div class="fr-row"><span>Chicken thighs <span class="cat" style="background:var(--green-bg);color:#018756">Food</span></span><span>$8.99</span></div><div class="fr-row"><span>Dish soap <span class="cat" style="background:#FFF1E7;color:#C2570A">Living</span></span><span>$3.29</span></div><div class="fr-row"><span>Flower bouquet <span class="cat" style="background:#FDEBF1;color:#C13B6B">Gift</span></span><span>$5.99</span></div><div class="fr-row tax"><span>Tax</span><span>$1.46</span></div><div class="fr-row total"><span>✓ 영수증 total과 일치</span><span>$19.73</span></div></div>'},
-{ico:'💾',name:'저장',title:'6 · Transaction 일괄 생성',
-desc:'품목당 transaction 1개씩 + Tax도 별도 row → SUM = 영수증 총액 항상 성립. receipt.status = parsed, 원본 JSON은 raw_parse_json에 감사 로그로 보존.',
-body:'<div class="fp-recon" style="max-width:340px"><div class="fr-row"><span>transactions 생성</span><span>4 rows</span></div><div class="fr-row"><span>receipt.status</span><span>parsed</span></div><div class="fr-row"><span>사용자 수정 감지</span><span>Etc→Gift, 규칙 저장 ✨</span></div><div class="fr-row total"><span>홈 캘린더에 도트 추가</span><span>8월 24일 🔵</span></div></div>'}
+desc:'품목별 카테고리 칩·줄 합계 수정 가능. 편집 중 합계와 원본 영수증 total을 대조해 차액만 알린다. 어느 필드가 틀렸는지는 단정하지 않는다.',
+body:'<div class="fp-recon"><div class="fr-row"><span>Chicken thighs <span class="cat" style="background:var(--green-bg);color:#018756">Food</span></span><span>$8.99</span></div><div class="fr-row"><span>Dish soap <span class="cat" style="background:#FFF1E7;color:#C2570A">Living</span></span><span>$3.29</span></div><div class="fr-row"><span>Flower bouquet <span class="cat" style="background:#FDEBF1;color:#C13B6B">Etc</span></span><span>$5.99</span></div><div class="fr-row tax"><span>Tax</span><span>$1.46</span></div><div class="fr-row total"><span>✓ 영수증 total과 일치</span><span>$19.73</span></div></div>'},
+{ico:'💾',name:'저장',title:'6 · 결제 1건 + 품목 N건 저장',
+desc:'계획: 확인한 품목은 transaction_items로, Tax/Tip과 최종 total_cents는 transactions에 저장한다. 품목 금액은 한 줄의 전체 금액이며 수량은 저장하지 않는다. 편집 중 합계와 원본 영수증 총액이 달라도 차액 안내·재확인 후 저장할 수 있다. receipt.status와 원본 총액 저장 범위는 Phase 2 설계에서 정한다.',
+body:'<div class="fp-recon" style="max-width:340px"><div class="fr-row"><span>transactions 생성</span><span>1 row · Tax/Tip 포함</span></div><div class="fr-row"><span>transaction_items 생성</span><span>품목 3건</span></div><div class="fr-row"><span>receipt.status</span><span>parsed</span></div><div class="fr-row"><span>사용자 수정 감지</span><span>Food→Living, 규칙 저장 후보 ✨</span></div><div class="fr-row total"><span>홈 캘린더에 도트 추가</span><span>8월 24일 🔵</span></div></div>'}
 ];
 const flowSteps=document.getElementById('flowSteps');
 const flowPanel=document.getElementById('flowPanel');
@@ -1138,10 +1211,11 @@ const erd=document.getElementById('erd');
 const erdSvg=document.getElementById('erdSvg');
 const RELS=[
 ['ledger','user'],['ledger_member','ledger'],['ledger_member','user'],
-['payment_method','ledger'],['category','ledger'],['receipt','ledger'],
-['transaction','ledger'],['transaction','payment_method'],['transaction','category'],['transaction','receipt'],
+['payment_method','user'],['receipt','ledger'],
+['transaction','ledger'],['transaction','payment_method'],['transaction','receipt'],
+['transaction_item','transaction'],['transaction_item','category'],
 ['categorization_rule','ledger'],['categorization_rule','category'],
-['income_source','ledger'],['income_record','ledger'],['income_record','income_source']
+['income_source','ledger'],['income_source','payment_method'],['income_record','ledger'],['income_record','income_source'],['income_record','payment_method']
 ];
 function erdDraw(){
 if(!erd||getComputedStyle(erdSvg).display==='none')return;

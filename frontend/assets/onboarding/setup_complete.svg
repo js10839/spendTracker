@@ -1,0 +1,15 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Illustration &#194;&#183; done" clip-path="url(#clip0_0_39)">
+<circle id="Ellipse" cx="100" cy="100" r="100" fill="#F6F7F6"/>
+<circle id="Ellipse_2" cx="100" cy="100" r="72" fill="#F6F7F6"/>
+<g id="Check &#194;&#183; done">
+<rect x="54" y="54" width="92" height="92" rx="46" fill="#CEF370"/>
+<path id="Vector" d="M78.84 100.92L93.56 115.64L121.16 84.36" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke="#141F18"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_0_39">
+<rect width="200" height="200" fill="white"/>
+</clipPath>
+</defs>
+</svg>
