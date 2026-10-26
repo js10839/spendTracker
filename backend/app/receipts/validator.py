@@ -1,7 +1,9 @@
 # 금액 및 데이터 검증
 
 from decimal import Decimal
+
 from pydantic import BaseModel
+
 from .schemas import ReceiptData
 
 CENT = Decimal("0.01")
@@ -25,7 +27,7 @@ def validate_receipt(data: ReceiptData) -> ValidationReport:
         value = getattr(data, field)
         if value is not None and value != value.quantize(CENT):
             issues.append(f"{field} has sub-cent precision")
-    calculated = sum((item.price for item in data.items), Decimal("0")) + data.tax + data.tip
+    calculated = sum((item.price for item in data.items), Decimal(0)) + data.tax + data.tip
     calculated = calculated.quantize(CENT)
     difference = None if data.total is None else (calculated - data.total).quantize(CENT)
     if data.total is None:

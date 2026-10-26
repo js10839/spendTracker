@@ -1,9 +1,10 @@
 # API Output Format
 # JSON 데이터 구조
 
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema
 
 # Keep Decimal validation locally without exposing its generated regex to the API.

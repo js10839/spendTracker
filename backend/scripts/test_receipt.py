@@ -2,11 +2,14 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import load_dotenv
 from openai import OpenAIError
+
 from app.receipts.parser import parse_receipt
 from app.receipts.validator import validate_receipt
+
 
 # uv run python scripts/test_receipt.py samples/receipt_01.jpg --output outputs/result.json
 def main():
