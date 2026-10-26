@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import load_dotenv
+from openai import OpenAIError
 from app.receipts.parser import parse_receipt
 from app.receipts.validator import validate_receipt
 
@@ -34,7 +35,7 @@ def main():
         if report.issues:
             print("Issues: " + "; ".join(report.issues))
         return 0 if report.status == "pass" else 2
-    except Exception as exc:
+    except (OpenAIError, OSError, ValueError, RuntimeError) as exc:
         print(f"Parsing failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
