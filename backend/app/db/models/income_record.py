@@ -24,4 +24,6 @@ class IncomeRecord(Base):
     memo: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
+    # 예정 수입을 확정해 만든 기록의 원래 예정일이다. 직접 입력한 수입은 NULL이다.
+    expected_date: Mapped[date | None] = mapped_column(Date)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
