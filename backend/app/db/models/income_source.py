@@ -17,7 +17,7 @@ from app.db.base import Base
 
 
 class IncomeSource(Base):
-    """일회성 또는 반복되는 예정 수입을 저장한다."""
+    """일회성 또는 반복 예정 수입과 삭제 시각을 저장한다."""
 
     __tablename__ = "income_sources"
     __table_args__ = (CheckConstraint("expected_amount_cents > 0", name="ck_income_sources_positive_amount"),)
