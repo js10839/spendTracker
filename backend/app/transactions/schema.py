@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,3 +65,25 @@ class TransactionGroupUpdate(BaseModel):
     tax_cents: int = Field(ge=0)
     tip_cents: int = Field(ge=0)
     items: list[TransactionItemUpdate] = Field(min_length=1)
+
+class TransactionSearchItemRead(BaseModel):
+    """검색에 일치한 품목과 캘린더 표시 정보를 반환한다."""
+
+    item_id: UUID
+    transaction_id: UUID
+    name: str
+    amount_cents: int
+    merchant: str | None
+    category_id: UUID
+    category_name: str
+    transacted_at: date
+    matched_fields: list[Literal["item", "store", "category"]]
+
+class TransactionSearchRead(BaseModel):
+    """일치한 날짜·품목·가게 수와 품목 금액 합계를 반환한다."""
+
+    matched_dates: list[date]
+    item_count: int
+    store_count: int
+    matched_items_total_cents: int
+    items: list[TransactionSearchItemRead]

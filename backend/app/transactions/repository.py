@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models.category import Category
@@ -101,3 +101,29 @@ def apply_transaction_update(db: Session, transaction: Transaction, payment_meth
     db.add_all(created_items)
     db.flush()
     return created_items
+
+def search_transaction_items(db: Session, ledger_id: UUID, start_date: date, end_date: date, query: str, payment_method_id: UUID | None = None) -> list[tuple[TransactionItem, Transaction, Category]]:
+    """기간 내 품목·가게·카테고리명 일치 품목을 선택한 카드로 좁혀 찾는다."""
+    escaped = query.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    pattern = f"%{escaped}%"
+
+    statement = (
+        select(TransactionItem, Transaction, Category)
+        .join(Transaction, TransactionItem.transaction_id == Transaction.id)
+        .join(Category, TransactionItem.category_id == Category.id)
+        .where(
+            Transaction.ledger_id == ledger_id,
+            Transaction.deleted_at.is_(None),
+            Transaction.transacted_at >= start_date,
+            Transaction.transacted_at <= end_date,
+            or_(
+                TransactionItem.name.ilike(pattern, escape="\\"),
+                Transaction.merchant.ilike(pattern, escape="\\"),
+                Category.name.ilike(pattern, escape="\\"),
+            ),
+        )
+    )
+    if payment_method_id is not None:
+        statement = statement.where(Transaction.payment_method_id == payment_method_id)
+    statement = statement.order_by(Transaction.transacted_at.desc(), TransactionItem.created_at, TransactionItem.id)
+    return [(item, transaction, category) for item, transaction, category in db.execute(statement)]
