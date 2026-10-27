@@ -13,6 +13,8 @@ from app.transactions.schema import (
     TransactionGroupRead,
     TransactionGroupUpdate,
     TransactionItemRead,
+    TransactionSearchItemRead,
+    TransactionSearchRead,
 )
 
 
@@ -156,3 +158,46 @@ def purge_expired_transactions(db: Session, batch_size: int = 1000, pause_second
         if deleted_count < batch_size:
             return total_deleted
         sleep(pause_seconds)
+
+def search_ledger_transactions(db: Session, ledger_id: UUID, start_date: date, end_date: date, query: str, payment_method_id: UUID | None = None) -> TransactionSearchRead:
+    """일치한 품목을 한 번씩 집계하고 캘린더 표시용 날짜와 금액을 반환한다."""
+    term = query.strip()
+    if not term:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Search query cannot be empty")
+    if start_date > end_date:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="start_date must be on or before end_date")
+
+    rows = repository.search_transaction_items(db, ledger_id, start_date, end_date, term, payment_method_id)
+    items = []
+
+    for item, transaction, category in rows:
+        matched_fields = [
+            field
+            for field, value in (
+                ("item", item.name),
+                ("store", transaction.merchant),
+                ("category", category.name),
+            )
+            if value is not None and term.casefold() in value.casefold()
+        ]
+        items.append(
+            TransactionSearchItemRead(
+                item_id=item.id,
+                transaction_id=transaction.id,
+                name=item.name,
+                amount_cents=item.amount_cents,
+                merchant=transaction.merchant,
+                category_id=category.id,
+                category_name=category.name,
+                transacted_at=transaction.transacted_at,
+                matched_fields=matched_fields,
+            )
+        )
+
+    return TransactionSearchRead(
+        matched_dates=sorted({item.transacted_at for item in items}),
+        item_count=len(items),
+        store_count=len({item.merchant.casefold() for item in items if item.merchant}),
+        matched_items_total_cents=sum(item.amount_cents for item in items),
+        items=items,
+    )

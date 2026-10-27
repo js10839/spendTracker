@@ -835,8 +835,8 @@ html{scroll-behavior:auto}
 </ul></div>
 </details>
 <div class="spec">
-<div class="spec-title">검색 범위 <span class="chip open">후보 · 미확정</span></div>
-<p>정확한 품목명 검색과 카테고리·상점 필터를 우선 검토한다. 부분 일치 범위와 검색 대상 데이터 구조는 TBD다. <code>coffee</code> 검색이 <code>latte</code>를 자동으로 찾는 의미 검색은 기본 기능으로 가정하지 않는다.</p>
+<div class="spec-title">캘린더 거래 검색 <span class="chip ok">API 작성</span></div>
+<p><code>GET /ledgers/{ledger_id}/transactions/search</code>는 지정한 날짜 범위에서 품목명·가게명·카테고리명의 대소문자 구분 없는 부분 일치를 찾는다. 한 품목이 여러 필드에 일치해도 한 번만 반환하며, 일치한 품목의 날짜·개수·가게 수·품목 금액 합계를 제공한다. Tax·Tip은 검색 합계에서 제외한다. 일반 캘린더는 해당 달을, 카드 화면은 사이클 기간과 선택적 <code>payment_method_id</code>를 전달한다. <code>coffee</code>가 가게명에 포함되면 그 가게의 latte 품목은 표시할 수 있으나, 두 단어를 동의어로 해석하는 의미 검색은 하지 않는다.</p>
 </div>
 </section>
 <!-- ========== 08 ========== -->
