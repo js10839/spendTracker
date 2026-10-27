@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from app.auth.dependencies import get_current_user_id
 from app.db.models.ledger import Ledger
 from app.db.session import get_db
 from app.income.schema import (
+    IncomeCalendarEntryRead,
     IncomePlanConfirm,
     IncomePlanCreate,
     IncomePlanRead,
@@ -17,9 +19,11 @@ from app.income.schema import (
     IncomeRecordUpdate,
 )
 from app.income.service import (
+    build_income_plan_read,
     confirm_income_plan,
     create_income_plan,
     create_income_record,
+    list_income_calendar,
     list_ledger_income_records,
     list_ledger_income_sources,
     soft_delete_income_plan,
@@ -54,13 +58,13 @@ def edit_income_record(record_id: UUID, data: IncomeRecordUpdate, ledger: Annota
 def add_income_plan(data: IncomePlanCreate, ledger: Annotated[Ledger, Depends(get_user_ledger)], user_id: Annotated[UUID, Depends(get_current_user_id)], db: Annotated[Session, Depends(get_db)]) -> IncomePlanRead:
     """가계부 접근 권한을 확인한 뒤 예정 수입을 저장한다."""
     source = create_income_plan(db, ledger_id=ledger.id, user_id=user_id, data=data)
-    return IncomePlanRead.model_validate(source)
+    return build_income_plan_read(db, source)
 
 @router.get("/income-plans", response_model=list[IncomePlanRead])
 def get_income_plans(ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> list[IncomePlanRead]:
     """접근 가능한 가계부의 활성 예정 수입을 반환한다."""
     sources = list_ledger_income_sources(db, ledger_id=ledger.id)
-    return [IncomePlanRead.model_validate(source) for source in sources]
+    return [build_income_plan_read(db, source) for source in sources]
 
 @router.post("/income-plans/{source_id}/confirm", status_code=status.HTTP_201_CREATED, response_model=IncomeRecordRead)
 def confirm_planned_income(source_id: UUID, data: IncomePlanConfirm, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> IncomeRecordRead:
@@ -72,7 +76,7 @@ def confirm_planned_income(source_id: UUID, data: IncomePlanConfirm, ledger: Ann
 def edit_income_plan(source_id: UUID, data: IncomePlanUpdate, ledger: Annotated[Ledger, Depends(get_user_ledger)], user_id: Annotated[UUID, Depends(get_current_user_id)], db: Annotated[Session, Depends(get_db)]) -> IncomePlanRead:
     """가계부 접근 권한을 확인한 뒤 활성 예정 수입의 설정을 수정한다."""
     source = update_ledger_income_plan(db, ledger_id=ledger.id, user_id=user_id, source_id=source_id, data=data)
-    return IncomePlanRead.model_validate(source)
+    return build_income_plan_read(db, source)
 
 @router.delete("/income-records/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_income_record(record_id: UUID, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> None:
@@ -88,4 +92,9 @@ def delete_income_plan(source_id: UUID, ledger: Annotated[Ledger, Depends(get_us
 def undo_planned_income_confirmation(record_id: UUID, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> IncomePlanRead:
     """접근 가능한 가계부에서 수입 확정을 취소하고 예정 항목을 다시 표시한다."""
     source = undo_income_confirmation(db, ledger_id=ledger.id, record_id=record_id)
-    return IncomePlanRead.model_validate(source)
+    return build_income_plan_read(db, source)
+
+@router.get("/income-calendar", response_model=list[IncomeCalendarEntryRead])
+def get_income_calendar(start_date: date, end_date: date, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> list[IncomeCalendarEntryRead]:
+    """접근 가능한 가계부의 기간별 예정·확정 수입을 달력 항목으로 반환한다."""
+    return list_income_calendar(db, ledger_id=ledger.id, start_date=start_date, end_date=end_date)

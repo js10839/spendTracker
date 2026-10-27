@@ -91,6 +91,7 @@ class IncomePlanRead(BaseModel):
     reference_date: date
     next_expected_date: date
     is_active: bool
+    adjusted_expected_date: date | None = None
 
 class IncomePlanConfirm(BaseModel):
     """특정 예정일의 실제 입금일과 변경된 금액을 받는다."""
@@ -117,3 +118,18 @@ class IncomePlanUpdate(BaseModel):
     memo: str | None = None
     from_name: str | None = Field(default=None, min_length=1)
     applied_to: UUID | None = None
+
+class IncomeCalendarEntryRead(BaseModel):
+    """예정 또는 확정된 수입 한 회차를 달력에 표시한다."""
+
+    status: Literal["planned", "received"]
+    income_source_id: UUID | None
+    income_record_id: UUID | None
+    income_type: str
+    from_name: str | None
+    payment_method_id: UUID | None
+    amount_cents: int
+    expected_date: date | None
+    received_at: date | None
+    display_date: date
+    memo: str | None
