@@ -725,11 +725,12 @@ html{scroll-behavior:auto}
 <div class="callout blue">
 <div class="co-title">💰 Income 규칙</div>
 <strong>Paycheck · Cashback · Other</strong> 세 유형을 사용한다. 실제 입금을 바로 기록할 수도 있고, <code>income_sources</code>에 일회성·반복 예정 수입을 먼저 저장할 수도 있다. Paycheck의 반복은 격주·월간이며 Cashback·Other 예정 수입은 일회성이다. 예정일만으로 실제 입금을 자동 생성하지 않고 사용자의 확정으로 <code>income_records</code>를 만든다. Other는 금액·날짜·메모만 받는다.
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">Paycheck의 <code>next_expected_date</code>는 반복 계산 기준일로 유지한다. 표시용 <code>adjusted_expected_date</code>는 Bankday의 미국 Federal Reserve 은행 달력(<code>us-fed</code>)에서 주말·휴일을 직전 영업일로 조정한다. 연도별 휴일 목록은 공유 테이블 <code>bank_calendar_years(year PK, holidays JSON, fetched_at)</code>에 저장하고 당해·미래 연도는 마지막 갱신 후 30일이 지나면 다음 조회 때 갱신한다. Bankday 실패 시 저장된 목록을 사용하며 저장된 목록도 없으면 조정일은 <code>null</code>이다. Cashback·Other는 기준일을 그대로 표시한다.</div>
 <div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">실제 수입 수정은 해당 기록의 금액·입금일·메모와 유형별 입력값만 바꾼다. 활성 예정 수입 수정은 앞으로 적용할 예상 금액·예정일·반복 주기를 바꾸며 과거 확정 기록은 유지한다. 예정일이나 주기를 바꿀 때만 반복 기준일을 새로 잡는다.</div>
 <div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">일반 DELETE는 실제 기록 또는 활성 예정 항목의 <code>deleted_at</code>을 기록해 조회에서 숨긴다. 실제 기록만 삭제하면 예정 상태는 바뀌지 않고, 예정을 삭제해도 과거 실제 기록은 남는다. 확정 직후 Undo는 별도 <code>POST /income-records/{record_id}/undo-confirmation</code>으로 실제 기록을 숨기고 원래 예정일을 다시 연다. 다음 회차가 이미 진행됐거나 예정 규칙이 바뀌었다면 거부한다. 관리자 내부 함수는 30일 이내 삭제 수입을 복구하되 열린 회차·재확정 회차의 중복 기록 복구를 막는다. 정리 명령은 만료 기록과 규칙을 순서대로 영구 삭제하고 남은 기록의 규칙 FK를 해제한다. 배포 스케줄러와 관리자 운영 절차는 미연결이다.</div>
 <div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">Cashback은 금액·Applied to(등록 결제수단)·날짜·메모를 받으며 해당 결제수단이 현재 사용자 소유인지 확인한다. Refund는 Income 입력에서 제외하고 공통 지출 카테고리로 제공한다.</div>
 <div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">신용카드 Cashback은 <code>received_at</code>이 속한 사이클의 순 청구 예상액에서 차감한다. Refund 품목은 음수로 저장하며 거래의 <code>transacted_at</code>이 속한 사이클에서 지출을 차감한다. 원래 구매 거래는 수정하지 않는다. 과거 <code>income_records</code>의 Refund 행은 자동 변환하지 않는다.</div>
-<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">알림 시간은 사용자별 설정으로 저장하지 않고 앱 정책으로 고정한다. Flutter가 <code>next_expected_date</code>를 받아 정해진 시간에 local notification을 예약하며 MVP에서는 별도 notification table을 만들지 않는다.</div>
+<div style="margin-top:10px;padding-top:10px;border-top:1px solid #C9DCF0">알림 시간은 사용자별 설정으로 저장하지 않고 앱 정책으로 고정한다. Flutter는 Paycheck의 <code>adjusted_expected_date</code>가 있으면 이 날짜로 local notification을 예약하고, 값이 없으면 조정일 미확인을 표시한다. Cashback·Other는 <code>next_expected_date</code>를 사용한다. MVP에서는 별도 notification table을 만들지 않는다.</div>
 </div>
 
 </section>

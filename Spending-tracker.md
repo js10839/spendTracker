@@ -365,6 +365,12 @@ income_records                     # 실제 수입 기록
 - deleted_at timestamp nullable
 - created_at timestamp
 - updated_at timestamp
+
+
+bank_calendar_years                 # Bankday us-fed 휴일 공유 캐시; 사용자·가계부 소유가 아님
+- year int PK                       # 조회할 달력 연도
+- holidays json NOT NULL           # 해당 연도의 은행 휴일 ISO 날짜 문자열 목록
+- fetched_at timestamptz NOT NULL  # Bankday에서 마지막으로 가져온 시각
 ```
 
 **확정 관계와 집계 기준**: `ledgers` 1:N `transactions`, `payment_methods` 1:N `transactions`, `transactions` 1:N `transaction_items`이며, 활성 거래는 품목을 최소 1건 유지한다. 품목은 `categories`의 공통 카테고리를 참조한다. 영수증 파싱 결제를 `transactions.receipt_id`로 파싱 기록에 연결하는 것은 Phase 2 계획이며, 정확한 제약 조건도 그때 정한다. `transactions.total_cents`는 백엔드가 품목 줄 금액 합계와 Tax/Tip을 더해 저장하는 최종 금액이다. 생성·수정 요청에는 `total_cents`를 받지 않으며, 품목을 수정·제거할 때도 남은 품목과 Tax/Tip으로 다시 계산한다. 마지막 품목을 제거한 상태는 저장할 수 없다. 품목 금액은 0이나 음수도 허용하고 Refund 카테고리 품목은 입력 부호와 무관하게 음수로 저장한다. 음수 품목은 할인/쿠폰 유형으로 따로 분류하지 않는다. 조회·사이클·대시보드는 삭제되지 않은 결제를 한 번만 집계한다. 현행 PUT은 기존 품목 ID를 유지하고 ID 없는 품목을 추가하며 요청에서 빠진 품목을 영구 삭제한다. 원본 영수증 금액과의 불일치 여부는 현재 거래 API에서 검증하지 않는다. 영수증 처리 상태와 원본 금액 비교의 상세 계약은 Phase 2에서 정한다.
@@ -387,11 +393,11 @@ income_records                     # 실제 수입 기록
 - **확정 직후 Undo**: `POST /ledgers/{ledger_id}/income-records/{record_id}/undo-confirmation`은 예정 수입에서 만든 실제 기록을 숨기고 원래 `expected_date` 회차를 다시 활성화한다. 두 변경은 한 DB 트랜잭션이다. 이후 회차가 진행되거나 예정 규칙이 바뀌었다면 409로 거부한다. 직접 입력한 기록에는 적용하지 않는다. 프론트의 즉시 Undo와 일반 기록 삭제는 서로 다른 동작이다.
 - **삭제 보관 운영**: 수입 기록·예정 규칙은 삭제 시각을 남겨 30일 보관한다. 사용자용 복구 API는 두지 않는다. 관리자 내부 함수는 보관 기간 내 기록·규칙을 복구하며, 확정 Undo로 열린 회차 또는 재확정된 회차의 기록 중복 복구는 거부한다. `python -m app.income.cleanup` 명령은 만료된 실제 기록을 먼저, 예정 규칙을 다음에 1,000건 단위로 영구 삭제한다. 예정 규칙을 삭제할 때 남아 있는 과거 기록의 `income_source_id`를 `NULL`로 바꿔 실제 수입을 보존한다. 배포 스케줄러와 관리자 운영 절차는 미연결이다.
 - 예상 금액은 `income_sources.expected_amount_cents`, 실제 금액은 `income_records.amount_cents`에 별도로 저장한다. 확정 기록은 당시의 `from_name`·`memo`·결제수단을 복사하고 `income_source_id`로 규칙에 연결한다. 예정일만으로 실제 수입을 자동 생성하지 않는다.
-- 주말·공휴일에 따른 입금 예정일 조정 규칙은 미정이다. 현재는 날짜를 자동으로 앞당기거나 늦추지 않으며, 후속 결정은 [수입 일정 미결정 사항](docs/income-schedule-decisions.md)에 기록한다.
+- **Paycheck 예정일 조정**: `next_expected_date`는 반복 계산의 기준일로 유지한다. API의 `adjusted_expected_date`는 미국 Federal Reserve 은행 달력(`us-fed`)을 기준으로, 주말·은행 휴일이면 직전 영업일로 앞당긴 표시 날짜다. Bankday에서 연도별 휴일을 받아 `bank_calendar_years`에 저장하고 당해·미래 연도 목록은 마지막 갱신 후 30일이 지나면 다음 조회 때 다시 확인한다. 기존 캐시가 있는 상태에서 외부 API가 실패하면 마지막 목록을 쓰며, 캐시도 없으면 조정일은 `null`이다. Cashback·Other는 조정하지 않는다. 별도 정기 스케줄러와 다른 국가 달력은 아직 연결하지 않았다.
 - **Cashback**: 등록 결제수단의 ID를 `income_records.payment_method_id`에 저장하고 현재 사용자 소유인지 확인한다. 신용카드에 적용하면 `received_at`이 속한 카드 사이클의 순 청구 예상액에서 차감하며, 현금성 수단은 신용카드 사이클 금액을 바꾸지 않는다.
 - **Refund**: 공통 `Refund` 카테고리를 선택한 지출 품목은 `amount_cents = -abs(입력 금액)`으로 저장한다. 해당 거래의 `payment_method_id`는 현재 사용자 소유여야 하며, 신용카드 Refund는 거래 `transacted_at`이 속한 사이클의 지출 합계에서 차감한다. 원래 구매 거래를 수정하거나 원 구매일로 소급하지 않는다. 과거 `income_records`의 Refund 행은 자동 변환하지 않으며 데이터가 있으면 별도 정리가 필요하다.
 - 수입 알림 시간은 사용자별 DB 설정으로 받지 않고 앱 정책으로 고정한다.
-- Flutter는 `next_expected_date`를 받아 앱에서 정한 시간에 local notification을 예약한다.
+- Flutter는 Paycheck의 `adjusted_expected_date`가 있으면 이를 사용하고, 없으면 조정일 미확인 상태를 표시한다. Cashback·Other는 `next_expected_date`를 사용해 앱에서 정한 시간에 local notification을 예약한다.
 - MVP에서는 별도 notification table을 만들지 않는다.
 
 ### 4.0.2 다음 수입일 계산 예시

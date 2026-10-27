@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     db_url: str
     supabase_url: str | None = None
     supabase_jwks_url: str | None = None
+    bankday_url: str = "https://bankday.dev/v1"
+    bankday_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
