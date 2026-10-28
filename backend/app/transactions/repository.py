@@ -33,7 +33,7 @@ def add_grouped_manual_transaction(db: Session, ledger_id: UUID, payment_method_
     db.flush()
     return transaction, transaction_items
 
-def list_ledger_transactions(db: Session, ledger_id: UUID, start_date: date, end_date: date) -> list[Transaction]:
+def list_ledger_transactions(db: Session, ledger_id: UUID, start_date: date, end_date: date, payment_method_id: UUID | None = None) -> list[Transaction]:
     """가계부의 지정 기간에 속한 삭제되지 않은 지출을 최신순으로 조회한다."""
     statement = select(Transaction).where(
         Transaction.ledger_id==ledger_id,
@@ -41,6 +41,8 @@ def list_ledger_transactions(db: Session, ledger_id: UUID, start_date: date, end
         Transaction.transacted_at >= start_date,
         Transaction.transacted_at <= end_date,
     ).order_by(Transaction.transacted_at.desc(), Transaction.created_at.desc())
+    if payment_method_id is not None:
+        statement = statement.where(Transaction.payment_method_id == payment_method_id)
     return list(db.scalars(statement=statement))
 
 def list_transaction_items(db: Session, transaction_ids: list[UUID]) -> list[TransactionItem]:

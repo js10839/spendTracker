@@ -31,9 +31,9 @@ def add_manual_transaction(data: ManualTransactionGroupCreate, ledger: Annotated
     return create_grouped_manual_transaction(db, ledger_id=ledger.id, user_id=user_id, data=data)
 
 @router.get("", response_model=list[TransactionGroupRead])
-def get_ledger_transactions(start_date: date, end_date: date, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> list[TransactionGroupRead]:
+def get_ledger_transactions(start_date: date, end_date: date, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)], payment_method_id: UUID | None = None) -> list[TransactionGroupRead]:
     """접근 가능한 가계부의 결제·품목과 계산된 총액을 반환한다."""
-    return list_ledger_transactions(db, ledger_id=ledger.id, start_date=start_date, end_date=end_date)
+    return list_ledger_transactions(db, ledger_id=ledger.id, start_date=start_date, end_date=end_date, payment_method_id=payment_method_id)
 
 @router.get("/search", response_model=TransactionSearchRead)
 def search_transactions(query: Annotated[str, Query(min_length=1)], start_date: date, end_date: date, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)], payment_method_id: UUID | None = None) -> TransactionSearchRead:
