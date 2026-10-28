@@ -149,7 +149,27 @@ def test_list_transactions_returns_grouped_expenses(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == [expected]
-    list_transactions.assert_called_once_with(db, ledger_id=ledger_id, start_date=date(2026, 10, 1), end_date=date(2026, 10, 31))
+    list_transactions.assert_called_once_with(db, ledger_id=ledger_id, start_date=date(2026, 10, 1), end_date=date(2026, 10, 31), payment_method_id=None)
+
+
+def test_list_transactions_passes_selected_payment_method(monkeypatch) -> None:
+    """카드를 선택한 기간 조회는 결제수단 ID를 Service에 전달한다."""
+    user_id, ledger_id, payment_method_id = (uuid4() for _ in range(3))
+    list_transactions = Mock(return_value=[])
+    db = Mock()
+    monkeypatch.setattr(transactions_router, "list_ledger_transactions", list_transactions)
+    app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
+    app.dependency_overrides[get_db] = lambda: db
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(f"/ledgers/{ledger_id}/transactions", params={"start_date": "2026-10-01", "end_date": "2026-10-31", "payment_method_id": str(payment_method_id)})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == []
+    list_transactions.assert_called_once_with(db, ledger_id=ledger_id, start_date=date(2026, 10, 1), end_date=date(2026, 10, 31), payment_method_id=payment_method_id)
 
 
 def test_update_transaction_keeps_item_id(monkeypatch) -> None:

@@ -53,12 +53,12 @@ def build_transaction_group_read(transaction: Transaction, items: list[Transacti
     """저장된 최종 총액과 품목 내역을 응답으로 만든다."""
     return TransactionGroupRead(id=transaction.id, ledger_id=transaction.ledger_id, payment_method_id=transaction.payment_method_id, merchant=transaction.merchant, transacted_at=transaction.transacted_at, memo=transaction.memo, source=transaction.source, total_cents=transaction.total_cents, tax_cents=transaction.tax_cents, tip_cents=transaction.tip_cents, items=[TransactionItemRead.model_validate(item) for item in items])
 
-def list_ledger_transactions(db: Session, ledger_id: UUID, start_date:date, end_date: date) -> list[TransactionGroupRead]:
+def list_ledger_transactions(db: Session, ledger_id: UUID, start_date:date, end_date: date, payment_method_id: UUID | None = None) -> list[TransactionGroupRead]:
     """기간 내 결제와 품목을 조회해 계산된 총액이 포함된 목록을 만든다."""
     if start_date > end_date:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="start_date must be on or before end_date")
 
-    transactions = repository.list_ledger_transactions(db, ledger_id=ledger_id, start_date=start_date, end_date=end_date)
+    transactions = repository.list_ledger_transactions(db, ledger_id=ledger_id, start_date=start_date, end_date=end_date, payment_method_id=payment_method_id)
     items_by_transaction: dict[UUID, list[TransactionItem]] = {transaction.id: [] for transaction in transactions}
 
     if transactions:
