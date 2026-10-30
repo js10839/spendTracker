@@ -2,11 +2,12 @@
 
 import base64
 import io
-import os
 from pathlib import Path
 
 from openai import OpenAI
 from PIL import Image, ImageOps, UnidentifiedImageError
+
+from app.core.config import settings
 
 from .prompts import SYSTEM_PROMPT
 from .schemas import ReceiptData
@@ -84,11 +85,9 @@ def parse_receipt(
         api = OpenAI(timeout=30.0, max_retries=0)
 
     # API를 호출하면서, 응답을 지정한 형태로 요청
-    # OPENAI_RECEIPT_MODEL: .env에서 model 기본 값 변경 가능
+    # .env에서 model 기본 값 변경 가능
     response = api.responses.parse(
-        model=model or os.getenv(
-            "OPENAI_RECEIPT_MODEL", "gpt-4.1-mini"
-        ),
+        model=model or settings.openai_receipt_model,
         instructions=SYSTEM_PROMPT,
         input=[{
             "role": "user",
