@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
 
 import httpx
@@ -29,7 +29,7 @@ from app.db.models.transaction_item import TransactionItem
 from app.db.models.user import User
 from app.db.session import get_db
 from app.main import app
-from app.users import repository, router, service
+from app.users import repository, retry_deletions, router, service
 
 
 @pytest.fixture
@@ -239,6 +239,22 @@ async def test_auth_admin_misconfiguration_does_not_delete_app_data(monkeypatch)
         await service.delete_account(uuid4())
     assert raised.value.status_code == 503
     delete_data.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_retry_command_continues_after_failed_account(monkeypatch) -> None:
+    """재시도 중 일부 계정이 실패해도 나머지를 처리하고 실패를 알린다."""
+    first_id, second_id = uuid4(), uuid4()
+    db = Mock()
+    session_context = MagicMock()
+    session_context.__enter__.return_value = db
+    monkeypatch.setattr(retry_deletions, "SessionLocal", lambda: session_context)
+    monkeypatch.setattr(repository, "list_pending_deletion_user_ids", Mock(return_value=[first_id, second_id]))
+    delete_account = AsyncMock(side_effect=[HTTPException(status_code=503), None])
+    monkeypatch.setattr(retry_deletions, "delete_account", delete_account)
+
+    assert await retry_deletions.main() == 1
+    assert delete_account.await_count == 2
 
 
 def test_writes_use_postgresql_shared_lock(monkeypatch) -> None:
