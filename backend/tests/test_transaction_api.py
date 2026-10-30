@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_current_user_id
+from app.auth.dependencies import get_active_user_id, get_current_user_id
 from app.db.models.ledger import Ledger
 from app.db.session import get_db
 from app.ledgers import repository as ledgers_repository
@@ -32,6 +32,7 @@ def test_create_transaction_returns_grouped_expense(monkeypatch) -> None:
     db = Mock()
     monkeypatch.setattr(transactions_router, "create_grouped_manual_transaction", create_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
     app.dependency_overrides[get_db] = lambda: db
 
@@ -56,6 +57,7 @@ def test_create_transaction_rejects_missing_items(monkeypatch) -> None:
     create_transaction = Mock()
     monkeypatch.setattr(transactions_router, "create_grouped_manual_transaction", create_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
     app.dependency_overrides[get_db] = lambda: Mock()
 
@@ -77,6 +79,7 @@ def test_create_transaction_rejects_client_total(monkeypatch) -> None:
     create_transaction = Mock()
     monkeypatch.setattr(transactions_router, "create_grouped_manual_transaction", create_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
     app.dependency_overrides[get_db] = lambda: Mock()
 
@@ -99,6 +102,7 @@ def test_create_transaction_rejects_nonmembers(monkeypatch) -> None:
     monkeypatch.setattr(transactions_router, "create_grouped_manual_transaction", create_transaction)
     monkeypatch.setattr(ledgers_repository, "find_member_ledger", Mock(return_value=None))
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: Mock()
 
     try:
@@ -118,6 +122,7 @@ def test_create_transaction_accepts_zero_and_negative_item_amount(monkeypatch, a
     create_transaction = Mock(return_value=_group_response(ledger_id, uuid4(), uuid4(), uuid4()))
     monkeypatch.setattr(transactions_router, "create_grouped_manual_transaction", create_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
     app.dependency_overrides[get_db] = lambda: Mock()
 
@@ -181,6 +186,7 @@ def test_update_transaction_keeps_item_id(monkeypatch) -> None:
     db = Mock()
     monkeypatch.setattr(transactions_router, "update_transaction_group", update_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
     app.dependency_overrides[get_db] = lambda: db
     payload = _create_payload(payment_method_id, category_id)
@@ -206,6 +212,7 @@ def test_update_transaction_accepts_new_item_without_id(monkeypatch) -> None:
     update_transaction = Mock(return_value=expected)
     monkeypatch.setattr(transactions_router, "update_transaction_group", update_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
     app.dependency_overrides[get_db] = lambda: Mock()
 
@@ -225,6 +232,7 @@ def test_delete_transaction_returns_no_content(monkeypatch) -> None:
     delete_transaction = Mock()
     monkeypatch.setattr(transactions_router, "soft_delete_transaction", delete_transaction)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
     app.dependency_overrides[get_db] = lambda: Mock()
 
@@ -250,6 +258,7 @@ def test_transaction_read_and_update_reject_nonmembers(monkeypatch, method: str)
     monkeypatch.setattr(transactions_router, "soft_delete_transaction", delete_transaction)
     monkeypatch.setattr(ledgers_repository, "find_member_ledger", Mock(return_value=None))
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: Mock()
 
     try:

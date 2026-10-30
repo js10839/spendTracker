@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_current_user_id
+from app.auth.dependencies import get_active_user_id, get_current_user_id
 from app.db.models.ledger import Ledger
 from app.db.session import get_db
 from app.ledgers import repository
@@ -19,6 +19,7 @@ def test_list_ledgers_returns_current_users_ledgers(monkeypatch) -> None:
     list_user_ledgers = Mock(return_value=[ledger])
     monkeypatch.setattr(ledgers_router, "list_user_ledgers", list_user_ledgers)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: db
 
     try:
