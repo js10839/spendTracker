@@ -185,7 +185,7 @@
 
 7. **Guest → 회원 전환** ✅: Guest 데이터는 인증 완료 후 해당 `user_id`의 서버 데이터로 이전한다. 중복 전송이나 재시도를 고려해 migration은 idempotent하게 설계한다.
 
-8. **초기 표시 이름 (2026-10-17 미팅 방향)**: 가입 때 랜덤 표시 이름을 제안하고 사용자가 수정하거나 건너뛸 수 있게 한다. 이후 프로필에서도 변경할 수 있다. 이름 생성 규칙은 TBD이며, 현재 `public.users.nickname` 컬럼만 존재하고 관련 UI/API는 아직 구현되지 않았다.
+8. **초기 표시 이름 (2026-10-17 미팅 방향)**: 가입 때 랜덤 표시 이름을 제안하고 사용자가 수정하거나 건너뛸 수 있게 한다. 이후 프로필에서도 변경할 수 있다. `GET /users/me`와 `PATCH /users/me`는 프로필 조회·이름 수정을 지원한다. 이름 생성 규칙과 Flutter UI 연결은 아직 정하지 않았다.
 
 ### 3.2 Supabase 의존성 경계
 
@@ -241,6 +241,7 @@ public.users                       # 앱 전용 프로필
 - id uuid PK, FK -> auth.users.id
 - nickname text nullable
 - plan text NOT NULL               # free | pro
+- deletion_requested_at timestamp nullable  # 계정 삭제 진행 중인 시각
 - created_at timestamp
 - updated_at timestamp
 
@@ -621,7 +622,7 @@ Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, �
 
 - 품목의 제거는 Save 전 Undo만 허용하고, Save 후 요청에서 빠진 품목은 영구 삭제한다. 삭제 거래의 30일 보관은 복구 목적에 한정하며 내부 AI 학습용으로 별도 보관하지 않는다. 영수증 파싱 사용량·quota와의 관계는 Phase 2에서 정한다.
 
-- 계정 삭제 시 데이터 전체 삭제 방향은 유지한다. 원본 이미지는 영구 보관하지 않으므로, 임시 이미지가 남아 있다면 함께 폐기해야 한다.
+- 계정 삭제는 `DELETE /users/me`에서 개인 가계부 데이터·지갑을 먼저 삭제하고 `users.deletion_requested_at`을 기록한 뒤 Supabase Auth 계정을 삭제한다. Auth 삭제에 실패하면 503을 반환하고 진행 상태를 유지하며, 일반 API 접근은 막고 삭제 요청을 재시도할 수 있다. 관리자 재시도 명령은 `python -m app.users.retry_deletions`이며 자동 스케줄·운영 모니터링은 아직 연결하지 않았다. 기존 access token은 만료 전까지 유효할 수 있다. 공유 가계부의 소유권 이전·탈퇴 정책과 임시 이미지가 있다면 그 삭제 처리는 해당 기능 도입 전에 정한다.
 
 **파싱 상태 머신 & quota 차감**:
 

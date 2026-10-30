@@ -42,6 +42,11 @@ def list_owned_ledger_ids(db: Session, user_id: UUID) -> list[UUID]:
     statement = select(Ledger.id).where(Ledger.owner_user_id==user_id)
     return list(db.scalars(statement=statement))
 
+def list_pending_deletion_user_ids(db: Session) -> list[UUID]:
+    """Auth 계정 삭제를 재시도해야 하는 사용자 ID를 조회한다."""
+    statement = select(User.id).where(User.deletion_requested_at.is_not(None)).order_by(User.deletion_requested_at, User.id)
+    return list(db.scalars(statement))
+
 def delete_ledger_transactions(db: Session, ledger_ids: list[UUID]) -> None:
     """소유 가계부의 거래 품목과 거래를 순서대로 삭제한다."""
     transaction_ids = select(Transaction.id).where(Transaction.ledger_id.in_(ledger_ids))

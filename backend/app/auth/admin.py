@@ -11,7 +11,7 @@ class AuthAdminUnavailable(Exception):
 async def delete_auth_user(user_id: UUID) -> None:
     """Supabase Auth에서 지정한 사용자를 비동기로 삭제한다."""
     ensure_auth_admin_configured()
-
+    
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.delete(
