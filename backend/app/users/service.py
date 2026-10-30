@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.models.user import User
@@ -25,6 +26,24 @@ def bootstrap_user(db: Session, user_id: UUID, ledger_name: str) -> User:
 
         # Cash는 카드·은행 이체와 구분되는 기본 현금 결제수단이다.
         payment_method_repo.add_payment_method(db, user_id=user_id, name="Cash", method_type="cash-like", closing_day=None, color="#FCA05A")
+        db.commit()
+        return user
+    except Exception:
+        db.rollback()
+        raise
+
+def get_user_profile(db: Session, user_id: UUID) -> User:
+    """인증된 사용자의 앱 프로필을 조회한다."""
+    user = user_repo.find_user_by_id(db, user_id=user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+    return user
+
+def update_user_profile(db: Session, user_id: UUID, nickname: str) -> User:
+    """인증된 사용자의 표시 이름을 수정하고 저장한다."""
+    try:
+        user = get_user_profile(db, user_id=user_id)
+        user_repo.update_user_nickname(db, user=user, nickname=nickname)
         db.commit()
         return user
     except Exception:
