@@ -27,7 +27,8 @@ def test_get_profile_returns_authenticated_users_profile() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"id": str(user_id), "nickname": None, "plan": "free"}
-    db.get.assert_called_once_with(User, user_id)
+    assert db.get.call_count == 2
+    db.get.assert_called_with(User, user_id)
 
 
 def test_get_profile_returns_404_before_bootstrap() -> None:
@@ -68,6 +69,7 @@ def test_update_profile_changes_authenticated_users_nickname() -> None:
     user = User(id=user_id, nickname="Old", plan="free")
     db = Mock()
     db.get.return_value = user
+    db.scalars.return_value.one_or_none.return_value = user
     app.dependency_overrides[get_current_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: db
 

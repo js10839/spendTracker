@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_current_user_id
+from app.auth.dependencies import get_active_user_id, get_current_user_id
 from app.db.models.income_record import IncomeRecord
 from app.db.models.ledger import Ledger
 from app.db.session import get_db
@@ -23,6 +23,7 @@ def test_create_income_record_returns_created_paycheck(monkeypatch) -> None:
     db = Mock()
     monkeypatch.setattr(income_router, "create_income_record", create_record)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: ledger
     app.dependency_overrides[get_db] = lambda: db
 
@@ -47,6 +48,7 @@ def test_create_income_record_rejects_nonmembers(monkeypatch) -> None:
     monkeypatch.setattr(income_router, "create_income_record", create_record)
     monkeypatch.setattr(ledgers_repository, "find_member_ledger", Mock(return_value=None))
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: Mock()
 
     try:
@@ -78,6 +80,7 @@ def test_create_income_record_rejects_refund_type(monkeypatch) -> None:
     create_record = Mock()
     monkeypatch.setattr(income_router, "create_income_record", create_record)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_user_ledger] = lambda: ledger
     app.dependency_overrides[get_db] = lambda: Mock()
 

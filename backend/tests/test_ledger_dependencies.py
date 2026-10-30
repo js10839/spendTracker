@@ -5,7 +5,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_current_user_id
+from app.auth.dependencies import get_active_user_id, get_current_user_id
 from app.db.models.ledger import Ledger
 from app.db.session import get_db
 from app.ledgers import repository
@@ -20,6 +20,7 @@ def test_member_can_access_ledger(monkeypatch) -> None:
     monkeypatch.setattr(repository, "find_member_ledger", lambda *_args: ledger)
     test_app = FastAPI()
     test_app.dependency_overrides[get_current_user_id] = lambda: user_id
+    test_app.dependency_overrides[get_active_user_id] = lambda: user_id
     test_app.dependency_overrides[get_db] = lambda: db
 
     @test_app.get("/ledgers/{ledger_id}/probe")
@@ -41,6 +42,7 @@ def test_nonmember_gets_not_found(monkeypatch) -> None:
     monkeypatch.setattr(repository, "find_member_ledger", lambda *_args: None)
     test_app = FastAPI()
     test_app.dependency_overrides[get_current_user_id] = lambda: user_id
+    test_app.dependency_overrides[get_active_user_id] = lambda: user_id
     test_app.dependency_overrides[get_db] = lambda: db
 
     @test_app.get("/ledgers/{ledger_id}/probe")
