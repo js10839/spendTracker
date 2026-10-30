@@ -93,10 +93,6 @@ def parse_receipt(
             "role": "user",
             "content": [
                 {
-                    "type": "input_text",
-                    "text": "Extract receipt data from this image."
-                },
-                {
                     "type": "input_image",
                     "image_url": image_url,
                     "detail": "high"
