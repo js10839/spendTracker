@@ -16,3 +16,9 @@ def add_user(db: Session, user_id: UUID) -> User:
     db.add(user)
     db.flush()
     return user
+
+def update_user_nickname(db: Session, user: User, nickname: str) -> User:
+    """사용자 프로필의 표시 이름을 변경한다."""
+    user.nickname = nickname
+    db.flush()
+    return user
