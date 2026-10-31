@@ -33,8 +33,10 @@ def main():
         output = args.output or Path("outputs") / (args.image.stem + ".json")
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        print(f"Status: {report.status} | items: {report.item_count} | difference: {report.difference}")
+
+        print(f"Status: {report.status} | items: {report.item_count} | difference: {report.difference} | location: {receipt.location}")
         print(f"Output: {output}")
+
         if report.issues:
             print("Issues: " + "; ".join(report.issues))
         return 0 if report.status == "pass" else 2
