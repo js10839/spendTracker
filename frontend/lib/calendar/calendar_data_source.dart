@@ -1,8 +1,8 @@
 import 'calendar_dates.dart';
 import 'calendar_models.dart';
 
-/// Transport boundary only: auth, HTTP, and Supabase initialization come later.
-/// Implement with existing FastAPI endpoints; never query Supabase app tables.
+/// Transport boundary implemented by HttpCalendarDataSource for FastAPI.
+/// Login/session management is supplied separately; never query Supabase tables.
 abstract interface class CalendarDataSource {
   /// GET /users/me/payment-methods (all wallet methods, for colors/closings).
   Future<List<CalendarPaymentMethod>> loadPaymentMethods();
