@@ -202,6 +202,8 @@ class CalendarDay {
     required List<CalendarIncome> income,
     required List<CalendarPaymentMethod> closingCards,
     this.note,
+    required this.spendingCents,
+    required this.receivedIncomeCents,
   }) : transactions = List.unmodifiable(transactions),
        dots = List.unmodifiable(dots),
        income = List.unmodifiable(income),
@@ -214,8 +216,80 @@ class CalendarDay {
   final List<CalendarPaymentMethod> closingCards;
   final CalendarNote? note;
 
-  int get spendingCents => transactions.fold(0, (sum, t) => sum + t.totalCents);
-  int get receivedIncomeCents => income
-      .where((i) => i.status == 'received')
-      .fold(0, (sum, i) => sum + i.amountCents);
+  final int spendingCents;
+  final int receivedIncomeCents;
+
+  factory CalendarDay.fromJson(Map<String, dynamic> json) => CalendarDay(
+    date: parseCalendarDate(json['date'] as String),
+    transactions: _objects(json['transactions'], CalendarTransaction.fromJson),
+    dots: _objects(
+      json['dots'],
+      (dot) => CalendarTransactionDot(
+        paymentMethodId: dot['payment_method_id'] as String,
+        label: dot['label'] as String,
+        color: dot['color'] as String?,
+        transactionCount: dot['transaction_count'] as int,
+      ),
+    ),
+    income: _objects(json['income'], CalendarIncome.fromJson),
+    closingCards: _objects(
+      json['closing_cards'],
+      CalendarPaymentMethod.fromJson,
+    ),
+    note: json['note'] == null
+        ? null
+        : CalendarNote.fromJson(json['note'] as Map<String, dynamic>),
+    spendingCents: json['spending_cents'] as int,
+    receivedIncomeCents: json['received_income_cents'] as int,
+  );
 }
+
+/// Complete server read model. Indexing days is decoding, not regrouping records.
+class CalendarPeriod {
+  CalendarPeriod({
+    required this.window,
+    required this.previousAnchorDate,
+    required this.nextAnchorDate,
+    required List<CalendarPaymentMethod> paymentMethods,
+    required List<CalendarPaymentMethod> cards,
+    required List<CalendarDay> days,
+    required this.mode,
+    this.paymentMethodId,
+  }) : paymentMethods = List.unmodifiable(paymentMethods),
+       cards = List.unmodifiable(cards),
+       days = Map.unmodifiable({for (final day in days) day.date: day});
+
+  factory CalendarPeriod.fromJson(Map<String, dynamic> json) => CalendarPeriod(
+    window: CalendarWindow(
+      parseCalendarDate(json['start_date'] as String),
+      parseCalendarDate(json['end_date'] as String)
+          .add(const Duration(days: 1)),
+    ),
+    previousAnchorDate: parseCalendarDate(
+      json['previous_anchor_date'] as String,
+    ),
+    nextAnchorDate: parseCalendarDate(json['next_anchor_date'] as String),
+    paymentMethods: _objects(
+      json['payment_methods'],
+      CalendarPaymentMethod.fromJson,
+    ),
+    cards: _objects(json['cards'], CalendarPaymentMethod.fromJson),
+    days: _objects(json['days'], CalendarDay.fromJson),
+    mode: json['mode'] as String,
+    paymentMethodId: json['payment_method_id'] as String?,
+  );
+
+  final CalendarWindow window;
+  final DateTime previousAnchorDate;
+  final DateTime nextAnchorDate;
+  final String mode;
+  final String? paymentMethodId;
+  final List<CalendarPaymentMethod> paymentMethods;
+  final List<CalendarPaymentMethod> cards;
+  final Map<DateTime, CalendarDay> days;
+}
+
+List<T> _objects<T>(Object? value, T Function(Map<String, dynamic>) decode) =>
+    (value as List<dynamic>)
+        .map((item) => decode(item as Map<String, dynamic>))
+        .toList();

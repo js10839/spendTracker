@@ -3,58 +3,25 @@ import 'calendar_data_source.dart';
 import 'calendar_dates.dart';
 import 'calendar_models.dart';
 
-/// The real FastAPI adapter. The caller owns the shared ApiClient lifecycle.
+/// The caller owns the shared ApiClient and supplies its existing access token.
 class HttpCalendarDataSource implements CalendarDataSource {
   const HttpCalendarDataSource(this.api);
-
   final ApiClient api;
 
   @override
-  Future<List<CalendarPaymentMethod>> loadPaymentMethods() async => _readList(
-    await api.getJson(['users', 'me', 'payment-methods']),
-    CalendarPaymentMethod.fromJson,
-  );
-
-  @override
-  Future<List<CalendarTransaction>> loadTransactions({
+  Future<CalendarPeriod> loadCalendar({
     required String ledgerId,
-    required CalendarWindow window,
+    required DateTime anchorDate,
     String? paymentMethodId,
-  }) async => _readList(
+  }) async => _decode(
     await api.getJson(
-      ['ledgers', ledgerId, 'transactions'],
+      ['ledgers', ledgerId, 'calendar'],
       queryParameters: {
-        ...window.queryParameters,
+        'anchor_date': calendarDateKey(anchorDate),
         'payment_method_id': ?paymentMethodId,
       },
     ),
-    CalendarTransaction.fromJson,
-  );
-
-  @override
-  Future<List<CalendarIncome>> loadIncome({
-    required String ledgerId,
-    required CalendarWindow window,
-  }) async => _readList(
-    await api.getJson([
-      'ledgers',
-      ledgerId,
-      'income-calendar',
-    ], queryParameters: window.queryParameters),
-    CalendarIncome.fromJson,
-  );
-
-  @override
-  Future<List<CalendarNote>> loadNotes({
-    required String ledgerId,
-    required CalendarWindow window,
-  }) async => _readList(
-    await api.getJson([
-      'ledgers',
-      ledgerId,
-      'day-notes',
-    ], queryParameters: window.queryParameters),
-    CalendarNote.fromJson,
+    CalendarPeriod.fromJson,
   );
 
   @override
@@ -68,11 +35,6 @@ class HttpCalendarDataSource implements CalendarDataSource {
       body: {'content': content},
     );
     return json == null ? null : _decode(json, CalendarNote.fromJson);
-  }
-
-  List<T> _readList<T>(Object? json, T Function(Map<String, dynamic>) decode) {
-    if (json is! List) throw const FormatException('Expected an API JSON list');
-    return List.unmodifiable(json.map((item) => _decode(item, decode)));
   }
 
   T _decode<T>(Object? json, T Function(Map<String, dynamic>) decode) {

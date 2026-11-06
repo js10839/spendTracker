@@ -1,34 +1,14 @@
-import 'calendar_dates.dart';
 import 'calendar_models.dart';
 
-/// Transport boundary implemented by HttpCalendarDataSource for FastAPI.
-/// Login/session management is supplied separately; never query Supabase tables.
+/// Backend selects, filters and aggregates the full window in one request.
 abstract interface class CalendarDataSource {
-  /// GET /users/me/payment-methods (all wallet methods, for colors/closings).
-  Future<List<CalendarPaymentMethod>> loadPaymentMethods();
-
-  /// GET /ledgers/{ledgerId}/transactions with window.queryParameters and,
-  /// when supplied, payment_method_id. Null means all payment methods.
-  Future<List<CalendarTransaction>> loadTransactions({
+  Future<CalendarPeriod> loadCalendar({
     required String ledgerId,
-    required CalendarWindow window,
+    required DateTime anchorDate,
     String? paymentMethodId,
   });
 
-  /// GET /ledgers/{ledgerId}/income-calendar; do not filter by selected card.
-  Future<List<CalendarIncome>> loadIncome({
-    required String ledgerId,
-    required CalendarWindow window,
-  });
-
-  /// GET /ledgers/{ledgerId}/day-notes; do not filter by selected card.
-  Future<List<CalendarNote>> loadNotes({
-    required String ledgerId,
-    required CalendarWindow window,
-  });
-
-  /// PUT /ledgers/{ledgerId}/day-notes/{date}, body {"content": content}.
-  /// Empty content clears the note; the endpoint then returns null.
+  /// Existing PUT /ledgers/{ledgerId}/day-notes/{date}; empty content clears.
   Future<CalendarNote?> saveNote({
     required String ledgerId,
     required DateTime date,

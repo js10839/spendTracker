@@ -2,151 +2,154 @@ import 'dart:async';
 
 import 'package:spending_tracker/calendar/calendar.dart';
 
-List<CalendarPaymentMethod> testPaymentMethods() => [
-  CalendarPaymentMethod(
-    id: 'chase',
-    name: 'Chase',
-    type: 'credit',
-    closingDay: 12,
-    color: '#1234AB',
-  ),
-  CalendarPaymentMethod(
-    id: 'amex',
-    name: 'Amex',
-    type: 'credit',
-    closingDay: 20,
-    color: '#AB3412',
-  ),
-  CalendarPaymentMethod(
-    id: 'cash',
-    name: 'Cash',
-    type: 'cash-like',
-    color: '#FCA05A',
-  ),
-];
-
-CalendarTransaction testTransaction({
-  String id = 'purchase',
-  String methodId = 'chase',
-  String date = '2026-10-20',
-  String ledgerId = 'personal',
-  int totalCents = 650,
-}) => CalendarTransaction.fromJson({
-  'id': id,
-  'ledger_id': ledgerId,
-  'payment_method_id': methodId,
-  'merchant': 'Test Cafe',
-  'transacted_at': date,
-  'memo': 'Transaction memo',
-  'source': 'manual',
-  'total_cents': totalCents,
-  'tax_cents': 50,
-  'tip_cents': 100,
-  'items': [
+/// Explicit server fixtures, not a second implementation of billing rules.
+Map<String, dynamic> calendarJson({
+  String start = '2026-10-01',
+  String end = '2026-10-31',
+  String previous = '2026-09-30',
+  String next = '2026-11-01',
+  String? card,
+}) => {
+  'mode': card == null ? 'all' : 'card',
+  'payment_method_id': card,
+  'start_date': start,
+  'end_date': end,
+  'previous_anchor_date': previous,
+  'next_anchor_date': next,
+  'payment_methods': [
     {
-      'id': 'item-$id',
-      'name': 'Coffee',
-      'category_id': 'dining',
-      'amount_cents': totalCents - 150,
+      'id': 'chase',
+      'name': 'Chase',
+      'type': 'credit',
+      'closing_day': 12,
+      'color': '#1234AB',
+    },
+    {
+      'id': 'cash',
+      'name': 'Cash',
+      'type': 'cash-like',
+      'closing_day': null,
+      'color': '#FCA05A',
     },
   ],
-});
+  'cards': [
+    {
+      'id': 'chase',
+      'name': 'Chase',
+      'type': 'credit',
+      'closing_day': 12,
+      'color': '#1234AB',
+    },
+  ],
+  'days': [
+    for (
+      var date = parseCalendarDate(start);
+      !date.isAfter(parseCalendarDate(end));
+      date = date.add(const Duration(days: 1))
+    )
+      {
+        'date': calendarDateKey(date),
+        'transactions': <Object>[],
+        'dots': <Object>[],
+        'income': <Object>[],
+        'closing_cards': <Object>[],
+        'note': null,
+        'spending_cents': 0,
+        'received_income_cents': 0,
+      },
+  ],
+};
 
-CalendarIncome testIncome({
-  String status = 'planned',
-  String date = '2026-10-20',
-  String? paymentMethodId,
-  int amountCents = 10000,
-}) => CalendarIncome.fromJson({
-  'status': status,
-  'income_type': 'paycheck',
-  'amount_cents': amountCents,
-  'display_date': date,
-  'income_source_id': 'salary',
-  'income_record_id': status == 'received' ? 'paycheck' : null,
-  'payment_method_id': paymentMethodId,
-  'from_name': 'Employer',
-  'expected_date': '2026-10-21',
-  'received_at': status == 'received' ? date : null,
-  'memo': 'Income memo',
-});
+Map<String, dynamic> detailedDayJson() => {
+  'date': '2026-10-20',
+  'transactions': [
+    {
+      'id': 'purchase',
+      'ledger_id': 'personal',
+      'payment_method_id': 'chase',
+      'merchant': 'Cafe',
+      'transacted_at': '2026-10-20',
+      'memo': 'Receipt note',
+      'source': 'manual',
+      'total_cents': 650,
+      'tax_cents': 50,
+      'tip_cents': 100,
+      'items': [
+        {
+          'id': 'coffee',
+          'name': 'Coffee',
+          'category_id': 'dining',
+          'amount_cents': 500,
+        },
+      ],
+    },
+  ],
+  'dots': [
+    {
+      'payment_method_id': 'chase',
+      'label': 'Chase',
+      'color': '#1234AB',
+      'transaction_count': 1,
+    },
+  ],
+  'income': [
+    {
+      'status': 'planned',
+      'income_type': 'paycheck',
+      'amount_cents': 10000,
+      'display_date': '2026-10-20',
+      'income_source_id': 'salary',
+      'income_record_id': null,
+      'payment_method_id': null,
+      'from_name': 'Employer',
+      'expected_date': '2026-10-21',
+      'received_at': null,
+      'memo': 'Income note',
+    },
+  ],
+  'closing_cards': [
+    {
+      'id': 'other',
+      'name': 'Other',
+      'type': 'credit',
+      'closing_day': 20,
+      'color': '#FF0000',
+    },
+  ],
+  'note': {
+    'id': 'note',
+    'ledger_id': 'personal',
+    'note_date': '2026-10-20',
+    'content': 'Day note',
+  },
+  'spending_cents': 650,
+  'received_income_cents': 0,
+};
 
-CalendarNote testNote({
-  String date = '2026-10-20',
-  String content = 'Day note',
-  String ledgerId = 'personal',
-}) => CalendarNote.fromJson({
-  'id': 'note-$date',
-  'ledger_id': ledgerId,
-  'note_date': date,
-  'content': content,
-});
-
-class WindowRequest {
-  WindowRequest(this.ledgerId, this.window, [this.paymentMethodId]);
+class CalendarRequest {
+  CalendarRequest(this.ledgerId, this.anchorDate, this.paymentMethodId);
   final String ledgerId;
-  final CalendarWindow window;
+  final DateTime anchorDate;
   final String? paymentMethodId;
 }
 
-/// Deliberately returns unfiltered fixtures: projections must enforce the range,
-/// ledger, and card constraints even when the future adapter returns extra data.
 class FakeCalendarDataSource implements CalendarDataSource {
-  List<CalendarPaymentMethod> methods = testPaymentMethods();
-  List<CalendarTransaction> transactions = [];
-  List<CalendarIncome> income = [];
-  List<CalendarNote> notes = [];
-  int methodLoads = 0;
-  final transactionRequests = <WindowRequest>[];
-  final incomeRequests = <WindowRequest>[];
-  final noteRequests = <WindowRequest>[];
-  final noteWrites = <({String ledgerId, DateTime date, String content})>[];
-  Object? methodsError;
-  Object? incomeError;
-  Object? notesError;
+  CalendarPeriod response = CalendarPeriod.fromJson(calendarJson());
+  Future<CalendarPeriod> Function(CalendarRequest)? loader;
+  final requests = <CalendarRequest>[];
+  final writes = <({String ledgerId, DateTime date, String content})>[];
   Object? saveError;
-  Future<List<CalendarPaymentMethod>> Function()? methodsLoader;
-  Future<List<CalendarTransaction>> Function(WindowRequest)? transactionsLoader;
   Completer<void>? saveGate;
 
   @override
-  Future<List<CalendarPaymentMethod>> loadPaymentMethods() async {
-    methodLoads++;
-    if (methodsError != null) throw methodsError!;
-    return methodsLoader == null ? methods : await methodsLoader!();
-  }
-
-  @override
-  Future<List<CalendarTransaction>> loadTransactions({
+  Future<CalendarPeriod> loadCalendar({
     required String ledgerId,
-    required CalendarWindow window,
+    required DateTime anchorDate,
     String? paymentMethodId,
   }) async {
-    final request = WindowRequest(ledgerId, window, paymentMethodId);
-    transactionRequests.add(request);
-    return transactionsLoader == null
-        ? transactions
-        : await transactionsLoader!(request);
-  }
-
-  @override
-  Future<List<CalendarIncome>> loadIncome({
-    required String ledgerId,
-    required CalendarWindow window,
-  }) async {
-    incomeRequests.add(WindowRequest(ledgerId, window));
-    if (incomeError != null) throw incomeError!;
-    return income;
-  }
-
-  @override
-  Future<List<CalendarNote>> loadNotes({
-    required String ledgerId,
-    required CalendarWindow window,
-  }) async {
-    noteRequests.add(WindowRequest(ledgerId, window));
-    if (notesError != null) throw notesError!;
-    return notes;
+    final request = CalendarRequest(ledgerId, anchorDate, paymentMethodId);
+    requests.add(request);
+    return loader == null ? response : await loader!(request);
   }
 
   @override
@@ -155,21 +158,16 @@ class FakeCalendarDataSource implements CalendarDataSource {
     required DateTime date,
     required String content,
   }) async {
-    noteWrites.add((ledgerId: ledgerId, date: date, content: content));
+    writes.add((ledgerId: ledgerId, date: date, content: content));
     if (saveGate != null) await saveGate!.future;
     if (saveError != null) throw saveError!;
-    final note = content.trim().isEmpty
+    return content.isEmpty
         ? null
-        : testNote(
-            date: calendarDateKey(date),
-            content: content.trim(),
+        : CalendarNote(
+            id: 'note',
             ledgerId: ledgerId,
+            date: date,
+            content: content,
           );
-    notes = [
-      for (final old in notes)
-        if (old.date != calendarDate(date) || old.ledgerId != ledgerId) old,
-      ?note,
-    ];
-    return note;
   }
 }

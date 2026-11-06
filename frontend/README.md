@@ -23,9 +23,16 @@ flutter test
 ## Calendar requests
 
 `ApiClient` sends JSON requests using a token supplied by the caller.
-`HttpCalendarDataSource` implements the calendar's existing data-source interface
-for payment methods, date-range transactions, income, notes, and note saving.
-Selecting a card sends its `payment_method_id` only on transaction requests.
+`HttpCalendarDataSource` calls `GET /ledgers/{ledger_id}/calendar` with
+`anchor_date` and an optional `payment_method_id`. FastAPI resolves the month or
+card cycle and returns ordered daily transactions (including items), income,
+notes, card closings, dot counts/colors and integer-cent totals. Filtering,
+grouping, recurrence and billing calculations run in PostgreSQL via SQLAlchemy
+Core. The frontend decodes the response and handles interaction state.
+
+`All` omits the card parameter. A selected card filters transactions only;
+income, notes and every wallet card's closing events remain visible. Note writes
+still use `PUT /ledgers/{ledger_id}/day-notes/{date}`, followed by a calendar reload.
 
 Construct the controller with an existing access token and ledger ID:
 
@@ -43,6 +50,10 @@ final calendar = CalendarController(
 );
 await calendar.refresh();
 // Observe calendar.changes, with calendar.state as the initial snapshot.
+// window is null until the first successful response.
+// Bind selectCard(id/null), previousPeriod(), nextPeriod(), jumpToDate(date),
+// goToToday(), selectDate(date), saveSelectedNote(content/''), and refresh().
+// state.selectedDay contains the already-loaded details; day clicks do no I/O.
 // Later, on teardown:
 calendar.dispose();
 api.close();
@@ -62,10 +73,22 @@ sending a request. Backend failures expose `ApiException.statusCode` and `detail
 transport errors, timeouts, and invalid JSON also propagate to calendar state.
 Callers retain ownership of an explicitly injected `http.Client` and must close it.
 
+Navigation uses the previous/next anchor dates returned by the server. Disable
+those buttons while loading or in an error state; their actions are no-ops then.
+Card switching keeps the highlighted date. Previous/next highlights today if it
+belongs to the returned period, otherwise its first day. A rejected/removed card
+is an explicit error; the UI can offer retry or `selectCard(null)` to return to All.
+Stale responses cannot overwrite newer selections. Successful note writes remain
+successful if their subsequent reload fails (`state.error`, not `noteError`).
+
+Only date parsing and Sunday-first grid padding remain local. Treat dates as
+year/month/day values; do not convert their UTC containers to another timezone.
+Deploy the calendar backend endpoint before a frontend version that uses it.
+
 Run the request and calendar tests without a server or credentials:
 
 ```bash
-flutter test test/api_client_test.dart test/http_calendar_data_source_test.dart test/calendar_dates_test.dart test/calendar_projection_test.dart test/calendar_controller_test.dart
+flutter test test/api_client_test.dart test/http_calendar_data_source_test.dart test/calendar_dates_test.dart test/calendar_controller_test.dart
 ```
 
 Before a store release, replace the generated `com.example` Android application ID and iOS bundle identifier with the team's chosen identifiers.

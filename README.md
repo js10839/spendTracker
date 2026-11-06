@@ -70,6 +70,53 @@ cd frontend
 flutter run
 ```
 
+## Calendar API
+
+`GET /ledgers/{ledger_id}/calendar?anchor_date=2026-11-06` returns the ordinary
+month. Add `payment_method_id=<credit-card UUID>` to resolve that card's billing
+cycle and limit transactions to that card. The card must belong to the caller;
+invalid, foreign and cash-like selections return 404. Ledger membership and
+active-account checks apply as on other ledger routes. Anchor years 2–9997 are
+supported, leaving space for adjacent periods and holiday years.
+
+The response contains `mode`, `payment_method_id`, inclusive `start_date` and
+`end_date`, `previous_anchor_date`, `next_anchor_date`, `payment_methods`, `cards`, and
+ordered `days` including empty dates. Each day includes full `transactions` and
+their `items`, `dots` with payment-method colors/counts, planned/received `income`,
+`closing_cards`, `note`, `spending_cents`, and `received_income_cents`. Income,
+notes and all wallet cards' closing events are unaffected by card selection.
+Stored transaction totals already include tax/tip; planned income does not count
+as received money. A closing day of 12 yields the 13th through the following 12th;
+days 29–31 clamp to the month's actual last date.
+
+The read model uses SQLAlchemy Core tables, CTEs and PostgreSQL aggregates through
+the authorized request's connection. Existing CRUD/range endpoints remain
+available. Holiday caching preserves the existing income API policy: cached or
+stale holidays are used where available; without a calendar, the expected payday
+is returned unadjusted. Only refreshed holiday caches are written by this GET.
+
+To verify in `/docs`, authorize with an existing access token, expand the calendar
+GET, supply your ledger UUID and anchor date, and optionally a card UUID. Use its
+returned navigation anchors for adjacent windows. Notes still use the existing
+day-note PUT, followed by a reload.
+
+### Calendar PostgreSQL tests
+
+From `backend/`, set `CALENDAR_TEST_DB_URL` to a PostgreSQL test connection and run
+`uv run pytest tests/test_calendar_postgres.py`. Alternatively, explicitly opt in
+to the configured local `DB_URL` with
+`CALENDAR_TEST_USE_CONFIGURED_DB=1 uv run pytest tests/test_calendar_postgres.py`.
+Tests create unique temporary app/auth schemas, use rollback-isolated fixtures,
+and remove the schemas afterward. The connection needs create-schema permission;
+existing app/auth tables and records are not modified. Tests skip without either
+opt-in. CI supplies a disposable PostgreSQL service and runs these tests too.
+
+For the optional real Dart HTTP smoke test, also set `CALENDAR_TEST_DART` to the
+installed `dart` executable. It runs the frontend adapter against a temporary
+FastAPI test server and the isolated PostgreSQL fixtures, covering full item
+detail, card navigation and note save/clear. Authentication is overridden only
+inside that test; no real Auth session is required or tested.
+
 ## Profile and account deletion
 
 Authenticated users can read their app profile with `GET /users/me` and update the display name with `PATCH /users/me` and a JSON body such as `{"nickname": "Mellow Otter"}`. Email and login credentials remain in Supabase Auth.

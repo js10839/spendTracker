@@ -6,293 +6,169 @@ import 'package:http/testing.dart';
 import 'package:spending_tracker/api/api_client.dart';
 import 'package:spending_tracker/calendar/calendar.dart';
 
+import 'support/calendar_fixtures.dart';
+
 void main() {
-  final cycle = CalendarWindow.containing(
-    DateTime(2026, 10, 20),
-    closingDay: 12,
-  );
-  final paymentMethods = [
-    {
-      'id': 'chase',
-      'name': 'Chase',
-      'type': 'credit',
-      'closing_day': 12,
-      'color': '#1234AB',
+  test(
+    'one calendar GET sends anchor/card and decodes full day/item detail',
+    () async {
+      final requests = <http.Request>[];
+      final payload = calendarJson(card: 'chase');
+      (payload['days'] as List<dynamic>)[19] = detailedDayJson();
+      final client = MockClient((request) async {
+        requests.add(request);
+        return http.Response(jsonEncode(payload), 200);
+      });
+      final api = ApiClient(
+        baseUrl: Uri.parse('https://backend.example'),
+        accessToken: () => 'token',
+        client: client,
+      );
+      addTearDown(api.close);
+      final period = await HttpCalendarDataSource(api).loadCalendar(
+        ledgerId: 'personal',
+        anchorDate: DateTime(2026, 10, 20),
+        paymentMethodId: 'chase',
+      );
+      expect(requests.single.url.path, '/ledgers/personal/calendar');
+      expect(requests.single.url.queryParameters, {
+        'anchor_date': '2026-10-20',
+        'payment_method_id': 'chase',
+      });
+      expect(requests.single.headers['Authorization'], 'Bearer token');
+      final day = period.days[DateTime.utc(2026, 10, 20)]!;
+      expect(day.transactions.single.items.single.name, 'Coffee');
+      expect(day.transactions.single.taxCents, 50);
+      expect(day.dots.single.color, '#1234AB');
+      expect(day.income.single.expectedDate, DateTime.utc(2026, 10, 21));
+      expect(day.closingCards.single.id, 'other');
+      expect(day.note!.content, 'Day note');
+      expect(day.spendingCents, 650);
+      expect(day.receivedIncomeCents, 0);
+      expect(() => period.days.clear(), throwsUnsupportedError);
+      expect(() => day.transactions.clear(), throwsUnsupportedError);
     },
-    {
-      'id': 'amex',
-      'name': 'Amex',
-      'type': 'credit',
-      'closing_day': 20,
-      'color': '#AB3412',
-    },
-  ];
-  Map<String, Object?> transaction(String id, String method) => {
-    'id': id,
-    'ledger_id': 'personal',
-    'payment_method_id': method,
-    'merchant': 'Cafe',
-    'transacted_at': '2026-10-20',
-    'memo': 'Purchase memo',
-    'source': 'manual',
-    'total_cents': 650,
-    'tax_cents': 50,
-    'tip_cents': 100,
-    'items': [
-      {
-        'id': 'item-$id',
-        'name': 'Coffee',
-        'category_id': 'dining',
-        'amount_cents': 500,
-      },
-    ],
-  };
-  final income = {
-    'status': 'planned',
-    'income_type': 'paycheck',
-    'amount_cents': 10000,
-    'display_date': '2026-10-20',
-    'expected_date': '2026-10-21',
-    'income_source_id': 'salary',
-    'income_record_id': null,
-    'payment_method_id': null,
-    'from_name': 'Employer',
-    'received_at': null,
-    'memo': null,
-  };
-  Map<String, Object?> note(String content) => {
-    'id': 'note',
-    'ledger_id': 'personal',
-    'note_date': '2026-10-20',
-    'content': content,
-  };
-
-  HttpCalendarDataSource source(
-    Future<http.Response> Function(http.Request) handler,
-  ) {
-    final transport = MockClient(handler);
-    final api = ApiClient(
-      baseUrl: Uri.parse('https://backend.example.com'),
-      accessToken: () => 'manual-test-token',
-      client: transport,
-    );
-    addTearDown(api.close);
-    addTearDown(transport.close);
-    return HttpCalendarDataSource(api);
-  }
-
-  http.Response jsonResponse(Object? value) => http.Response(
-    jsonEncode(value),
-    200,
-    headers: {'content-type': 'application/json'},
   );
 
-  test('wallet GET reads card colors and closing days', () async {
-    final adapter = source((request) async {
-      expect(request.method, 'GET');
-      expect(request.url.path, '/users/me/payment-methods');
-      expect(request.url.queryParameters, isEmpty);
-      expect(request.headers['Authorization'], 'Bearer manual-test-token');
-      return jsonResponse(paymentMethods);
-    });
-    final methods = await adapter.loadPaymentMethods();
-    expect(methods.first.id, 'chase');
-    expect(methods.first.color, '#1234AB');
-    expect(methods.first.closingDay, 12);
+  test('server totals are consumed verbatim rather than recalculated', () {
+    final payload = detailedDayJson();
+    payload['spending_cents'] = -123;
+    payload['received_income_cents'] = 999;
+    final day = CalendarDay.fromJson(payload);
+    expect(day.spendingCents, -123);
+    expect(day.receivedIncomeCents, 999);
   });
 
   test(
-    'transaction GET passes inclusive cycle dates and optional card filter',
+    'All omits card filter; note PUT uses existing endpoint and clear body',
     () async {
       final requests = <http.Request>[];
-      final adapter = source((request) async {
-        requests.add(request);
-        expect(request.method, 'GET');
-        expect(request.url.path, '/ledgers/personal/transactions');
-        return jsonResponse([transaction('purchase', 'chase')]);
-      });
-      final transactions = await adapter.loadTransactions(
-        ledgerId: 'personal',
-        window: cycle,
-        paymentMethodId: 'chase',
+      final api = ApiClient(
+        baseUrl: Uri.parse('https://backend.example'),
+        accessToken: () => 'token',
+        client: MockClient((request) async {
+          requests.add(request);
+          return http.Response(
+            request.method == 'GET' ? jsonEncode(calendarJson()) : 'null',
+            200,
+          );
+        }),
       );
-      expect(requests.last.url.queryParameters, {
-        'start_date': '2026-10-13',
-        'end_date': '2026-11-12',
-        'payment_method_id': 'chase',
-      });
-      expect(transactions.single.totalCents, 650);
-      expect(transactions.single.items.single.name, 'Coffee');
-      await adapter.loadTransactions(ledgerId: 'personal', window: cycle);
-      expect(requests.last.url.queryParameters, cycle.queryParameters);
-    },
-  );
-
-  test(
-    'income and notes GETs use the whole range without card filtering',
-    () async {
-      final adapter = source((request) async {
-        expect(request.method, 'GET');
-        expect(request.url.queryParameters, cycle.queryParameters);
-        return switch (request.url.path) {
-          '/ledgers/personal/income-calendar' => jsonResponse([income]),
-          '/ledgers/personal/day-notes' => jsonResponse([note('Reminder')]),
-          _ => throw StateError('Unexpected request'),
-        };
-      });
-      final entries = await adapter.loadIncome(
+      addTearDown(api.close);
+      final source = HttpCalendarDataSource(api);
+      await source.loadCalendar(
         ledgerId: 'personal',
-        window: cycle,
+        anchorDate: DateTime(2026, 10, 20),
       );
-      expect(entries.single.displayDate, DateTime.utc(2026, 10, 20));
-      expect(entries.single.expectedDate, DateTime.utc(2026, 10, 21));
-      expect(entries.single.status, 'planned');
-      final notes = await adapter.loadNotes(
-        ledgerId: 'personal',
-        window: cycle,
-      );
-      expect(notes.single.content, 'Reminder');
-    },
-  );
-
-  test(
-    'note PUT sends content and decodes saved note or null on clear',
-    () async {
-      final adapter = source((request) async {
-        expect(request.method, 'PUT');
-        expect(request.url.path, '/ledgers/personal/day-notes/2026-10-20');
-        expect(request.url.queryParameters, isEmpty);
-        final content = (jsonDecode(request.body) as Map)['content'] as String;
-        return jsonResponse(content.isEmpty ? null : note(content));
+      expect(requests.single.url.queryParameters, {
+        'anchor_date': '2026-10-20',
       });
-      final saved = await adapter.saveNote(
-        ledgerId: 'personal',
-        date: DateTime(2026, 10, 20, 17),
-        content: 'Hello\nWorld',
-      );
-      expect(saved!.content, 'Hello\nWorld');
       expect(
-        await adapter.saveNote(
+        await source.saveNote(
           ledgerId: 'personal',
           date: DateTime(2026, 10, 20),
           content: '',
         ),
         isNull,
       );
+      expect(requests.last.method, 'PUT');
+      expect(requests.last.url.path, '/ledgers/personal/day-notes/2026-10-20');
+      expect(jsonDecode(requests.last.body), {'content': ''});
     },
   );
 
-  test('invalid response shapes or fields surface schema errors', () async {
-    for (final body in <Object?>[
-      null,
-      {'items': []},
-      [1],
-      [
-        {'id': 'missing-fields'},
-      ],
-      [
-        {
-          'id': 'x',
-          'name': 'X',
-          'type': 'credit',
-          'closing_day': 99,
-          'color': '#123456',
-        },
-      ],
-    ]) {
-      final adapter = source((_) async => jsonResponse(body));
-      await expectLater(adapter.loadPaymentMethods(), throwsFormatException);
+  test('malformed calendar fields produce FormatException', () async {
+    for (final body in ['[]', '{}', '{"start_date":"bad"}']) {
+      final api = ApiClient(
+        baseUrl: Uri.parse('https://backend.example'),
+        accessToken: () => 'token',
+        client: MockClient((_) async => http.Response(body, 200)),
+      );
+      await expectLater(
+        HttpCalendarDataSource(api).loadCalendar(
+          ledgerId: 'personal',
+          anchorDate: DateTime(2026, 10, 20),
+        ),
+        throwsFormatException,
+      );
+      api.close();
     }
-    final adapter = source((_) async => jsonResponse([]));
-    await expectLater(
-      adapter.saveNote(
-        ledgerId: 'personal',
-        date: DateTime(2026, 10, 20),
-        content: 'Note',
-      ),
-      throwsFormatException,
-    );
   });
 
-  test('HTTP errors propagate to calendar state for retry', () async {
-    var fail = true;
-    final adapter = source((request) async {
-      if (request.url.path == '/users/me/payment-methods') {
-        return jsonResponse(paymentMethods);
-      }
-      if (request.url.path.endsWith('income-calendar') && fail) {
-        return http.Response('{"detail":"Temporarily unavailable"}', 503);
-      }
-      return jsonResponse([]);
-    });
+  test('controller plus HTTP adapter loads once, selects locally and reloads after save', () async {
+    final requests = <http.Request>[];
+    final api = ApiClient(
+      baseUrl: Uri.parse('https://backend.example'),
+      accessToken: () => 'token',
+      client: MockClient((request) async {
+        requests.add(request);
+        return http.Response(
+          request.method == 'GET' ? jsonEncode(calendarJson()) : 'null',
+          200,
+        );
+      }),
+    );
     final controller = CalendarController(
       ledgerId: 'personal',
-      dataSource: adapter,
+      dataSource: HttpCalendarDataSource(api),
       clock: () => DateTime(2026, 10, 20),
     );
-    addTearDown(controller.dispose);
+    addTearDown(() {
+      controller.dispose();
+      api.close();
+    });
+    await controller.refresh();
+    controller.selectDate(DateTime(2026, 10, 6));
+    expect(requests.length, 1);
+    expect(await controller.saveSelectedNote(''), isTrue);
+    expect(requests.map((r) => r.method), ['GET', 'PUT', 'GET']);
+  });
+
+  test('backend failures reach controller and manual retry recovers', () async {
+    var attempts = 0;
+    final api = ApiClient(
+      baseUrl: Uri.parse('https://backend.example'),
+      accessToken: () => 'token',
+      client: MockClient(
+        (_) async => ++attempts == 1
+            ? http.Response('{"detail":"Credit card not found"}', 404)
+            : http.Response(jsonEncode(calendarJson()), 200),
+      ),
+    );
+    final controller = CalendarController(
+      ledgerId: 'personal',
+      dataSource: HttpCalendarDataSource(api),
+      clock: () => DateTime(2026, 10, 20),
+    );
+    addTearDown(() {
+      controller.dispose();
+      api.close();
+    });
     await controller.refresh();
     expect(controller.state.error, isA<ApiException>());
     expect(controller.state.days, isEmpty);
-    fail = false;
     await controller.refresh();
     expect(controller.state.error, isNull);
-    expect(controller.state.days, hasLength(31));
+    expect(controller.state.days.length, 31);
   });
-
-  test(
-    'controller selects a card, reads local details, and saves through HTTP',
-    () async {
-      final requests = <http.Request>[];
-      Map<String, Object?>? savedNote;
-      final adapter = source((request) async {
-        requests.add(request);
-        expect(request.headers['Authorization'], 'Bearer manual-test-token');
-        if (request.url.path == '/users/me/payment-methods') {
-          return jsonResponse(paymentMethods);
-        }
-        if (request.method == 'PUT') {
-          final content =
-              (jsonDecode(request.body) as Map)['content'] as String;
-          savedNote = content.isEmpty ? null : note(content);
-          return jsonResponse(savedNote);
-        }
-        final range = request.url.queryParameters;
-        expect(range['start_date'], anyOf('2026-10-01', '2026-10-13'));
-        expect(range['end_date'], anyOf('2026-10-31', '2026-11-12'));
-        return switch (request.url.path) {
-          '/ledgers/personal/transactions' => jsonResponse([
-            transaction('chase-purchase', 'chase'),
-            if (range['payment_method_id'] == null)
-              transaction('amex-purchase', 'amex'),
-          ]),
-          '/ledgers/personal/income-calendar' => jsonResponse([income]),
-          '/ledgers/personal/day-notes' => jsonResponse([?savedNote]),
-          _ => throw StateError('Unexpected request'),
-        };
-      });
-      final controller = CalendarController(
-        ledgerId: 'personal',
-        dataSource: adapter,
-        clock: () => DateTime(2026, 10, 20),
-      );
-      addTearDown(controller.dispose);
-      await controller.refresh();
-      expect(controller.state.selectedDay!.transactions, hasLength(2));
-      await controller.selectCard('chase');
-      final day = controller.state.selectedDay!;
-      expect(day.transactions.single.id, 'chase-purchase');
-      expect(day.dots.single.color, '#1234AB');
-      expect(day.closingCards.single.id, 'amex');
-      expect(day.income.single.status, 'planned');
-      final count = requests.length;
-      controller.selectDate(DateTime(2026, 10, 21));
-      controller.selectDate(DateTime(2026, 10, 20));
-      expect(requests, hasLength(count));
-      expect(await controller.saveSelectedNote('Remember this'), isTrue);
-      expect(controller.state.selectedDay!.note!.content, 'Remember this');
-      expect(await controller.saveSelectedNote(''), isTrue);
-      expect(controller.state.selectedDay!.note, isNull);
-    },
-  );
 }
