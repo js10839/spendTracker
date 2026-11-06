@@ -22,7 +22,7 @@ abstract final class AppRadius {
   static const full = 999.0;
 }
 
-/// Figma 화면에 표시된 기본 색상 20개를 보관한다.
+/// Figma 화면에 표시된 기본 색상 24개를 보관한다.
 abstract final class AppPalette {
   static const lime500 = Color(0xFFCEF370);
   static const lime600 = Color(0xFFB1DD40);
@@ -44,18 +44,24 @@ abstract final class AppPalette {
   static const accentSky = Color(0xFF5AD4FC);
   static const accentBlue = Color(0xFF5A8BFC);
   static const accentPink = Color(0xFFFC5B9C);
+  static const accentYellow = Color(0xFFF2D857);
+  static const accentGreen = Color(0xFF51E075);
+  static const accentTeal = Color(0xFF51E0CD);
+  static const accentMagenta = Color(0xFFCF5BFC);
 }
 
-/// Figma의 의미별 색상 16개를 기본 색상에 연결한다.
+/// Figma의 의미별 색상 17개와 화면용 별칭을 기본 색상에 연결한다.
 abstract final class AppTokens {
   static const background = AppPalette.neutral0;
+  static const splashBackground = Color(0xFF905AFB);
   static const surface = AppPalette.neutral100;
-  static const overlayDim = Color(0x72131F17);
+  static const overlayDim = Color(0x73141F18);
   static const textPrimary = AppPalette.neutral950;
   static const textBody = AppPalette.neutral700;
   static const textSecondary = AppPalette.neutral500;
   static const textDisabled = AppPalette.neutral400;
   static const textAccent = AppPalette.purple600;
+  static const textInverse = AppPalette.neutral0;
   static const textEyebrow = AppPalette.purple600;
   static const brandLime = AppPalette.lime500;
   static const brandLimePressed = AppPalette.lime600;
@@ -74,6 +80,8 @@ abstract final class AppTokens {
 
 /// Components 섹션에서 쓰는 추가 의미 색상을 원본 값으로 보관한다.
 abstract final class AppComponentColors {
+  static const shadowPurple = Color(0xFF330C72);
+  static const shadowNeutral = Color(0xFF141E16);
   static const surface = Color(0xFFF1F3F2);
   static const borderSubtle = Color(0xFFDCE1DE);
   static const disabledText = Color(0xFF919C95);
@@ -83,4 +91,13 @@ abstract final class AppComponentColors {
   static const dangerSubtle = Color(0xFFFDE2E2);
   static const incomeText = Color(0xFF657E25);
   static const dangerText = Color(0xFF9C1C1C);
+}
+
+/// 컬러 헤더에서 반복되는 컨트롤 그림자를 공유한다.
+abstract final class AppShadows {
+  static final headerControl = BoxShadow(
+    color: AppComponentColors.shadowPurple.withValues(alpha: 45 / 255),
+    blurRadius: 12,
+    offset: const Offset(0, 4),
+  );
 }
