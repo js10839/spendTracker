@@ -70,6 +70,14 @@ cd frontend
 flutter run
 ```
 
+## Profile and account deletion
+
+Authenticated users can read their app profile with `GET /users/me` and update the display name with `PATCH /users/me` and a JSON body such as `{"nickname": "Mellow Otter"}`. Email and login credentials remain in Supabase Auth.
+
+`DELETE /users/me` permanently removes the user's personal app data and then requests deletion of the Supabase Auth user. Configure the server-only `SUPABASE_SECRET_KEY` in `backend/.env`; it must not be included in Flutter, logs, or Git. A completed request returns 204. If the Auth API is unavailable, the API returns 503 and keeps a deletion request pending; regular app access is blocked while deletion is pending, and the same endpoint can be retried.
+
+Operators can retry pending requests from `backend/` with `uv run python -m app.users.retry_deletions`. This command is not scheduled automatically. Set up and monitor a deployment job before relying on unattended retries. Shared-ledger ownership and removal are not yet supported; deletion of an owned ledger with other members is blocked by database constraints and rolled back.
+
 ## References
 
 For product details, see [Spending-tracker.md](./Spending-tracker.md).

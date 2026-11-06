@@ -185,7 +185,7 @@
 
 7. **Guest → 회원 전환** ✅: Guest 데이터는 인증 완료 후 해당 `user_id`의 서버 데이터로 이전한다. 중복 전송이나 재시도를 고려해 migration은 idempotent하게 설계한다.
 
-8. **초기 표시 이름 (2026-10-17 미팅 방향)**: 가입 때 랜덤 표시 이름을 제안하고 사용자가 수정하거나 건너뛸 수 있게 한다. 이후 프로필에서도 변경할 수 있다. 이름 생성 규칙은 TBD이며, 현재 `public.users.nickname` 컬럼만 존재하고 관련 UI/API는 아직 구현되지 않았다.
+8. **초기 표시 이름 (2026-10-17 미팅 방향)**: 가입 때 랜덤 표시 이름을 제안하고 사용자가 수정하거나 건너뛸 수 있게 한다. 이후 프로필에서도 변경할 수 있다. `GET /users/me`와 `PATCH /users/me`는 프로필 조회·이름 수정을 지원한다. 이름 생성 규칙과 Flutter UI 연결은 아직 정하지 않았다.
 
 ### 3.2 Supabase 의존성 경계
 
@@ -241,6 +241,7 @@ public.users                       # 앱 전용 프로필
 - id uuid PK, FK -> auth.users.id
 - nickname text nullable
 - plan text NOT NULL               # free | pro
+- deletion_requested_at timestamp nullable  # 계정 삭제 진행 중인 시각
 - created_at timestamp
 - updated_at timestamp
 
@@ -365,6 +366,12 @@ income_records                     # 실제 수입 기록
 - deleted_at timestamp nullable
 - created_at timestamp
 - updated_at timestamp
+
+
+bank_calendar_years                 # Bankday us-fed 휴일 공유 캐시; 사용자·가계부 소유가 아님
+- year int PK                       # 조회할 달력 연도
+- holidays json NOT NULL           # 해당 연도의 은행 휴일 ISO 날짜 문자열 목록
+- fetched_at timestamptz NOT NULL  # Bankday에서 마지막으로 가져온 시각
 ```
 
 **확정 관계와 집계 기준**: `ledgers` 1:N `transactions`, `payment_methods` 1:N `transactions`, `transactions` 1:N `transaction_items`이며, 활성 거래는 품목을 최소 1건 유지한다. 품목은 `categories`의 공통 카테고리를 참조한다. 영수증 파싱 결제를 `transactions.receipt_id`로 파싱 기록에 연결하는 것은 Phase 2 계획이며, 정확한 제약 조건도 그때 정한다. `transactions.total_cents`는 백엔드가 품목 줄 금액 합계와 Tax/Tip을 더해 저장하는 최종 금액이다. 생성·수정 요청에는 `total_cents`를 받지 않으며, 품목을 수정·제거할 때도 남은 품목과 Tax/Tip으로 다시 계산한다. 마지막 품목을 제거한 상태는 저장할 수 없다. 품목 금액은 0이나 음수도 허용하고 Refund 카테고리 품목은 입력 부호와 무관하게 음수로 저장한다. 음수 품목은 할인/쿠폰 유형으로 따로 분류하지 않는다. 조회·사이클·대시보드는 삭제되지 않은 결제를 한 번만 집계한다. 현행 PUT은 기존 품목 ID를 유지하고 ID 없는 품목을 추가하며 요청에서 빠진 품목을 영구 삭제한다. 원본 영수증 금액과의 불일치 여부는 현재 거래 API에서 검증하지 않는다. 영수증 처리 상태와 원본 금액 비교의 상세 계약은 Phase 2에서 정한다.
@@ -387,11 +394,11 @@ income_records                     # 실제 수입 기록
 - **확정 직후 Undo**: `POST /ledgers/{ledger_id}/income-records/{record_id}/undo-confirmation`은 예정 수입에서 만든 실제 기록을 숨기고 원래 `expected_date` 회차를 다시 활성화한다. 두 변경은 한 DB 트랜잭션이다. 이후 회차가 진행되거나 예정 규칙이 바뀌었다면 409로 거부한다. 직접 입력한 기록에는 적용하지 않는다. 프론트의 즉시 Undo와 일반 기록 삭제는 서로 다른 동작이다.
 - **삭제 보관 운영**: 수입 기록·예정 규칙은 삭제 시각을 남겨 30일 보관한다. 사용자용 복구 API는 두지 않는다. 관리자 내부 함수는 보관 기간 내 기록·규칙을 복구하며, 확정 Undo로 열린 회차 또는 재확정된 회차의 기록 중복 복구는 거부한다. `python -m app.income.cleanup` 명령은 만료된 실제 기록을 먼저, 예정 규칙을 다음에 1,000건 단위로 영구 삭제한다. 예정 규칙을 삭제할 때 남아 있는 과거 기록의 `income_source_id`를 `NULL`로 바꿔 실제 수입을 보존한다. 배포 스케줄러와 관리자 운영 절차는 미연결이다.
 - 예상 금액은 `income_sources.expected_amount_cents`, 실제 금액은 `income_records.amount_cents`에 별도로 저장한다. 확정 기록은 당시의 `from_name`·`memo`·결제수단을 복사하고 `income_source_id`로 규칙에 연결한다. 예정일만으로 실제 수입을 자동 생성하지 않는다.
-- 주말·공휴일에 따른 입금 예정일 조정 규칙은 미정이다. 현재는 날짜를 자동으로 앞당기거나 늦추지 않으며, 후속 결정은 [수입 일정 미결정 사항](docs/income-schedule-decisions.md)에 기록한다.
+- **Paycheck 예정일 조정**: `next_expected_date`는 반복 계산의 기준일로 유지한다. API의 `adjusted_expected_date`는 미국 Federal Reserve 은행 달력(`us-fed`)을 기준으로, 주말·은행 휴일이면 직전 영업일로 앞당긴 표시 날짜다. Bankday에서 연도별 휴일을 받아 `bank_calendar_years`에 저장하고 당해·미래 연도 목록은 마지막 갱신 후 30일이 지나면 다음 조회 때 다시 확인한다. 기존 캐시가 있는 상태에서 외부 API가 실패하면 마지막 목록을 쓰며, 캐시도 없으면 조정일은 `null`이다. Cashback·Other는 조정하지 않는다. 별도 정기 스케줄러와 다른 국가 달력은 아직 연결하지 않았다.
 - **Cashback**: 등록 결제수단의 ID를 `income_records.payment_method_id`에 저장하고 현재 사용자 소유인지 확인한다. 신용카드에 적용하면 `received_at`이 속한 카드 사이클의 순 청구 예상액에서 차감하며, 현금성 수단은 신용카드 사이클 금액을 바꾸지 않는다.
 - **Refund**: 공통 `Refund` 카테고리를 선택한 지출 품목은 `amount_cents = -abs(입력 금액)`으로 저장한다. 해당 거래의 `payment_method_id`는 현재 사용자 소유여야 하며, 신용카드 Refund는 거래 `transacted_at`이 속한 사이클의 지출 합계에서 차감한다. 원래 구매 거래를 수정하거나 원 구매일로 소급하지 않는다. 과거 `income_records`의 Refund 행은 자동 변환하지 않으며 데이터가 있으면 별도 정리가 필요하다.
 - 수입 알림 시간은 사용자별 DB 설정으로 받지 않고 앱 정책으로 고정한다.
-- Flutter는 `next_expected_date`를 받아 앱에서 정한 시간에 local notification을 예약한다.
+- Flutter는 Paycheck의 `adjusted_expected_date`가 있으면 이를 사용하고, 없으면 조정일 미확인 상태를 표시한다. Cashback·Other는 `next_expected_date`를 사용해 앱에서 정한 시간에 local notification을 예약한다.
 - MVP에서는 별도 notification table을 만들지 않는다.
 
 ### 4.0.2 다음 수입일 계산 예시
@@ -615,7 +622,7 @@ Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, �
 
 - 품목의 제거는 Save 전 Undo만 허용하고, Save 후 요청에서 빠진 품목은 영구 삭제한다. 삭제 거래의 30일 보관은 복구 목적에 한정하며 내부 AI 학습용으로 별도 보관하지 않는다. 영수증 파싱 사용량·quota와의 관계는 Phase 2에서 정한다.
 
-- 계정 삭제 시 데이터 전체 삭제 방향은 유지한다. 원본 이미지는 영구 보관하지 않으므로, 임시 이미지가 남아 있다면 함께 폐기해야 한다.
+- 계정 삭제는 `DELETE /users/me`에서 개인 가계부 데이터·지갑을 먼저 삭제하고 `users.deletion_requested_at`을 기록한 뒤 Supabase Auth 계정을 삭제한다. Auth 삭제에 실패하면 503을 반환하고 진행 상태를 유지하며, 일반 API 접근은 막고 삭제 요청을 재시도할 수 있다. 관리자 재시도 명령은 `python -m app.users.retry_deletions`이며 자동 스케줄·운영 모니터링은 아직 연결하지 않았다. 기존 access token은 만료 전까지 유효할 수 있다. 공유 가계부의 소유권 이전·탈퇴 정책과 임시 이미지가 있다면 그 삭제 처리는 해당 기능 도입 전에 정한다.
 
 **파싱 상태 머신 & quota 차감**:
 
@@ -685,10 +692,11 @@ draft·failed 이미지의 7일 보관은 이번 원본 비보관 방향과 충�
 
 ---
 
-## 6.3 검색 범위 (후보·미확정)
+## 6.3 캘린더 거래 검색
 
-- 우선 검토 대상은 정확한 품목명 검색과 카테고리·상점 필터다. 부분 일치의 범위와 검색 대상 데이터 구조는 TBD다.
-- `coffee` 검색이 `latte`를 자동으로 찾는 의미 검색은 기본 제공으로 가정하지 않는다. 필요성이 확인되면 별도 기능으로 설계한다.
+- `GET /ledgers/{ledger_id}/transactions/search`는 지정한 `start_date`~`end_date`의 삭제되지 않은 거래 품목에서 품목명·가게명·카테고리명 중 검색어가 포함된 품목을 조회한다. 대소문자를 구분하지 않고, 한 품목이 여러 필드에 일치해도 한 번만 반환한다. 의미 검색은 하지 않는다.
+- 일반 캘린더는 해당 달의 날짜 범위를 보내고, 카드 화면은 사이클 담당 기능에서 받은 기간과 `payment_method_id`를 함께 보내 같은 API를 사용한다. 카드 ID를 생략하면 가계부 전체 결제수단을 검색한다.
+- 응답에는 일치한 품목의 거래일, 일치 필드, 품목 수·가게 수·날짜 목록과 **일치한 품목 금액만의 합계**를 포함한다. 거래 전체 Tax·Tip은 검색 합계에 더하지 않는다. `coffee`가 가게명에 포함되면 그 가게의 `latte` 품목도 가게명 일치 결과로 나타날 수 있지만, 두 단어를 동의어로 해석하지는 않는다.
 
 ---
 

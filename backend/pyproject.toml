@@ -7,6 +7,7 @@ dependencies = [
     "fastapi[standard-no-fastapi-cloud-cli]>=0.141.1",
     "openai>=3.33.0",
     "pillow>=13.0.0",
+    "httpx>=0.28.1",
     "psycopg[binary]>=3.3.5",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",

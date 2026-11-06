@@ -141,3 +141,10 @@ def delete_expired_income_source_batch(db: Session, cutoff: datetime, batch_size
     db.execute(update(IncomeRecord).where(IncomeRecord.income_source_id.in_(source_ids)).values(income_source_id=None))
     db.execute(delete(IncomeSource).where(IncomeSource.id.in_(source_ids)))
     return len(source_ids)
+
+def list_income_records_in_range(db: Session, ledger_id: UUID, start_date: date, end_date: date) -> list[IncomeRecord]:
+    """가계부의 지정 기간에 실제 입금된 삭제되지 않은 수입을 조회한다."""
+    statement = (
+        select(IncomeRecord).where(IncomeRecord.ledger_id==ledger_id, IncomeRecord.deleted_at.is_(None), IncomeRecord.received_at>=start_date, IncomeRecord.received_at<=end_date).order_by(IncomeRecord.received_at, IncomeRecord.id)
+    )
+    return list(db.scalars(statement=statement))

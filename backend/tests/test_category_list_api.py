@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_current_user_id
+from app.auth.dependencies import get_active_user_id, get_current_user_id
 from app.categories import repository as categories_repository
 from app.categories import router as categories_router
 from app.db.models.category import Category
@@ -30,6 +30,7 @@ def test_list_categories_returns_global_catalog_to_authenticated_user(monkeypatc
     list_global_categories = Mock(return_value=[category])
     monkeypatch.setattr(categories_router, "list_global_categories", list_global_categories)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: db
 
     try:

@@ -310,3 +310,22 @@ def test_purge_expired_income_commits_records_before_sources(monkeypatch) -> Non
 
     assert events == ["records", "commit", "records", "commit", "sources", "commit"]
     db.rollback.assert_not_called()
+
+
+def test_income_calendar_combines_received_and_planned_dates(monkeypatch) -> None:
+    """실제 입금일과 반복 예정일을 각각 달력 표시 날짜로 반환한다."""
+    db = Mock()
+    ledger_id, source_id = uuid4(), uuid4()
+    record = IncomeRecord(id=uuid4(), ledger_id=ledger_id, income_source_id=None, income_type="other", from_name=None, payment_method_id=None, amount_cents=1000, received_at=date(2026, 10, 15), memo=None, expected_date=None)
+    source = IncomeSource(id=source_id, ledger_id=ledger_id, income_type="paycheck", from_name="Company", payment_method_id=None, expected_amount_cents=200000, memo=None, frequency="monthly", reference_date=date(2026, 10, 31), next_expected_date=date(2026, 10, 31), is_active=True)
+    monkeypatch.setattr(repository, "list_income_records_in_range", Mock(return_value=[record]))
+    monkeypatch.setattr(repository, "list_active_income_sources", Mock(return_value=[source]))
+    monkeypatch.setattr(service, "get_adjusted_paycheck_date", lambda db, day: date(2026, 10, 30) if day == date(2026, 10, 31) else day)
+
+    entries = service.list_income_calendar(db, ledger_id, date(2026, 10, 1), date(2026, 11, 30))
+
+    assert [(entry.status, entry.display_date) for entry in entries] == [
+        ("received", date(2026, 10, 15)),
+        ("planned", date(2026, 10, 30)),
+        ("planned", date(2026, 11, 30)),
+    ]

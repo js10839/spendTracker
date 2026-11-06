@@ -81,6 +81,19 @@ def test_list_ledger_transactions_filters_ledger_dates_and_deleted_rows() -> Non
     db.commit.assert_not_called()
 
 
+def test_list_ledger_transactions_filters_selected_payment_method() -> None:
+    """선택한 카드의 거래만 조회하도록 결제수단 조건을 추가한다."""
+    ledger_id, payment_method_id = uuid4(), uuid4()
+    db = Mock()
+    db.scalars.return_value = []
+
+    assert list_ledger_transactions(db, ledger_id, date(2026, 10, 1), date(2026, 10, 31), payment_method_id) == []
+
+    statement = db.scalars.call_args.kwargs["statement"]
+    assert "transactions.payment_method_id =" in str(statement)
+    assert payment_method_id in statement.compile().params.values()
+
+
 def test_list_transaction_items_uses_parent_ids() -> None:
     """품목은 조회 대상 결제 ID들로 한 번에 가져온다."""
     transaction_id = uuid4()

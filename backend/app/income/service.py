@@ -9,14 +9,18 @@ from sqlalchemy.orm import Session
 
 from app.db.models.income_record import IncomeRecord
 from app.db.models.income_source import IncomeSource
-from app.income import repository
+from app.income import calendar_repository, repository
+from app.income.payday_calendar import adjust_paycheck_date
 from app.income.schema import (
+    IncomeCalendarEntryRead,
     IncomePlanConfirm,
     IncomePlanCreate,
+    IncomePlanRead,
     IncomePlanUpdate,
     IncomeRecordCreate,
     IncomeRecordUpdate,
 )
+from app.integrations.bankday import BankdayUnavailable, fetch_bank_holidays
 
 
 def calculate_next_expected_date(reference_date: date, frequency: Literal["biweekly", "monthly"], anchor_day: int | None = None) -> date:
@@ -282,3 +286,102 @@ def purge_expired_income(db: Session, batch_size: int = 1000, pause_seconds: flo
         sleep(pause_seconds)
 
     return records_deleted, sources_deleted
+
+def get_bank_holidays(db: Session, year: int) -> set[date] | None:
+    """연간 휴일을 DB에서 읽고 당해 연도 데이터가 30일 넘었으면 갱신한다."""
+    now = datetime.now(UTC)
+    cached = calendar_repository.find_calendar_year(db, year)
+    fetched_at = cached.fetched_at.replace(tzinfo=UTC) if cached and cached.fetched_at.tzinfo is None else (cached.fetched_at if cached else None)
+    if cached and (year < now.year or now - fetched_at < timedelta(days=30)):
+        return {date.fromisoformat(value) for value in cached.holidays}
+
+    try:
+        holidays = fetch_bank_holidays(year)
+    except BankdayUnavailable:
+        # API가 일시적으로 실패하면 검증된 마지막 목록을 사용한다.
+        return {date.fromisoformat(value) for value in cached.holidays} if cached else None
+
+    try:
+        calendar_repository.save_calendar_year(db, year, sorted(day.isoformat() for day in holidays), now)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return holidays
+
+def get_adjusted_paycheck_date(db: Session, expected_date: date) -> date | None:
+    """Paycheck 예정일을 직전 은행 영업일로 조정한다."""
+    holidays = get_bank_holidays(db, expected_date.year)
+    if holidays is None:
+        return None
+
+    adjusted = adjust_paycheck_date(expected_date, holidays)
+    if adjusted.year != expected_date.year:
+        previous_year_holidays = get_bank_holidays(db, adjusted.year)
+        if previous_year_holidays is None:
+            return None
+        adjusted = adjust_paycheck_date(adjusted, previous_year_holidays)
+
+    return adjusted
+
+def build_income_plan_read(db: Session, source: IncomeSource) -> IncomePlanRead:
+    """기준일은 유지하고 Paycheck의 표시 날짜만 은행 달력으로 조정한다."""
+    result = IncomePlanRead.model_validate(source)
+    if source.income_type == "paycheck":
+        result.adjusted_expected_date = get_adjusted_paycheck_date(db, source.next_expected_date)
+    else:
+        result.adjusted_expected_date = source.next_expected_date
+    return result
+
+def list_income_calendar(db: Session, ledger_id: UUID, start_date: date, end_date: date) -> list[IncomeCalendarEntryRead]:
+    """기간 내 실제 입금과 앞으로의 예정 회차를 달력 항목으로 합친다."""
+    if start_date > end_date:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="start_date must be on or before end_date")
+
+    entries: list[IncomeCalendarEntryRead] = []
+
+    for record in repository.list_income_records_in_range(db, ledger_id, start_date, end_date):
+        entries.append(IncomeCalendarEntryRead(
+            status="received",
+            income_source_id=record.income_source_id,
+            income_record_id=record.id,
+            income_type=record.income_type,
+            from_name=record.from_name,
+            payment_method_id=record.payment_method_id,
+            amount_cents=record.amount_cents,
+            expected_date=record.expected_date,
+            received_at=record.received_at,
+            display_date=record.received_at,
+            memo=record.memo,
+        ))
+
+    for source in repository.list_active_income_sources(db, ledger_id):
+        expected_date = source.next_expected_date
+
+        while True:
+            adjusted = get_adjusted_paycheck_date(db, expected_date) if source.income_type == "paycheck" else None
+            display_date = adjusted or expected_date
+
+            if expected_date > end_date and display_date > end_date:
+                break
+
+            if start_date <= display_date <= end_date:
+                entries.append(IncomeCalendarEntryRead(
+                    status="planned",
+                    income_source_id=source.id,
+                    income_record_id=None,
+                    income_type=source.income_type,
+                    from_name=source.from_name,
+                    payment_method_id=source.payment_method_id,
+                    amount_cents=source.expected_amount_cents,
+                    expected_date=expected_date,
+                    received_at=None,
+                    display_date=display_date,
+                    memo=source.memo,
+                ))
+
+            if source.frequency == "once":
+                break
+            expected_date = calculate_next_expected_date(expected_date, source.frequency, anchor_day=source.reference_date.day)
+
+    return sorted(entries, key=lambda entry: entry.display_date)

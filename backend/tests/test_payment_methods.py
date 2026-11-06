@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.auth.dependencies import get_current_user_id
+from app.auth.dependencies import get_active_user_id, get_current_user_id
 from app.db.models.payment_method import PaymentMethod
 from app.db.session import get_db
 from app.main import app
@@ -96,6 +96,7 @@ def test_create_api_returns_created_payment_method(monkeypatch) -> None:
     create_payment_method = Mock(return_value=payment_method)
     monkeypatch.setattr(router, "create_payment_method", create_payment_method)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: db
 
     try:
@@ -141,6 +142,7 @@ def test_list_api_returns_only_current_users_wallet(monkeypatch) -> None:
     get_payment_methods = Mock(return_value=[payment_method])
     monkeypatch.setattr(router, "get_payment_methods", get_payment_methods)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: Mock()
 
     try:

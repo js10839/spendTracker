@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_current_user_id
+from app.auth.dependencies import get_active_user_id, get_current_user_id
 from app.db.models.user import User
 from app.db.session import get_db
 from app.main import app
@@ -17,6 +17,7 @@ def test_bootstrap_api_uses_authenticated_user_id(monkeypatch) -> None:
     bootstrap_user = Mock(return_value=User(id=user_id))
     monkeypatch.setattr(users_router, "bootstrap_user", bootstrap_user)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    app.dependency_overrides[get_active_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: db
 
     try:
