@@ -1,3 +1,4 @@
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +9,8 @@ class Settings(BaseSettings):
     db_url: str
     supabase_url: str | None = None
     supabase_jwks_url: str | None = None
+    openai_api_key: SecretStr | None = None
+    openai_receipt_model: str = "gpt-4.1-mini"
     supabase_secret_key: str | None = None
     bankday_url: str = "https://bankday.dev/v1"
     bankday_key: str | None = None
