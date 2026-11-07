@@ -107,7 +107,7 @@ void main() {
       () => Future<void>.delayed(const Duration(seconds: 1)),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 29));
+    await tester.pump(const Duration(milliseconds: 19));
     expect(find.byType(SplashPage), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pump();

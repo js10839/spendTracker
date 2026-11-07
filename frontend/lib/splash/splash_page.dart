@@ -20,9 +20,10 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage> {
+  // TODO: 실제 기기에서 확인한 뒤 GIF 재생 시간을 더 줄일지 검토한다.
   // 원본 GIF는 150프레임이므로 마지막 프레임 인덱스는 149다.
   static const _lastFrameIndex = 149;
-  static const _finalFrameDuration = Duration(milliseconds: 30);
+  static const _finalFrameDuration = Duration(milliseconds: 20);
   Timer? _timer;
   bool _finishScheduled = false;
   bool _showFinalFrame = false;
@@ -68,8 +69,15 @@ class _SplashPageState extends State<SplashPage> {
     ),
     child: Scaffold(
       backgroundColor: AppTokens.splashBackground,
-      body: SizedBox.expand(
-        child: Image.asset(
+      body: LayoutBuilder(
+        builder: (context, constraints) => ClipRect(
+          child: Transform.translate(
+            // 원본 로고가 중앙보다 20px 위에 있어 GIF와 마지막 프레임을 함께 보정한다.
+            offset: Offset(0, constraints.maxHeight * 20 / 1688),
+            child: Transform.scale(
+              // 이동한 뒤에도 원본 배경이 화면 가장자리를 채우도록 한다.
+              scale: 1.025,
+              child: SizedBox.expand(child: Image.asset(
           _showFinalFrame
               ? 'assets/branding/splash_final.png'
               : 'assets/branding/splash.gif',
@@ -85,6 +93,9 @@ class _SplashPageState extends State<SplashPage> {
             }
             return child;
           },
+              )),
+            ),
+          ),
         ),
       ),
     ),
