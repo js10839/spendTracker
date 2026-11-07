@@ -5,7 +5,7 @@ import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
 import 'onboarding_summary.dart';
 import 'widgets/onboarding_actions.dart';
-import 'widgets/onboarding_video.dart';
+import 'widgets/onboarding_animation.dart';
 
 /// 카드 마감 알림의 예시와 권한 선택을 보여준다.
 class OnboardingRemindersPage extends StatelessWidget {
@@ -55,11 +55,10 @@ class OnboardingRemindersPage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.twoXL),
-                    const OnboardingVideo(
-                      asset: 'assets/onboarding/reminders.mp4',
+                    const OnboardingAnimation(
+                      asset: 'assets/onboarding/reminder.gif',
                       width: 370,
                       height: 280,
-                      loop: true,
                     ),
                     const Spacer(),
                     const SizedBox(height: AppSpacing.twoXL),
