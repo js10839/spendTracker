@@ -33,6 +33,7 @@ class OnboardingReadyPage extends StatelessWidget {
                       width: 200,
                       height: 200,
                       lastFrame: 95,
+                      finalFrameDuration: const Duration(milliseconds: 20),
                       onComplete: () => context.goNamed('home'),
                     ),
                     const SizedBox(height: AppSpacing.threeXL),

@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 
 /// 온보딩 GIF를 표시하고 필요한 경우 첫 재생이 끝난 뒤 진행한다.
 class OnboardingAnimation extends StatefulWidget {
-  const OnboardingAnimation({super.key, required this.asset, required this.width, required this.height, this.lastFrame, this.onComplete, this.cropSetup = false});
+  const OnboardingAnimation({super.key, required this.asset, required this.width, required this.height, this.lastFrame, this.onComplete, this.cropSetup = false, this.finalFrameDuration = const Duration(milliseconds: 30)});
 
   final String asset;
   final double width, height;
   final int? lastFrame;
   final VoidCallback? onComplete;
   final bool cropSetup;
+  final Duration finalFrameDuration;
 
   @override
   State<OnboardingAnimation> createState() => _OnboardingAnimationState();
@@ -28,7 +29,7 @@ class _OnboardingAnimationState extends State<OnboardingAnimation> {
   /// 마지막 프레임의 원본 표시 시간이 지난 후 한 번만 이동한다.
   void _finishAfterLastFrame() {
     if (_completionTimer != null || widget.onComplete == null) return;
-    _completionTimer = Timer(const Duration(milliseconds: 30), () {
+    _completionTimer = Timer(widget.finalFrameDuration, () {
       if (mounted) widget.onComplete?.call();
     });
   }
