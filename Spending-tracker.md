@@ -85,7 +85,7 @@
 
 - [ ] 통합 대시보드: 최근 30일 전체 지출, 카드 vs 현금 비율, 카테고리별 분포
 
-- [ ] 카테고리 목록 조회 (운영팀이 정한 기본 13개 제공: Food, Living, Electronics, Fashion, Dining, Transport, Subscription, Utilities·Bills, Health, Entertainment, Travel, Etc, Refund). 사용자는 카테고리를 추가·수정·삭제하지 않는다.
+- [ ] 카테고리 목록 조회 (운영팀이 정한 기본 14개 제공: Food, Living, Electronics, Fashion, Dining, Transport, Subscription, Utilities & Bills, Health, Entertainment, Travel, Etc, Refund, Coffee). 사용자는 카테고리를 추가·수정·삭제하지 않는다.
 
 ### Phase 2 — 핵심 차별화 (Wow Factor)
 
@@ -435,7 +435,7 @@ reference_date = 2026-10-16
 
 ## 4.1 기본 카테고리 정의
 
-DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와 Refund). 각 정의는 `categories.description`에 저장되며 LLM 파싱 프롬프트에 사용된다. 카테고리 목록은 운영팀이 관리하고 사용자는 `transaction_items`의 품목에 적용할 카테고리만 선택한다. Tax/Tip은 결제 전체 금액이므로 품목 카테고리를 붙이지 않는다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다. Refund 카테고리의 DB 적용을 확인했다.
+DB migration에서 생성하는 공통 기본 카테고리 14개(기존 12개와 Refund·Coffee). 각 정의는 `categories.description`에 저장된다. 카테고리 목록은 운영팀이 관리하고 사용자는 `transaction_items`의 품목에 적용할 카테고리만 선택한다. Tax/Tip은 결제 전체 금액이므로 품목 카테고리를 붙이지 않는다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다. `55c03d2a68ad`는 Utilities & Bills로 이름을 변경하고 Coffee를 추가하며, 사용자에 따르면 DB에 적용됐다. 파서는 현재 별도의 고정 목록을 사용하며 DB 목록을 프롬프트에 연결하는 작업은 남아 있다.
 
 | 카테고리 | 담당 범위 | 예시 | 아닌 것 (경계) |
 |---|---|---|---|
@@ -443,10 +443,11 @@ DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와
 | **Living** | 생활용품·소모품 — 집에서 쓰는 물건 전반 | 세제, 휴지, 샴푸, 수건, 주방용품, 수납용품, 가구, 가전(냉장고·청소기) | 옷은 Fashion, 전자기기는 Electronics |
 | **Electronics** | 전자기기·주변기기 하드웨어 | 폰, 노트북, 모니터, 이어폰, 충전기, 게임 콘솔 | 게임 소프트웨어·콘텐츠는 Entertainment, 디지털 구독은 Subscription, 가전은 Living |
 | **Fashion** | 몸에 걸치는 것 | 옷, 신발, 가방, 액세서리, 화장품 | 세탁 서비스는 Etc |
-| **Dining** | 조리된 음식·음료 구매 | 레스토랑, 카페, 배달(DoorDash 등), 술집 | 마트 식재료는 Food |
+| **Dining** | 조리된 음식·음료 구매 | 레스토랑, 배달(DoorDash 등), 술집 | 마트 식재료는 Food, 커피 전문점의 커피는 Coffee |
+| **Coffee** | 커피 전문점 등에서 구매한 커피 | 커피 전문점의 커피 | 기존 Dining 거래는 자동으로 변경하지 않음 |
 | **Transport** | 이동 비용 | 개스, 대중교통, Uber/Lyft, 주차, 차량 정비 | 여행지 항공·숙박은 Travel |
 | **Subscription** | 반복 결제 디지털/멤버십 서비스 | Netflix, Spotify, iCloud, 짐 멤버십, Amazon Prime | 일회성 구매는 해당 카테고리로 |
-| **Utilities·Bills** | 주거 관련 고정 요금 | 전기, 수도, 개스(주거), 인터넷, 휴대폰 요금 | 렌트는 MVP 범위 외 |
+| **Utilities & Bills** | 주거 관련 고정 요금 | 전기, 수도, 개스(주거), 인터넷, 휴대폰 요금 | 렌트는 MVP 범위 외 |
 | **Health** | 건강·의료 | 병원, 약국, 보험 본인부담금, 영양제 | 짐 멤버십은 Subscription |
 | **Entertainment** | 여가·취미 소비 | 영화, 공연, 게임, 책, 취미용품 | 반복 결제형(게임 구독 등)은 Subscription |
 | **Travel** | 여행 관련 지출 일체 | 항공권, 호텔, 여행지 액티비티 | 일상 이동은 Transport |
@@ -571,9 +572,9 @@ DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와
 
 **카테고리 운영 원칙**:
 
-1. 기본 카테고리: DB migration에서 공통 목록으로 생성 (`is_default = true`) — 확정 세트 (13개):
+1. 기본 카테고리: DB migration에서 공통 목록으로 생성 (`is_default = true`) — 확정 세트 (14개):
 
-Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, 수건, 주방용품 등) / Electronics (전자기기·주변기기 하드웨어) / Fashion (옷·신발·액세서리) / Dining (외식·카페·배달) / Transport / Subscription / Utilities·Bills / Health / Entertainment / Travel / Etc / Refund (구매 금액 반환)
+Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, 수건, 주방용품 등) / Electronics (전자기기·주변기기 하드웨어) / Fashion (옷·신발·액세서리) / Dining (외식·배달) / Coffee (커피 전문점의 커피) / Transport / Subscription / Utilities & Bills / Health / Entertainment / Travel / Etc / Refund (구매 금액 반환)
 
 - `categories.description` 컬럼 추가: 각 카테고리의 한 줄 정의. LLM 파싱 프롬프트에 이름+설명을 함께 제공해 분류 정확도 확보 (예: Target 영수증에서 detergent → Living, 사과 → Food)
 
