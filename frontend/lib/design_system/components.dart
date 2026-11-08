@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'tokens.dart';
@@ -10,11 +11,11 @@ export 'category_icon.dart';
 export 'chevron.dart';
 export 'tooltip.dart';
 
-enum AppButtonVariant { primary, secondary, social, outline, disabled, danger }
+enum AppButtonVariant { primary, secondary, social, outline, surface, disabled, danger }
 
 enum AppButtonLabelStyle { standard, regular }
 
-enum AppInputStyle { standard, onboardingEmail }
+enum AppInputStyle { standard, onboardingEmail, cardName }
 
 enum AppSocialLogo { google, apple }
 
@@ -59,12 +60,14 @@ class AppButton extends StatelessWidget {
       AppButtonVariant.secondary => AppTokens.brandPurple,
       AppButtonVariant.social => AppTokens.surface,
       AppButtonVariant.outline => AppTokens.surface,
+      AppButtonVariant.surface => AppTokens.surface,
       AppButtonVariant.disabled => disabledBackgroundColor ?? AppTokens.borderSubtle,
       AppButtonVariant.danger => AppTokens.statusDanger,
     };
     final textColor = switch (variant) {
       AppButtonVariant.social => AppTokens.textPrimary,
       AppButtonVariant.outline => AppTokens.textBody,
+      AppButtonVariant.surface => AppTokens.textPrimary,
       AppButtonVariant.disabled => AppTokens.textDisabled,
       AppButtonVariant.secondary => AppTokens.textInverse,
       AppButtonVariant.danger => AppTokens.textInverse,
@@ -129,6 +132,7 @@ class AppInput extends StatelessWidget {
     this.onChanged,
     this.inputStyle = AppInputStyle.standard,
     this.hasError = false,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
@@ -137,6 +141,7 @@ class AppInput extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final AppInputStyle inputStyle;
   final bool hasError;
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   /// 입력값과 실제 포커스에 따라 Figma의 기본·집중·입력 완료 상태를 표시한다.
@@ -145,10 +150,12 @@ class AppInput extends StatelessWidget {
       builder: (context) {
         final focused = Focus.of(context).hasFocus;
         final email = inputStyle == AppInputStyle.onboardingEmail;
+        final cardName = inputStyle == AppInputStyle.cardName;
         return TextField(
           controller: controller,
           keyboardType: keyboardType,
           onChanged: onChanged,
+          inputFormatters: inputFormatters,
           style: AppTypography.bodyLarge,
           decoration: InputDecoration(
             hintText: hintText,
@@ -156,7 +163,7 @@ class AppInput extends StatelessWidget {
               color: email ? AppTokens.textDisabled : AppTokens.textSecondary,
             ),
             filled: true,
-            fillColor: email || focused ? AppTokens.background : AppTokens.surface,
+            fillColor: email || cardName || focused ? AppTokens.background : AppTokens.surface,
             contentPadding: EdgeInsets.symmetric(
               horizontal: email ? AppSpacing.twoXL : AppSpacing.xl,
               vertical: AppSpacing.lg,
@@ -164,7 +171,7 @@ class AppInput extends StatelessWidget {
             constraints: BoxConstraints(minHeight: email ? 56 : 60, maxHeight: email ? 56 : double.infinity),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(email ? AppRadius.xl : AppRadius.md),
-              borderSide: email ? BorderSide(color: hasError ? AppTokens.statusDanger : AppTokens.borderStrong) : BorderSide.none,
+              borderSide: email || cardName ? BorderSide(color: hasError ? AppTokens.statusDanger : AppTokens.borderStrong) : BorderSide.none,
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(email ? AppRadius.xl : AppRadius.md),

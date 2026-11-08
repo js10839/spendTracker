@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../design_system/components.dart';
 import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
+import 'widgets/onboarding_custom_card_sheet.dart';
 
 /// 설정할 카드사를 최대 두 개까지 선택한다.
 class OnboardingCardsPage extends StatefulWidget {
@@ -23,8 +24,8 @@ class _OnboardingCardsPageState extends State<OnboardingCardsPage> {
     'Apple Card',
     'Bank of America',
     'Wells Fargo',
-    'Other',
   ];
+  final _customCards = <String>[];
   final _selectedCards = <String>[];
   int _progressStart = 0;
   int _progressVersion = 0;
@@ -35,6 +36,27 @@ class _OnboardingCardsPageState extends State<OnboardingCardsPage> {
       if (_selectedCards.contains(card)) {
         _selectedCards.remove(card);
       } else {
+        if (_selectedCards.length == 2) _selectedCards.removeAt(0);
+        _selectedCards.add(card);
+      }
+    });
+  }
+
+  /// 직접 입력한 이름을 목록에 추가하거나 기존 항목을 선택한다.
+  Future<void> _addCustomCard() async {
+    final name = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: AppComponentColors.onboardingSheetOverlay.withValues(alpha: 114 / 255),
+      builder: (_) => const OnboardingCustomCardSheet(),
+    );
+    if (!mounted || name == null) return;
+    setState(() {
+      final matches = [..._cards, ..._customCards].where((card) => card.toLowerCase() == name.toLowerCase());
+      final card = matches.isEmpty ? name : matches.first;
+      if (matches.isEmpty) _customCards.add(card);
+      if (!_selectedCards.contains(card)) {
         if (_selectedCards.length == 2) _selectedCards.removeAt(0);
         _selectedCards.add(card);
       }
@@ -56,6 +78,7 @@ class _OnboardingCardsPageState extends State<OnboardingCardsPage> {
   @override
   Widget build(BuildContext context) {
     final count = _selectedCards.length;
+    final cards = [..._cards, ..._customCards, 'Other'];
     return Scaffold(
       backgroundColor: AppTokens.background,
       body: SafeArea(
@@ -123,35 +146,35 @@ class _OnboardingCardsPageState extends State<OnboardingCardsPage> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      for (var i = 0; i < _cards.length; i += 2) ...[
+                      for (var i = 0; i < cards.length; i += 2) ...[
                         Row(
                           children: [
                             Expanded(
                               child: AppOption(
-                                key: ValueKey(_cards[i]),
-                                label: _cards[i],
-                                selected: _selectedCards.contains(_cards[i]),
-                                onTap: () => _toggleCard(_cards[i]),
+                                key: i == cards.length - 1 ? const ValueKey('onboarding-other') : ValueKey(cards[i]),
+                                label: cards[i],
+                                selected: i != cards.length - 1 && _selectedCards.contains(cards[i]),
+                                onTap: i == cards.length - 1 ? _addCustomCard : () => _toggleCard(cards[i]),
                                 style: AppOptionStyle.onboardingCard,
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: i + 1 < _cards.length
+                              child: i + 1 < cards.length
                                   ? AppOption(
-                                      key: ValueKey(_cards[i + 1]),
-                                      label: _cards[i + 1],
-                                      selected: _selectedCards.contains(
-                                        _cards[i + 1],
+                                      key: i + 1 == cards.length - 1 ? const ValueKey('onboarding-other') : ValueKey(cards[i + 1]),
+                                      label: cards[i + 1],
+                                      selected: i + 1 != cards.length - 1 && _selectedCards.contains(
+                                        cards[i + 1],
                                       ),
-                                      onTap: () => _toggleCard(_cards[i + 1]),
+                                      onTap: i + 1 == cards.length - 1 ? _addCustomCard : () => _toggleCard(cards[i + 1]),
                                       style: AppOptionStyle.onboardingCard,
                                     )
                                   : const SizedBox(),
                             ),
                           ],
                         ),
-                        if (i + 2 < _cards.length) const SizedBox(height: 10),
+                        if (i + 2 < cards.length) const SizedBox(height: 10),
                       ],
                       const Spacer(),
                       const SizedBox(height: AppSpacing.twoXL),
