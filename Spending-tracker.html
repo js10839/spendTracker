@@ -411,7 +411,7 @@ html{scroll-behavior:auto}
 <li>지출 수동 입력: 결제 1건에 상점·결제수단·날짜·메모와 카테고리별 품목 여러 개 저장 (백엔드 API 구현, Flutter 연동 필요)</li>
 <li>카드별 사이클 뷰: 누적액 · D-day · 진행률</li>
 <li>통합 대시보드: 30일 지출, 카드 vs 현금, 카테고리 분포, 일별 바 차트</li>
-<li>운영팀이 정한 카테고리 13개(Refund 포함)를 조회·선택 (사용자 추가·수정·삭제 없음)</li>
+<li>운영팀이 정한 카테고리 14개(Refund·Coffee 포함)를 조회·선택 (사용자 추가·수정·삭제 없음)</li>
 </ul></div>
 <div class="pane" id="p2"><ul>
 <li>영수증 업로드 → Vision LLM 파싱 → 품목/가격/카테고리 JSON</li>
@@ -737,8 +737,8 @@ html{scroll-behavior:auto}
 </section>
 <!-- ========== 06 ========== -->
 <section id="s6">
-<div class="sec-head"><span class="sec-ico">🏷️</span><h2>기본 카테고리 <span class="chip ok" style="vertical-align:4px">확정 · 12개</span></h2></div>
-<p class="lead">운영팀이 정한 기본 12개를 공통 목록으로 한 번 저장한다. 인증된 앱은 <code>GET /categories</code>로 같은 ID를 조회한다. 사용자는 카테고리를 선택하지만 추가·수정·삭제하지 않는다. 각 정의는 <code>categories.description</code>에 저장되어 LLM 분류 문맥으로 사용된다.</p>
+<div class="sec-head"><span class="sec-ico">🏷️</span><h2>기본 카테고리 <span class="chip ok" style="vertical-align:4px">확정 · 14개</span></h2></div>
+<p class="lead">운영팀이 정한 기본 14개를 공통 목록으로 한 번 저장한다. 인증된 앱은 <code>GET /categories</code>로 같은 ID를 조회한다. 사용자는 카테고리를 선택하지만 추가·수정·삭제하지 않는다. 각 정의는 <code>categories.description</code>에 저장된다. 현재 파서는 고정 목록을 사용하며 DB 목록과의 연결은 후속 작업이다.</p>
 <div class="demo">
 <div class="demo-tag">Demo C</div>
 <div class="demo-title">분류 시뮬레이터 — 품목을 입력해보세요</div>
@@ -752,13 +752,15 @@ html{scroll-behavior:auto}
 <tr data-cat="Living"><td>Living</td><td>생활용품·소모품 — 집에서 쓰는 물건</td><td>세제, 휴지, 샴푸, 수건, 주방용품, 가구, 가전</td><td class="sub">옷은 Fashion, 전자기기는 Electronics</td></tr>
 <tr data-cat="Electronics"><td>Electronics</td><td>전자기기·주변기기 하드웨어</td><td>폰, 노트북, 모니터, 이어폰, 충전기, 게임 콘솔</td><td class="sub">게임 소프트웨어는 Entertainment, 구독은 Subscription, 가전은 Living</td></tr>
 <tr data-cat="Fashion"><td>Fashion</td><td>몸에 걸치는 것</td><td>옷, 신발, 가방, 액세서리, 화장품</td><td class="sub">세탁 서비스는 Etc</td></tr>
-<tr data-cat="Dining"><td>Dining</td><td>조리된 음식·음료</td><td>레스토랑, 카페, 배달, 술집</td><td class="sub">마트 식재료는 Food</td></tr>
+<tr data-cat="Dining"><td>Dining</td><td>조리된 음식·음료</td><td>레스토랑, 배달, 술집</td><td class="sub">마트 식재료는 Food, 커피 전문점의 커피는 Coffee</td></tr>
+<tr data-cat="Coffee"><td>Coffee</td><td>커피 전문점 등에서 구매한 커피</td><td>커피 전문점의 커피</td><td class="sub">기존 Dining 거래는 자동으로 변경하지 않음</td></tr>
 <tr data-cat="Transport"><td>Transport</td><td>이동 비용</td><td>개스, 대중교통, Uber/Lyft, 주차</td><td class="sub">여행지 항공·숙박은 Travel</td></tr>
 <tr data-cat="Subscription"><td>Subscription</td><td>반복 결제 서비스</td><td>Netflix, Spotify, iCloud, 짐, Prime</td><td class="sub">일회성 구매는 각 카테고리로</td></tr>
-<tr data-cat="Utilities"><td>Utilities·Bills</td><td>주거 고정 요금</td><td>전기, 수도, 개스(주거), 인터넷, 폰</td><td class="sub">렌트는 MVP 범위 외</td></tr>
+<tr data-cat="Utilities"><td>Utilities &amp; Bills</td><td>주거 고정 요금</td><td>전기, 수도, 개스(주거), 인터넷, 폰</td><td class="sub">렌트는 MVP 범위 외</td></tr>
 <tr data-cat="Health"><td>Health</td><td>건강·의료</td><td>병원, 약국, 보험 본인부담금, 영양제</td><td class="sub">짐 멤버십은 Subscription</td></tr>
 <tr data-cat="Entertainment"><td>Entertainment</td><td>여가·취미 소비</td><td>영화, 공연, 게임, 책, 취미용품</td><td class="sub">반복 결제형은 Subscription</td></tr>
 <tr data-cat="Travel"><td>Travel</td><td>여행 지출 일체</td><td>항공권, 호텔, 여행지 액티비티</td><td class="sub">일상 이동은 Transport</td></tr>
+<tr data-cat="Refund"><td>Refund</td><td>돌려받은 구매 금액</td><td>반품 환불, 결제 취소</td><td class="sub">새로 번 돈은 Income</td></tr>
 <tr data-cat="Etc"><td>Etc</td><td>어디에도 속하지 않는 것</td><td>선물, 기부, 수수료</td><td class="sub">—</td></tr>
 </table></div>
 <div class="callout blue">
@@ -1112,10 +1114,11 @@ const RULES=[
 ['Living','생활용품·소모품 — 집에서 쓰는 물건, 가전 포함',['세제','detergent','휴지','tissue','샴푸','shampoo','수건','towel','주방','냄비','pan','가구','수납','청소','청소기','vacuum','냉장고']],
 ['Electronics','전자기기·주변기기 하드웨어 — 게임 소프트웨어는 Entertainment, 가전은 Living',['노트북','laptop','맥북','macbook','폰','iphone','아이폰','모니터','monitor','이어폰','airpods','에어팟','충전기','charger','케이블','cable','콘솔','플스','ps5','switch','키보드','마우스','태블릿','ipad']],
 ['Fashion','몸에 걸치는 것',['티셔츠','shirt','옷','신발','shoes','가방','bag','액세서리','화장품','cosmetic','청바지','jeans','모자']],
-['Dining','조리된 음식·음료 — 마트 식재료면 Food',['외식','배달','doordash','카페','coffee','커피','레스토랑','치폴레','chipotle','술','beer','맥주','라멘','ramen','버거','burger']],
+['Coffee','커피 전문점 등에서 구매한 커피',['coffee','커피']],
+['Dining','조리된 음식·음료 — 마트 식재료면 Food',['외식','배달','doordash','카페','레스토랑','치폴레','chipotle','술','beer','맥주','라멘','ramen','버거','burger']],
 ['Transport','이동 비용 — 여행지 항공은 Travel',['uber','lyft','개스','gas','주유','버스','지하철','subway','주차','parking','택시']],
 ['Subscription','반복 결제 서비스 — 일회성 구매는 각 카테고리로',['넷플릭스','netflix','spotify','스포티파이','icloud','구독','멤버십','짐','gym','prime','유튜브','youtube']],
-['Utilities·Bills','주거 고정 요금',['전기','수도','인터넷','폰요금','wifi','전기세','휴대폰']],
+['Utilities & Bills','주거 고정 요금',['전기','수도','인터넷','폰요금','wifi','전기세','휴대폰']],
 ['Health','건강·의료 — 짐 멤버십은 Subscription',['병원','약','약국','pharmacy','영양제','vitamin','보험','치과']],
 ['Entertainment','여가·취미 — 반복 결제형은 Subscription',['영화','movie','게임','game','책','book','공연','콘서트','취미']],
 ['Travel','여행 지출 일체 — 일상 이동은 Transport',['항공','flight','호텔','hotel','에어비앤비','airbnb','여행']],
