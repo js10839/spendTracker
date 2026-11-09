@@ -6,12 +6,13 @@ import 'package:spending_tracker/app_router.dart';
 import 'package:spending_tracker/design_system/tokens.dart';
 import 'package:spending_tracker/design_system/components.dart';
 import 'package:spending_tracker/home/home_preview_data.dart';
+import 'package:spending_tracker/auth/member_bootstrap.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    appRouter.go('/');
+    appRouter.go('/', extra: const GuestHomeAccess());
   });
 
   // 헤더 금액은 지출, 순금액, 수입 순으로 전환되고 필터 범위를 유지한다.
