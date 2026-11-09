@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../design_system/components.dart';
 import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
+import '../data/users/user_repository.dart';
 import 'auth_service.dart';
 
 /// 기존 회원의 이메일 OTP를 확인한다.
@@ -27,6 +28,7 @@ class _LoginCodePageState extends State<LoginCodePage> {
   bool _loading = false;
   String? _message;
   bool _error = false;
+  bool _verified = false;
 
   @override
   void initState() {
@@ -59,7 +61,6 @@ class _LoginCodePageState extends State<LoginCodePage> {
     });
     try {
       await AuthService.instance.verifyCode(widget.email, code);
-      if (mounted) context.goNamed('home');
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -67,6 +68,22 @@ class _LoginCodePageState extends State<LoginCodePage> {
           _error = true;
         });
       }
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _verified = true);
+    await _bootstrap();
+  }
+
+  /// 인증이 완료된 세션으로 앱 데이터를 초기화하고 실패 시 재시도한다.
+  Future<void> _bootstrap() async {
+    setState(() { _loading = true; _message = null; _error = false; });
+    try {
+      await UserRepository.instance.bootstrap();
+      if (mounted) context.goNamed('home');
+    } catch (_) {
+      if (mounted) setState(() { _message = 'Unable to set up your account. Please try again.'; _error = true; });
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -253,7 +270,7 @@ class _LoginCodePageState extends State<LoginCodePage> {
                             controller: _code,
                             focusNode: _focus,
                             autofocus: true,
-                            readOnly: _loading,
+                            readOnly: _loading || _verified,
                             keyboardType: TextInputType.number,
                             autofillHints: const [AutofillHints.oneTimeCode],
                             inputFormatters: [
@@ -285,6 +302,10 @@ class _LoginCodePageState extends State<LoginCodePage> {
                     ),
                     const SizedBox(height: AppSpacing.md),
                   ],
+                  if (_verified && _error) ...[
+                    AppButton(label: 'Try again', onPressed: _loading ? null : _bootstrap),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
                   TextButton(
                     onPressed: () => context.pop(),
                     child: Text(
@@ -301,8 +322,8 @@ class _LoginCodePageState extends State<LoginCodePage> {
                     label: _remaining > 0
                         ? 'Resend code ($_remaining s)'
                         : 'Resend code',
-                    onPressed: !_loading && _remaining == 0 ? _resend : null,
-                    variant: !_loading && _remaining == 0
+                    onPressed: !_verified && !_loading && _remaining == 0 ? _resend : null,
+                    variant: !_verified && !_loading && _remaining == 0
                         ? AppButtonVariant.outline
                         : AppButtonVariant.disabled,
                     disabledBackgroundColor: AppTokens.surface,

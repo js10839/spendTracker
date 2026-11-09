@@ -59,13 +59,17 @@ void main() {
     await tester.pump();
     expect(selected('Amex'), isFalse);
     await tester.tap(find.text('Other'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('onboarding-custom-card-name')), 'Navy Federal');
     await tester.pump();
-    expect(selected('Other'), isTrue);
+    await tester.tap(find.text('Add card'));
+    await tester.pumpAndSettle();
+    expect(selected('Navy Federal'), isTrue);
     await tester.tap(find.text('Continue · 2 cards'));
     await tester.pumpAndSettle();
     expect(find.byType(OnboardingClosingPage), findsOneWidget);
     expect(find.text('Citi'), findsOneWidget);
-    expect(find.text('Other'), findsOneWidget);
+    expect(find.text('Navy Federal'), findsOneWidget);
   });
 
   testWidgets('진행률은 처음에 0에서 2/5까지 채워진다', (tester) async {
@@ -90,7 +94,35 @@ void main() {
     await tester.ensureVisible(find.text('Other'));
     await tester.tap(find.text('Other'));
     await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('onboarding-custom-card-name')), 'Navy');
+    await tester.pump();
+    await tester.ensureVisible(find.text('Add card'));
+    await tester.tap(find.text('Add card'));
+    await tester.pumpAndSettle();
     expect(find.text('Continue · 1 card'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('직접 입력은 문자와 공백만 허용하고 중복을 선택한다', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: OnboardingCardsPage()));
+    await tester.tap(find.text('Other'));
+    await tester.pumpAndSettle();
+    final input = find.byKey(const Key('onboarding-custom-card-name'));
+    expect(tester.widget<AppButton>(find.widgetWithText(AppButton, 'Add card')).onPressed, isNull);
+    await tester.enterText(input, '한글 123! École');
+    await tester.pump();
+    expect(tester.widget<TextField>(find.descendant(of: input, matching: find.byType(TextField))).controller!.text, '한글  École');
+    await tester.tap(find.text('Add card'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppOption>(find.byKey(const ValueKey('한글  École'))).selected, isTrue);
+    await tester.tap(find.text('Other'));
+    await tester.pumpAndSettle();
+    await tester.enterText(input, 'chase');
+    await tester.pump();
+    await tester.tap(find.text('Add card'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<AppOption>(find.byKey(const ValueKey('Chase'))).selected, isTrue);
+    expect(find.text('chase'), findsNothing);
+    expect(find.text('Continue · 2 cards'), findsOneWidget);
   });
 }
