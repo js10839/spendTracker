@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.db.models.day_note import DayNote
@@ -69,3 +69,8 @@ def delete_user_data(db: Session, user_id: UUID, ledger_ids: list[UUID]) -> None
 def mark_user_deletion_requested(db: Session, user_id: UUID) -> None:
     """최초 삭제 요청 시각을 유지하고 프로필 이름을 지운다."""
     db.execute(update(User).where(User.id == user_id).values(nickname=None, deletion_requested_at=func.coalesce(User.deletion_requested_at, func.now())))
+
+def lock_bootstrap(db: Session, user_id: UUID) -> None:
+    """같은 사용자의 bootstrap 요청을 트랜잭션이 끝날 때까지 순서대로 처리한다."""
+    statement = text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))")
+    db.execute(statement=statement, params={"lock_key": f"user-bootstrap{user_id}"})

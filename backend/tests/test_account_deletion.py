@@ -33,8 +33,9 @@ from app.users import repository, retry_deletions, router, service
 
 
 @pytest.fixture
-def db():
-    """외래키를 켠 임시 DB에서 계정 삭제를 검증한다."""
+def db(monkeypatch):
+    """SQLite에서는 PostgreSQL 잠금을 대체하고 계정 삭제를 검증한다."""
+    monkeypatch.setattr(repository, "lock_bootstrap", lambda db, user_id: None)
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     with engine.begin() as connection:
         connection.exec_driver_sql("ATTACH DATABASE ':memory:' AS auth")
