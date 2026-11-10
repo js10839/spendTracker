@@ -491,7 +491,7 @@ html{scroll-behavior:auto}
 <div class="si"><div class="si-head">User ≠ Email <span class="tag b">확정</span></div><div class="si-desc">앱 데이터 소유자는 Supabase Auth UUID. public.users.id = auth.users.id로 연결하고 이메일을 FK로 사용하지 않음.</div></div>
 <div class="si"><div class="si-head">Social Login / Account Linking <span class="tag a">확장 가능</span></div><div class="si-desc">Google·Apple Sign-In은 Supabase provider로 추가 가능. 서로 다른 provider 계정 자동 병합은 하지 않고 linking 기능은 별도 요구사항으로 다룸.</div></div>
 <div class="si"><div class="si-head">인증 이메일 발송 <span class="tag b">방향 확정</span></div><div class="si-desc">Production에서는 Resend 같은 Transactional Email Provider를 Supabase custom SMTP에 연결. 인증 메일 요청에 rate limit과 resend cooldown 적용.</div></div>
-<div class="si"><div class="si-head">초기 표시 이름 <span class="tag a">Flutter 연결 필요</span></div><div class="si-desc">가입 정보 완료 시 입력한 이름을 저장하고 빈칸이면 서버가 랜덤 이름을 생성한다. 이름 중복은 허용한다. bootstrap은 가입 정보 입력 필요 여부를 반환하고, 탈퇴 진행 계정은 409로 거부한다.</div></div>
+<div class="si"><div class="si-head">초기 표시 이름 <span class="tag a">Flutter 연결 필요</span></div><div class="si-desc">인증된 사용자는 GET /users/me/nickname-suggestion으로 저장하지 않는 이름 후보를 받을 수 있다. 가입 정보 완료 시 입력한 이름을 저장하고 빈칸이면 서버가 랜덤 이름을 생성한다. 이름 중복은 허용한다. bootstrap은 가입 정보 입력 필요 여부를 반환하고, 탈퇴 진행 계정은 409로 거부한다.</div></div>
 </div>
 <div class="spec">
 <div class="spec-title">Supabase 의존성 경계</div>

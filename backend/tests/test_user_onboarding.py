@@ -12,7 +12,7 @@ from app.db.base import Base
 from app.db.models.user import User, auth_users
 from app.db.session import get_db
 from app.main import app
-from app.users import repository, service
+from app.users import repository, router, service
 
 
 @pytest.fixture
@@ -79,3 +79,33 @@ def test_onboarding_requires_token():
     with TestClient(app) as client:
         response = client.post("/users/me/onboarding/complete", json={"nickname": "Colin"})
     assert response.status_code == 401
+
+
+def test_nickname_suggestion_does_not_change_profile(onboarding_client, monkeypatch):
+    """후보 조회는 이름과 가입 완료 상태를 저장하지 않는다."""
+    client, db, user_id = onboarding_client
+    monkeypatch.setattr(router, "generate_random_nickname", lambda: "Calm Otter")
+    response = client.get("/users/me/nickname-suggestion")
+    assert response.status_code == 200
+    assert response.json() == {"nickname": "Calm Otter"}
+    assert response.headers["cache-control"] == "no-store"
+    db.expire_all()
+    user = db.get(User, user_id)
+    assert user.nickname is None
+    assert user.onboarding_completed is False
+
+
+def test_nickname_suggestion_requires_authentication():
+    """로그인하지 않은 사용자는 후보를 요청할 수 없다."""
+    with TestClient(app) as client:
+        response = client.get("/users/me/nickname-suggestion")
+    assert response.status_code == 401
+
+
+def test_deletion_pending_cannot_get_nickname_suggestion(onboarding_client):
+    """삭제 진행 중인 사용자는 후보 조회도 사용할 수 없다."""
+    client, db, user_id = onboarding_client
+    db.get(User, user_id).deletion_requested_at = datetime.now(UTC)
+    db.commit()
+    response = client.get("/users/me/nickname-suggestion")
+    assert response.status_code == 409

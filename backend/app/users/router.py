@@ -16,11 +16,19 @@ from app.users.service import (
     bootstrap_user,
     complete_user_onboarding,
     delete_account,
+    generate_random_nickname,
     get_user_profile,
     update_user_profile,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("/me/nickname-suggestion")
+def get_nickname_suggestion(response: Response, user_id: Annotated[UUID, Depends(get_active_user_id)]) -> dict[str, str]:
+    """인증된 사용자에게 저장하지 않는 랜덤 표시 이름 후보를 제공한다."""
+    response.headers["Cache-Control"] = "no-store"
+    return {"nickname": generate_random_nickname()}
 
 
 @router.post("/me/bootstrap")

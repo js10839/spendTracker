@@ -185,7 +185,7 @@
 
 7. **Guest → 회원 전환** ✅: Guest 데이터는 인증 완료 후 해당 `user_id`의 서버 데이터로 이전한다. 중복 전송이나 재시도를 고려해 migration은 idempotent하게 설계한다.
 
-8. **초기 표시 이름**: 가입 정보 완료 시 입력한 이름을 저장하며, 빈칸이면 서버가 형용사와 동물을 조합해 생성한다. 표시 이름은 중복을 허용한다. `users.onboarding_completed`로 완료 여부를 관리하고 `POST /users/me/bootstrap`은 `onboarding_required`를 반환한다. `POST /users/me/onboarding/complete`는 이름과 완료 상태를 저장하며 재요청 시 기존 이름을 유지한다. 탈퇴 진행 계정은 409로 거부한다. Flutter 가입 흐름 연결은 후속 작업이다.
+8. **초기 표시 이름**: 가입 정보 완료 시 입력한 이름을 저장하며, 빈칸이면 서버가 형용사와 동물을 조합해 생성한다. 인증된 사용자는 `GET /users/me/nickname-suggestion`으로 저장 전 이름 후보를 받을 수 있고, 조회는 프로필과 완료 상태를 바꾸지 않는다. 표시 이름은 중복을 허용한다. `users.onboarding_completed`로 완료 여부를 관리하고 `POST /users/me/bootstrap`은 `onboarding_required`를 반환한다. `POST /users/me/onboarding/complete`는 이름과 완료 상태를 저장하며 재요청 시 기존 이름을 유지한다. 탈퇴 진행 계정은 409로 거부한다. Flutter 가입 흐름 연결은 후속 작업이다.
 
 ### 3.2 Supabase 의존성 경계
 
