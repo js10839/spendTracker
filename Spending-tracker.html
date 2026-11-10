@@ -470,7 +470,7 @@ html{scroll-behavior:auto}
 <tr><td>Backend</td><td>Python + FastAPI</td><td>익숙한 언어로 핵심 로직(사이클·파싱)에 집중</td></tr>
 <tr><td>Mobile App</td><td>Flutter (Dart) · iOS + Android</td><td>단일 코드베이스 · 카메라/갤러리 · 딥링크·푸시 등 모바일 기능 확장 용이</td></tr>
 <tr><td>DB</td><td>Supabase Managed PostgreSQL</td><td>표준 PostgreSQL. Flutter는 DB에 직접 접근하지 않고 FastAPI → SQLAlchemy를 통해서만 Read / Write</td></tr>
-<tr><td>인증</td><td>Supabase Auth</td><td>Email/Password + Email Verification + Guest. Credential·세션·JWT는 Supabase가 관리하고 앱 데이터는 고유 user_id 기준으로 연결</td></tr>
+<tr><td>인증</td><td>Supabase Auth</td><td>이메일 OTP + Guest. 인증·세션·JWT는 Supabase가 관리하고 앱 데이터는 고유 user_id 기준으로 연결</td></tr>
 <tr><td>인증 이메일</td><td>Resend 등 Transactional Email Provider</td><td>Production 인증 메일 발송용 custom SMTP. 앱 도메인의 auth@... 주소 사용 가능</td></tr>
 <tr><td>모바일 결제</td><td>App Store / Google Play IAP · RevenueCat 검토</td><td>Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. 유료화 전 최종 확정</td></tr>
 <tr><td>이미지</td><td>임시 Storage 사용 여부 TBD</td><td>원본은 영구 보관하지 않음. 임시 저장 시 private bucket·삭제 시점 확정 필요</td></tr>
@@ -486,12 +486,12 @@ html{scroll-behavior:auto}
 
 <div class="spec">
 <div class="spec-title">인증 아키텍처 결정</div>
-<div class="si"><div class="si-head">Email / Password + Email Verification <span class="tag b">확정</span></div><div class="si-desc">회원은 이메일과 비밀번호를 사용하고 이메일 인증을 완료한 뒤 계정을 활성화. 비밀번호 해싱·credential·session은 Supabase Auth가 관리하며 public.users에는 비밀번호 관련 컬럼을 두지 않음.</div></div>
+<div class="si"><div class="si-head">이메일 OTP 인증 <span class="tag b">확정</span></div><div class="si-desc">이메일 OTP를 검증한 뒤 bootstrap과 가입 정보 입력 여부를 확인한다. 인증 전 이메일 존재 여부로 회원을 구분하지 않는다. 신규 사용자 OTP와 Flutter 가입 화면 연결은 후속 작업이다.</div></div>
 <div class="si"><div class="si-head">Guest 모드 <span class="tag b">확정</span></div><div class="si-desc">Guest 데이터는 Flutter 기기 SQLite에 저장. 회원 전환 시 인증된 user_id의 서버 데이터로 마이그레이션.</div></div>
 <div class="si"><div class="si-head">User ≠ Email <span class="tag b">확정</span></div><div class="si-desc">앱 데이터 소유자는 Supabase Auth UUID. public.users.id = auth.users.id로 연결하고 이메일을 FK로 사용하지 않음.</div></div>
 <div class="si"><div class="si-head">Social Login / Account Linking <span class="tag a">확장 가능</span></div><div class="si-desc">Google·Apple Sign-In은 Supabase provider로 추가 가능. 서로 다른 provider 계정 자동 병합은 하지 않고 linking 기능은 별도 요구사항으로 다룸.</div></div>
 <div class="si"><div class="si-head">인증 이메일 발송 <span class="tag b">방향 확정</span></div><div class="si-desc">Production에서는 Resend 같은 Transactional Email Provider를 Supabase custom SMTP에 연결. 인증 메일 요청에 rate limit과 resend cooldown 적용.</div></div>
-<div class="si"><div class="si-head">초기 표시 이름 <span class="tag a">UI 방향 · 생성 규칙 TBD</span></div><div class="si-desc">가입 시 랜덤 이름을 제안하고 수정·건너뛰기를 허용. GET /users/me와 PATCH /users/me는 프로필 조회·이름 수정을 지원하며 생성 규칙과 Flutter UI 연결은 TBD.</div></div>
+<div class="si"><div class="si-head">초기 표시 이름 <span class="tag a">Flutter 연결 필요</span></div><div class="si-desc">가입 정보 완료 시 입력한 이름을 저장하고 빈칸이면 서버가 랜덤 이름을 생성한다. 이름 중복은 허용한다. bootstrap은 가입 정보 입력 필요 여부를 반환하고, 탈퇴 진행 계정은 409로 거부한다.</div></div>
 </div>
 <div class="spec">
 <div class="spec-title">Supabase 의존성 경계</div>
@@ -832,8 +832,8 @@ html{scroll-behavior:auto}
 <details class="acc">
 <summary><span class="acc-n">S7</span>온보딩 (2단계)<span class="acc-arrow">▶</span></summary>
 <div class="acc-body"><ul>
-<li>시작: 가치 제안 + [이메일/비밀번호로 시작] / [가입 없이 둘러보기]. 이메일 인증 후 활성화하며 Google/Apple은 확장 후보. Guest 데이터는 기기 저장으로 앱 삭제·기기 변경 시 소실 가능함을 명시.</li>
-<li>가입 시 랜덤 표시 이름을 제안하고 수정·건너뛰기를 허용한다. 프로필 조회·이름 수정 API는 작성됐고 생성 규칙과 Flutter UI 연결은 TBD.</li>
+<li>시작: 가치 제안 + [이메일로 계속하기] / [가입 없이 둘러보기]. 이메일 OTP 인증 후 진행하며 Google/Apple은 확장 후보. Guest 데이터는 기기 저장으로 앱 삭제·기기 변경 시 소실 가능함을 명시.</li>
+<li>가입 정보 완료 시 표시 이름이 빈칸이면 서버가 랜덤 이름을 생성한다. 백엔드 완료 API가 있으며 Flutter 연결은 후속 작업이다.</li>
 <li>첫 카드 등록: <em>"카드번호는 필요 없어요 — 이름과 마감일만"</em>. 빠른 선택(1/5/15일/직접), 건너뛰기 허용.</li>
 <li>비회원 → 회원 전환 시 기기 SQLite → 서버 마이그레이션 (전환율 핵심 장치).</li>
 </ul></div>
@@ -999,7 +999,7 @@ html{scroll-behavior:auto}
 <div class="bigcard">
 <h3 style="margin-top:0">결정 현황</h3>
 <ul style="margin-bottom:0">
-<li><span class="chip ok">확정</span> 사이클 = closing date · USD 단일 · Flutter(iOS+Android) · Guest 허용 + Email/Password·이메일 인증 · 통합 뷰 = 30일 rolling · 캘린더 도트+마감일 누적액 · 기술 스택.</li>
+<li><span class="chip ok">확정</span> 사이클 = closing date · USD 단일 · Flutter(iOS+Android) · Guest 허용 + 이메일 OTP 인증 · 통합 뷰 = 30일 rolling · 캘린더 도트+마감일 누적액 · 기술 스택.</li>
 <li data-status="open"><span class="chip open">논의 중</span> 회원 등급 수치(카드 1/2/무제한, 파싱 3/10/50)와 Pro 가격 — 실사용 데이터 확인 후.</li>
 <li><strong>파싱 정확도</strong> 리스크 — 구겨진/비영어 영수증. 확인 화면 + total 검증 배지가 안전망.</li>
 <li><strong>기록 누락</strong> — 연동이 없어 기록 안 한 지출은 없음. 기록 리마인드는 post-MVP 리텐션 아이디어.</li>
@@ -1150,7 +1150,7 @@ t.classList.add('on');document.getElementById(t.dataset.pane).classList.add('on'
 /* ---------- tier cards ---------- */
 const TIER_INFO={
 guest:'<strong>비회원 정책</strong> — 데이터는 기기 SQLite에만 저장 (서버 DB 기록 없음). 파싱 시 이미지는 서버를 경유하지만 영구 보관하지 않음. 임시 파일 처리·삭제 시점은 TBD. 앱 삭제·기기 변경 시 소실 가능 경고 필수. 가입 시 로컬 데이터를 서버로 마이그레이션.',
-free:'<strong>무료 회원</strong> — 현행 Email/Password·이메일 인증을 사용. 다른 인증 수단은 별도 검토. 사용량은 Supabase user_id 기준. 한도 초과 시에도 업로드·수동 입력은 가능하고 AI 파싱만 제한. 카드 개수 게이트 수치는 미확정.',
+free:'<strong>무료 회원</strong> — 이메일 OTP 인증을 사용. 다른 인증 수단은 별도 검토. 사용량은 Supabase user_id 기준. 한도 초과 시에도 업로드·수동 입력은 가능하고 AI 파싱만 제한. 카드 개수 게이트 수치는 미확정.',
 pro:'<strong>Pro</strong> — 3티어 대신 단일 플랜. 결제는 회원만 가능하며 모바일 스토어 결제 방식은 출시 전 확정. 파싱 원가는 낮게 유지하고, 50장 소진 유저가 유의미하면 크레딧 팩(+20장) 추가 판매 검토.'
 };
 const tierDetail=document.getElementById('tierDetail');
