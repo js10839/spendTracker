@@ -6,7 +6,7 @@ import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
 import 'auth_service.dart';
 
-/// 기존 회원의 이메일을 입력받아 인증 코드를 요청한다.
+/// 이메일을 입력받아 로그인 또는 가입 인증 코드를 요청한다.
 class LoginEmailPage extends StatefulWidget {
   const LoginEmailPage({super.key});
 
@@ -19,7 +19,7 @@ class _LoginEmailPageState extends State<LoginEmailPage> {
   bool _loading = false;
   String? _error;
 
-  /// 이메일 형식을 확인하고 기존 회원에게 인증 코드를 전송한다.
+  /// 이메일 형식을 확인하고 인증 코드를 전송한다.
   Future<void> _send() async {
     final email = _email.text.trim();
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
