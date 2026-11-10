@@ -64,7 +64,7 @@ def read_calendar(
         .mappings()
         .one()
     )
-    if repository.has_paycheck(connection, ledger_id):
+    if payment_method_id is None and repository.has_paycheck(connection, ledger_id):
         # Cover the period plus both neighbouring years for payday shifts across
         # New Year. The SQL walk stops at missing cache and uses the old fallback.
         for year in range(bounds["start_date"].year - 1, bounds["end_date"].year + 2):

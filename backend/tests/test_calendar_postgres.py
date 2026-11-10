@@ -255,7 +255,7 @@ def test_full_day_items_dots_totals_and_empty_days(db, data):
     assert result.days[0].spending_cents == 0
 
 
-def test_card_filter_keeps_notes_income_and_other_closings(db, data):
+def test_card_filter_keeps_notes_but_hides_other_closings_and_general_income(db, data):
     transaction(db, data, "2026-10-13")
     transaction(db, data, "2026-11-12")
     transaction(db, data, "2026-11-13")
@@ -288,13 +288,118 @@ def test_card_filter_keeps_notes_income_and_other_closings(db, data):
     assert sum(len(day.transactions) for day in result.days) == 2
     day = next(day for day in result.days if day.date == date(2026, 10, 31))
     assert day.note.content == "Pay bills"
-    assert day.received_income_cents == 500
-    assert [card.id for card in day.closing_cards] == [data["second"]]
+    assert day.income == []
+    assert day.received_income_cents == 0
+    assert day.closing_cards == []
+    assert [card.id for card in result.days[-1].closing_cards] == [data["card"]]
     following = read_calendar(
         db, data["ledger"], data["user"], result.next_anchor_date, data["card"]
     )
     assert following.start_date == date(2026, 11, 13)
     assert sum(len(day.transactions) for day in following.days) == 1
+
+
+@pytest.mark.parametrize("selected", [None, "card", "second"])
+def test_closing_indicators_follow_card_selection(db, data, selected):
+    # February clamps the second card's 31st to the actual month-end. Filtering
+    # must not remove the card from the dropdown or hide the selected closing.
+    result = read_calendar(
+        db,
+        data["ledger"],
+        data["user"],
+        date(2026, 2, 6),
+        data[selected] if selected else None,
+    )
+    closings = [
+        (day.date, card.id) for day in result.days for card in day.closing_cards
+    ]
+    if selected == "card":
+        assert closings == [(date(2026, 2, 12), data["card"])]
+    elif selected == "second":
+        assert closings == [(date(2026, 2, 28), data["second"])]
+    else:
+        assert closings == [
+            (date(2026, 2, 12), data["card"]),
+            (date(2026, 2, 28), data["second"]),
+        ]
+    assert {card.id for card in result.cards} == {data["card"], data["second"]}
+
+
+@pytest.mark.parametrize("selected", [None, "card"])
+def test_income_filter_matches_type_card_and_status(db, data, monkeypatch, selected):
+    from unittest.mock import Mock
+
+    entries = [
+        ("paycheck", None, 100),
+        ("cashback", data["card"], 200),
+        ("cashback", data["second"], 300),
+        ("other", None, 400),
+        # A payment-method link alone must not turn Other into Cashback.
+        ("other", data["card"], 500),
+    ]
+    for income_type, method, amount in entries:
+        plan(
+            db,
+            data,
+            "2026-11-06",
+            income_type=income_type,
+            payment_method_id=method,
+            expected_amount_cents=amount,
+        )
+        db.execute(
+            insert(repository.records),
+            {
+                "ledger_id": data["ledger"],
+                "income_type": income_type,
+                "payment_method_id": method,
+                "amount_cents": amount,
+                "received_at": date(2026, 11, 6),
+            },
+        )
+    # Matching cashback must still obey date, ledger and deletion restrictions.
+    for extra in [
+        {"ledger_id": data["other_ledger"]},
+        {"received_at": date(2027, 1, 1)},
+        {"deleted_at": datetime.now(UTC)},
+    ]:
+        db.execute(
+            insert(repository.records),
+            {
+                "ledger_id": data["ledger"],
+                "income_type": "cashback",
+                "payment_method_id": data["card"],
+                "amount_cents": 999,
+                "received_at": date(2026, 11, 6),
+                **extra,
+            },
+        )
+    holiday_fetch = Mock(return_value=set())
+    monkeypatch.setattr(service, "fetch_bank_holidays", holiday_fetch)
+    result = read_calendar(
+        db,
+        data["ledger"],
+        data["user"],
+        date(2026, 11, 6),
+        data[selected] if selected else None,
+    )
+    day = next(day for day in result.days if day.date == date(2026, 11, 6))
+    if selected:
+        assert len(day.income) == 2
+        assert {entry.status for entry in day.income} == {"planned", "received"}
+        assert all(
+            entry.income_type == "cashback" and entry.payment_method_id == data["card"]
+            for entry in day.income
+        )
+        assert day.received_income_cents == 200
+        holiday_fetch.assert_not_called()
+    else:
+        assert len(day.income) == 10
+        assert {entry.income_type for entry in day.income} == {
+            "paycheck",
+            "cashback",
+            "other",
+        }
+        assert day.received_income_cents == 1500
 
 
 @pytest.mark.parametrize("kind", ["cash", "foreign", "missing"])

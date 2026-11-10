@@ -83,8 +83,11 @@ The response contains `mode`, `payment_method_id`, inclusive `start_date` and
 `end_date`, `previous_anchor_date`, `next_anchor_date`, `payment_methods`, `cards`, and
 ordered `days` including empty dates. Each day includes full `transactions` and
 their `items`, `dots` with payment-method colors/counts, planned/received `income`,
-`closing_cards`, `note`, `spending_cents`, and `received_income_cents`. Income,
-notes and all wallet cards' closing events are unaffected by card selection.
+`closing_cards`, `note`, `spending_cents`, and `received_income_cents`. All mode
+includes Paycheck, Cashback and Other income. Card mode includes only planned or
+received Cashback linked to that card; received-income totals follow the same
+filter. All mode shows every wallet card's closing event; card mode shows only
+the selected card's closing event. Notes remain visible in either mode.
 Stored transaction totals already include tax/tip; planned income does not count
 as received money. A closing day of 12 yields the 13th through the following 12th;
 days 29–31 clamp to the month's actual last date.

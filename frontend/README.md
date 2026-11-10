@@ -30,8 +30,11 @@ notes, card closings, dot counts/colors and integer-cent totals. Filtering,
 grouping, recurrence and billing calculations run in PostgreSQL via SQLAlchemy
 Core. The frontend decodes the response and handles interaction state.
 
-`All` omits the card parameter. A selected card filters transactions only;
-income, notes and every wallet card's closing events remain visible. Note writes
+`All` omits the card parameter. A selected card limits transactions to that card;
+only Cashback income linked to that card is included (planned and received).
+All mode includes Paycheck, Cashback and Other income, and every wallet card's
+closing events. Card mode shows only the selected card's closing events. Notes
+remain visible in either mode. Note writes
 still use `PUT /ledgers/{ledger_id}/day-notes/{date}`, followed by a calendar reload.
 
 Construct the controller with an existing access token and ledger ID:

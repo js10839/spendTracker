@@ -125,7 +125,9 @@ def is_business_day(day):
     return and_(func.extract("isodow", day) <= 5, ~holiday)
 
 
-def income_entries(ledger_id: UUID, start: date, end: date):
+def income_entries(
+    ledger_id: UUID, start: date, end: date, payment_method_id: UUID | None = None
+):
     # Continue beyond the window through the first business day: a payday after
     # end may shift back into the window. Missing calendars preserve the existing
     # income endpoint's unadjusted-date fallback, rather than assuming holidays.
@@ -180,6 +182,14 @@ def income_entries(ledger_id: UUID, start: date, end: date):
             sources.c.ledger_id == ledger_id,
             sources.c.is_active.is_(True),
             sources.c.deleted_at.is_(None),
+            *(
+                []
+                if payment_method_id is None
+                else [
+                    sources.c.income_type == "cashback",
+                    sources.c.payment_method_id == payment_method_id,
+                ]
+            ),
             day >= sources.c.next_expected_date,
             recurring,
             # If next_expected_date was manually changed within its month, don't
@@ -253,6 +263,14 @@ def income_entries(ledger_id: UUID, start: date, end: date):
         records.c.deleted_at.is_(None),
         records.c.received_at >= start,
         records.c.received_at <= end,
+        *(
+            []
+            if payment_method_id is None
+            else [
+                records.c.income_type == "cashback",
+                records.c.payment_method_id == payment_method_id,
+            ]
+        ),
     )
     return union_all(planned, received).cte("income_entries")
 
@@ -382,7 +400,7 @@ def calendar_statement(
         .group_by(counts.c.date)
         .cte("daily_dots")
     )
-    income = income_entries(ledger_id, start, end)
+    income = income_entries(ledger_id, start, end, payment_method_id)
     daily_income = (
         select(
             income.c.display_date.label("date"),
@@ -420,6 +438,11 @@ def calendar_statement(
                 wallet,
                 and_(
                     wallet.c.type == "credit",
+                    *(
+                        []
+                        if payment_method_id is None
+                        else [wallet.c.id == payment_method_id]
+                    ),
                     dates.c.date
                     == closing_date(month_start(dates.c.date), wallet.c.closing_day),
                 ),
