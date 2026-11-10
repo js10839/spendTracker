@@ -80,6 +80,7 @@ abstract final class AppTokens {
 
 /// Components 섹션에서 쓰는 추가 의미 색상을 원본 값으로 보관한다.
 abstract final class AppComponentColors {
+  static const onboardingSheetOverlay = Color(0xFF131F17);
   static const shadowPurple = Color(0xFF330C72);
   static const shadowNeutral = Color(0xFF141E16);
   static const surface = Color(0xFFF1F3F2);

@@ -114,3 +114,23 @@ def test_unconfigured_auth_fails_closed(
     )
 
     assert response.status_code == 503
+
+def test_jwks_connection_failure_returns_503(
+    auth_client: tuple[TestClient, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공개 키 서버에 연결하지 못하면 토큰 오류가 아닌 서버 오류를 반환한다."""
+    client, private_key = auth_client
+
+    def fail_to_fetch(_token: str) -> None:
+        raise jwt.exceptions.PyJWKClientConnectionError("JWKS unavailable")
+
+    jwks_client = SimpleNamespace(get_signing_key_from_jwt=fail_to_fetch)
+    monkeypatch.setattr(token_module, "_jwks_client", lambda _url: jwks_client)
+
+    response = client.get(
+        "/me",
+        headers={"Authorization": f"Bearer {make_token(private_key)}"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Unable to retrieve authentication keys"

@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app_router.dart';
 import 'auth/auth_service.dart';
+import 'core/api_client.dart';
+import 'data/users/user_repository.dart';
 
 // Flutter 앱의 진입점이다.
 Future<void> main() async {
@@ -12,6 +14,13 @@ Future<void> main() async {
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     AuthService.instance = SupabaseAuthService(Supabase.instance.client);
+    const apiUrl = String.fromEnvironment('API_BASE_URL');
+    if (apiUrl.isNotEmpty) {
+      UserRepository.instance = ApiUserRepository(ApiClient(
+        baseUri: Uri.parse(apiUrl),
+        accessToken: () => Supabase.instance.client.auth.currentSession?.accessToken,
+      ));
+    }
   }
   runApp(const SpendingTrackerApp());
 }

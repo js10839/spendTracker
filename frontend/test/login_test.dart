@@ -4,6 +4,18 @@ import 'package:go_router/go_router.dart';
 import 'package:spending_tracker/auth/auth_service.dart';
 import 'package:spending_tracker/auth/login_code_page.dart';
 import 'package:spending_tracker/auth/login_email_page.dart';
+import 'package:spending_tracker/data/users/user_repository.dart';
+
+class FakeUserRepository implements UserRepository {
+  int calls = 0;
+  bool shouldFail = false;
+  @override
+  Future<String> bootstrap() async {
+    calls++;
+    if (shouldFail) throw StateError('unavailable');
+    return 'test-user';
+  }
+}
 
 class FakeAuthService implements AuthService {
   final sent = <String>[];
@@ -30,8 +42,12 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final auth = FakeAuthService();
     final previous = AuthService.instance;
+    final previousUsers = UserRepository.instance;
+    final users = FakeUserRepository();
+    UserRepository.instance = users;
     AuthService.instance = auth;
     addTearDown(() => AuthService.instance = previous);
+    addTearDown(() => UserRepository.instance = previousUsers);
     final router = GoRouter(
       initialLocation: '/login',
       routes: [
@@ -88,5 +104,32 @@ void main() {
       'test@example.com:654321',
     ]);
     expect(find.text('Home'), findsOneWidget);
+    expect(users.calls, 1);
+  });
+
+  testWidgets('인증 후 초기화 실패 시 코드 검증 없이 재시도한다', (tester) async {
+    final auth = FakeAuthService();
+    final users = FakeUserRepository()..shouldFail = true;
+    final oldAuth = AuthService.instance;
+    final oldUsers = UserRepository.instance;
+    AuthService.instance = auth;
+    UserRepository.instance = users;
+    addTearDown(() { AuthService.instance = oldAuth; UserRepository.instance = oldUsers; });
+    final router = GoRouter(initialLocation: '/code', routes: [
+      GoRoute(path: '/', name: 'home', builder: (_, _) => const Scaffold(body: Text('Home'))),
+      GoRoute(path: '/code', builder: (_, _) => const LoginCodePage(email: 'test@example.com')),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.enterText(find.byKey(const Key('login-code')), '123456');
+    await tester.pumpAndSettle();
+    expect(find.text('Unable to set up your account. Please try again.'), findsOneWidget);
+    users.shouldFail = false;
+    await tester.ensureVisible(find.text('Try again'));
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text('Home'), findsOneWidget);
+    expect(auth.verified.length, 1);
+    expect(users.calls, 2);
   });
 }
