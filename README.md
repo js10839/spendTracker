@@ -142,7 +142,7 @@ Operators can retry pending requests from `backend/` with `uv run python -m app.
 `POST /receipts/parse` accepts a `multipart/form-data` image in the `file` field
 and does not require a login or access token. Set
 `OPENAI_API_KEY` in `backend/.env`; optionally set `OPENAI_RECEIPT_MODEL`.
-Supported formats are JPEG, PNG, WEBP, and MPO, up to 10 MiB and 24 million pixels.
+Supported formats are JPEG, PNG, WEBP, and MPO, up to 10 MiB and 32 million pixels.
 
 ```bash
 curl http://127.0.0.1:8000/receipts/parse \

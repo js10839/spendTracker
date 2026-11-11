@@ -13,7 +13,8 @@ from .prompts import SYSTEM_PROMPT
 from .schemas import ReceiptData
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
-MAX_PIXELS = 24_000_000
+# Allow 24 MP camera images such as 5712 x 4284 (24,470,208 pixels).
+MAX_PIXELS = 32_000_000
 MAX_EDGE = 2200
 
 # (로컬 파일 경로 || 업로드 파일) 로드 

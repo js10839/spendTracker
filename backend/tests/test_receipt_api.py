@@ -1,3 +1,4 @@
+import base64
 import io
 from unittest.mock import MagicMock, Mock
 
@@ -10,7 +11,7 @@ from PIL import Image
 from pydantic import SecretStr
 
 from app.main import app
-from app.receipts import router, service
+from app.receipts import parser, router, service
 from app.receipts.parser import MAX_FILE_BYTES, prepare_image
 from app.receipts.schemas import ReceiptData
 from app.receipts.validator import validate_receipt
@@ -72,13 +73,22 @@ def test_prepare_uploaded_image():
         prepare_image(b"not an image")
 
 
-def test_upload_runs_parser_and_validation(client, monkeypatch):
+def test_rejects_images_over_pixel_limit(monkeypatch):
+    monkeypatch.setattr(parser, "MAX_PIXELS", 100)
+    output = io.BytesIO()
+    Image.new("RGB", (11, 10), "white").save(output, format="PNG")
+    with pytest.raises(ValueError, match="Image pixel count too large"):
+        prepare_image(output.getvalue())
+
+
+@pytest.mark.parametrize("size", [(10, 10), (5712, 4284)])
+def test_upload_runs_parser_and_validation(client, monkeypatch, size):
     monkeypatch.setattr(service.settings, "openai_api_key", SecretStr("test-key"))
     provider = MagicMock()
     provider.return_value.__enter__.return_value.responses.parse.return_value.output_parsed = receipt()
     monkeypatch.setattr(service, "OpenAI", provider)
     output = io.BytesIO()
-    Image.new("RGB", (10, 10), "white").save(output, format="PNG")
+    Image.new("RGB", size, "white").save(output, format="PNG")
 
     response = client.post("/receipts/parse", files={"file": ("receipt.png", output.getvalue())})
 
@@ -87,6 +97,10 @@ def test_upload_runs_parser_and_validation(client, monkeypatch):
     assert response.json()["receipt"]["location"] == receipt().location
     request = provider.return_value.__enter__.return_value.responses.parse.call_args.kwargs
     assert request["input"][0]["content"][0]["image_url"].startswith("data:image/jpeg;base64,")
+    encoded = request["input"][0]["content"][0]["image_url"].split(",", 1)[1]
+    with Image.open(io.BytesIO(base64.b64decode(encoded))) as prepared:
+        assert prepared.format == "JPEG"
+        assert max(prepared.size) <= 2200
     assert request["store"] is False
     provider.return_value.__exit__.assert_called_once()
 
