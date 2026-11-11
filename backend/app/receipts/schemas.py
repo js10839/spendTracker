@@ -39,8 +39,12 @@ class ReceiptItem(BaseModel):
         default = "Etc",
         description=(
             "If price is negative, assign Refund, including returns, refunds, discounts, "
-            "and coupons. Otherwise, assign based on what was purchased, not the merchant; "
-            "do not use Refund for zero or positive prices. "
+            "and coupons. For zero or positive prices, consider both what was purchased "
+            "and where it was purchased, using the merchant name and type of business "
+            "shown on the receipt. Do not use Refund for zero or positive prices. "
+            "Classify prepared food purchased at restaurants as Food."
+            "Use Grocery for groceries such as ingredients and food supplies purchased "
+            "at grocery stores or supermarkets. "
             "If no category fits or the category is uncertain, assign Etc. "
         ),
     )
