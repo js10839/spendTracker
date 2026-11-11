@@ -47,6 +47,27 @@ def test_parse_returns_receipt_and_validation(client, monkeypatch, total, status
     parse.assert_called_once_with(b"image")
 
 
+@pytest.mark.parametrize("merchant", [None, "", "   "])
+def test_missing_merchant_requires_review(merchant):
+    data = receipt().model_copy(update={"merchant": merchant})
+
+    report = validate_receipt(data)
+
+    assert report.status == "review"
+    assert report.issues == ["Receipt merchant missing or unreadable"]
+    assert report.difference == 0
+
+
+def test_missing_date_requires_review():
+    data = receipt().model_copy(update={"date": None})
+
+    report = validate_receipt(data)
+
+    assert report.status == "review"
+    assert report.issues == ["Receipt date missing or unreadable"]
+    assert report.difference == 0
+
+
 @pytest.mark.parametrize("image,status", [(b"", 422), (b"x" * (MAX_FILE_BYTES + 1), 413)])
 def test_rejects_empty_or_large_upload(client, monkeypatch, image, status):
     parse = Mock()

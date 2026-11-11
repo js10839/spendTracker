@@ -21,6 +21,14 @@ class ValidationReport(BaseModel):
 def validate_receipt(data: ReceiptData) -> ValidationReport:
     issues = []
 
+    # 가게 이름이 없거나 공백만 있는 경우
+    if data.merchant is None or not data.merchant.strip():
+        issues.append("Receipt merchant missing or unreadable")
+
+    # 구매 날짜를 읽지 못한 경우
+    if data.date is None:
+        issues.append("Receipt date missing or unreadable")
+
     # 구매한 item 항목이 하나도 없는 경우
     if not data.items:
         issues.append("No items extracted")
