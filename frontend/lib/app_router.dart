@@ -10,7 +10,8 @@ import 'auth/member_bootstrap.dart';
 import 'onboarding/onboarding_page.dart';
 import 'onboarding/onboarding_cards_page.dart';
 import 'onboarding/onboarding_closing_page.dart';
-import 'onboarding/onboarding_income_page.dart';
+// TODO: 수입 설정 화면을 다시 사용할 때 경로와 함께 복원한다.
+// import 'onboarding/onboarding_income_page.dart';
 import 'onboarding/onboarding_reminders_page.dart';
 import 'onboarding/onboarding_ready_page.dart';
 import 'onboarding/onboarding_setting_up_page.dart';
@@ -97,16 +98,13 @@ final GoRouter appRouter = GoRouter(
             : const OnboardingSummary(),
       ),
     ),
-    GoRoute(
-      path: '/onboarding/setup/income',
-      name: 'onboarding-income',
-      builder: (context, state) => OnboardingIncomePage(
-        initialStep: state.extra is int ? state.extra as int : 3,
-        cards: state.extra is Map<String, int>
-            ? state.extra as Map<String, int>
-            : const {},
-      ),
-    ),
+    // TODO: 수입 설정을 다시 포함할 때 연결한다.
+    // GoRoute(path: '/onboarding/setup/income', name: 'onboarding-income',
+    //   builder: (context, state) => OnboardingIncomePage(
+    //     initialStep: state.extra is int ? state.extra as int : 3,
+    //     cards: state.extra is Map<String, int> ? state.extra as Map<String, int> : const {},
+    //   ),
+    // ),
     GoRoute(
       path: '/onboarding/setup/closing',
       name: 'onboarding-closing',

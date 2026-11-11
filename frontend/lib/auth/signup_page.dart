@@ -105,7 +105,7 @@ class _SignupPageState extends State<SignupPage> {
             ),
             const SizedBox(height: AppSpacing.twoXL),
             // TODO: 디자이너가 미선택 체크박스와 약관 링크를 확정하면 교체한다.
-            Row(children: [Checkbox(value: _agreed, activeColor: AppTokens.brandLime, checkColor: AppTokens.textPrimary, onChanged: (value) => setState(() => _agreed = value ?? false)), Expanded(child: Text('I agree to the Terms and Privacy Policy', style: AppTypography.bodyMedium.copyWith(color: AppTokens.textBody)))]),
+            Row(children: [Checkbox(value: _agreed, activeColor: AppTokens.brandLime, checkColor: AppTokens.textPrimary, onChanged: (value) => setState(() => _agreed = value ?? false)), Expanded(child: InkWell(onTap: () => setState(() => _agreed = !_agreed), child: Text('I agree to the Terms and Privacy Policy', style: AppTypography.bodyMedium.copyWith(color: AppTokens.textBody))))]),
             if (_error != null) ...[const SizedBox(height: AppSpacing.sm), Text(_error!, style: AppTypography.bodyMedium.copyWith(color: AppTokens.statusDanger)), if (_nickname.text.isEmpty) TextButton(onPressed: _loadNickname, child: const Text('Try again'))],
             const Spacer(),
             const SizedBox(height: AppSpacing.twoXL),

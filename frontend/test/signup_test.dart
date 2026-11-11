@@ -57,8 +57,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus ?? Focus.of(tester.element(find.byType(TextField))).hasFocus, isTrue);
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
-    await tester.ensureVisible(find.byType(Checkbox));
+    await tester.ensureVisible(find.text('I agree to the Terms and Privacy Policy'));
+    await tester.tap(find.text('I agree to the Terms and Privacy Policy'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
     await tester.tap(find.byType(Checkbox));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+    await tester.tap(find.text('I agree to the Terms and Privacy Policy'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Create account').last);
     await tester.tap(find.text('Create account').last);

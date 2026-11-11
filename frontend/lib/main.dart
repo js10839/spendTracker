@@ -5,6 +5,7 @@ import 'app_router.dart';
 import 'auth/auth_service.dart';
 import 'core/api_client.dart';
 import 'data/users/user_repository.dart';
+import 'data/payment_methods/payment_method_repository.dart';
 
 // Flutter 앱의 진입점이다.
 Future<void> main() async {
@@ -16,10 +17,12 @@ Future<void> main() async {
     AuthService.instance = SupabaseAuthService(Supabase.instance.client);
     const apiUrl = String.fromEnvironment('API_BASE_URL');
     if (apiUrl.isNotEmpty) {
-      UserRepository.instance = ApiUserRepository(ApiClient(
+      final api = ApiClient(
         baseUri: Uri.parse(apiUrl),
         accessToken: () => Supabase.instance.client.auth.currentSession?.accessToken,
-      ));
+      );
+      UserRepository.instance = ApiUserRepository(api);
+      PaymentMethodRepository.instance = ApiPaymentMethodRepository(api);
     }
   }
   runApp(const SpendingTrackerApp());
