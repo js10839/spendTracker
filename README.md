@@ -137,6 +137,29 @@ Authenticated users can read their app profile with `GET /users/me` and update t
 
 Operators can retry pending requests from `backend/` with `uv run python -m app.users.retry_deletions`. This command is not scheduled automatically. Set up and monitor a deployment job before relying on unattended retries. Shared-ledger ownership and removal are not yet supported; deletion of an owned ledger with other members is blocked by database constraints and rolled back.
 
+## Receipt parsing API
+
+`POST /receipts/parse` accepts a `multipart/form-data` image in the `file` field
+and does not require a login or access token. Set
+`OPENAI_API_KEY` in `backend/.env`; optionally set `OPENAI_RECEIPT_MODEL`.
+Supported formats are JPEG, PNG, WEBP, and MPO, up to 10 MiB and 24 million pixels.
+
+```bash
+curl http://127.0.0.1:8000/receipts/parse \
+  -F "file=@/path/to/receipt.jpg"
+```
+
+The response contains `receipt` (merchant, location, date, currency, items, tax,
+tip, total) and `validation` (status, calculated_total, receipt_total, difference,
+item_count, issues). Monetary amounts are JSON strings. A `review` status is a
+successful parse requiring user review, such as when totals differ. This endpoint
+uses the fixed categories in `app/receipts/schemas.py` and does not save a transaction
+or receipt image. The DB-driven schema in `schemas_DB.py` is not used here.
+
+Errors: 413 for oversized files; 422 for missing, empty, invalid, or unsupported
+images; 502 for parsing provider/output failures; 503 if the API key is missing;
+504 for provider timeouts. Try the upload directly through `/docs`.
+
 ## Frontend setup
 
 ```bash

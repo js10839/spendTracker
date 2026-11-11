@@ -13,7 +13,7 @@ Money = Annotated[
     WithJsonSchema({"type": "string", "description": "Decimal amount, e.g. 2.50 or -0.55"}, mode="validation"),
 ]
 
-Category = Literal["Food", "Living", "Electronics", "Fashion", "Dining", "Transport", "Subscription", "Utilities & Bills", "Health", "Entertainment", "Travel", "Refund", "Coffee", "Etc"]
+Category = Literal["Grocery", "Food", "Living", "Electronics", "Fashion", "Dining", "Transport", "Subscription", "Utilities & Bills", "Health", "Entertainment", "Travel", "Education", "Refund", "Coffee", "Drinks", "Smoking", "Etc"]
 
 class ReceiptItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
