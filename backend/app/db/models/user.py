@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlalchemy import Column, DateTime, ForeignKey, Table, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +28,7 @@ class User(Base):
     )
     nickname: Mapped[str | None] = mapped_column(Text)
     plan: Mapped[str] = mapped_column(Text, nullable=False, server_default="free")
+    onboarding_completed: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

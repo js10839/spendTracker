@@ -37,6 +37,21 @@ jobs:
     name: Backend
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     defaults:
       run:
         working-directory: backend
@@ -55,4 +70,5 @@ jobs:
       - name: Run tests
         env:
           DB_URL: postgresql+psycopg://test:test@localhost:5432/test
+          CALENDAR_TEST_DB_URL: postgresql+psycopg://test:test@localhost:5432/test
         run: uv run pytest

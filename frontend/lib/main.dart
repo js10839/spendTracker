@@ -1,9 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app_router.dart';
+import 'auth/auth_service.dart';
+import 'core/api_client.dart';
+import 'data/users/user_repository.dart';
+import 'data/payment_methods/payment_method_repository.dart';
 
 // Flutter 앱의 진입점이다.
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  const url = String.fromEnvironment('SUPABASE_URL');
+  const key = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+  if (url.isNotEmpty && key.isNotEmpty) {
+    await Supabase.initialize(url: url, publishableKey: key);
+    AuthService.instance = SupabaseAuthService(Supabase.instance.client);
+    const apiUrl = String.fromEnvironment('API_BASE_URL');
+    if (apiUrl.isNotEmpty) {
+      final api = ApiClient(
+        baseUri: Uri.parse(apiUrl),
+        accessToken: () => Supabase.instance.client.auth.currentSession?.accessToken,
+      );
+      UserRepository.instance = ApiUserRepository(api);
+      PaymentMethodRepository.instance = ApiPaymentMethodRepository(api);
+    }
+  }
   runApp(const SpendingTrackerApp());
 }
 

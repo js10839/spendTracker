@@ -1,3 +1,4 @@
+from random import choice
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -15,28 +16,33 @@ from app.db.session import SessionLocal
 from app.ledgers import repository as ledger_repo
 from app.payment_methods import repository as payment_method_repo
 from app.users import repository as user_repo
+from app.users.nickname_words import ADJECTIVES, ANIMALS
 
 
 def bootstrap_user(db: Session, user_id: UUID, ledger_name: str) -> User:
     """프로필·가계부·멤버십과 기본 Cash를 한 트랜잭션으로 초기화한다."""
-    exist_user = user_repo.find_user_by_id(db, user_id=user_id)
-    # 삭제 진행 중인 계정은 앱 데이터를 다시 초기화하지 않는다.
-    if exist_user is not None and exist_user.deletion_requested_at is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account deletion is in progress")
-    if exist_user is not None and payment_method_repo.find_cash_payment_method(db, user_id=user_id) is not None:
-        return exist_user
-
     try:
-        user = exist_user
+        # 같은 사용자의 다른 bootstrap이 끝난 뒤 현재 DB 상태를 확인한다.
+        user_repo.lock_bootstrap(db=db, user_id=user_id)
+
+        # 잠금을 획득한 뒤 삭제 진행 상태를 확인한다.
+        ensure_user_not_deleting(db=db, user_id=user_id, for_write=True)
+
+        exit_user = user_repo.find_user_by_id(db=db, user_id=user_id)
+        if exit_user is not None and exit_user.deletion_requested_at is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account deletion is in progress")
+        if exit_user is not None and payment_method_repo.find_cash_payment_method(db=db, user_id=user_id) is not None:
+            return exit_user
+
+        user = exit_user
         if user is None:
-            user = user_repo.add_user(db, user_id=user_id)
-            ledger = ledger_repo.add_ledger(db, owner_user_id=user_id, name=ledger_name)
-            ledger_repo.add_ledger_member(
-                db, ledger_id=ledger.id, user_id=user_id, role="owner"
-            )
+            user = user_repo.add_user(db=db, user_id=user_id)
+            # 공유 가계부 도입 시 개인 기본 가계부의 식별·선택 정책을 별도로 정한다.
+            ledger = ledger_repo.add_ledger(db=db, owner_user_id=user_id, name=ledger_name)
+            ledger_repo.add_ledger_member(db=db, ledger_id=ledger.id, user_id=user_id, role="owner")
 
         # Cash는 카드·은행 이체와 구분되는 기본 현금 결제수단이다.
-        payment_method_repo.add_payment_method(db, user_id=user_id, name="Cash", method_type="cash-like", closing_day=None, color="#FCA05A")
+        payment_method_repo.add_payment_method(db=db, user_id=user_id, name="Cash", method_type="cash-like", closing_day=None, color="#FCA05A")
         db.commit()
         return user
     except Exception:
@@ -52,6 +58,7 @@ def get_user_profile(db: Session, user_id: UUID) -> User:
 
 def update_user_profile(db: Session, user_id: UUID, nickname: str) -> User:
     """인증된 사용자의 표시 이름을 수정하고 저장한다."""
+    # TODO: 공유 가계부 도입 시 표시 이름 중복 허용을 제거할지 검토한다.
     try:
         user = get_user_profile(db, user_id=user_id)
         user_repo.update_user_nickname(db, user=user, nickname=nickname)
@@ -64,6 +71,8 @@ def update_user_profile(db: Session, user_id: UUID, nickname: str) -> User:
 def delete_user_app_data(db: Session, user_id: UUID) -> None:
     """사용자가 소유한 앱 데이터를 한 트랜잭션에서 삭제한다."""
     try:
+        # Bootstrap과 계정 삭제가 같은 사용자 데이터를 동시에 초기화·삭제하지 않게 한다.
+        user_repo.lock_bootstrap(db=db, user_id=user_id)
         # Bootstrap 전 사용자도 삭제 진행 상태를 기록할 프로필이 필요하다.
         if user_repo.lock_user_by_id(db, user_id=user_id) is None:
             user_repo.add_user(db, user_id=user_id)
@@ -102,3 +111,32 @@ def ensure_user_not_deleting(db: Session, user_id: UUID, for_write: bool = False
 
     if user is not None and user.deletion_requested_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account deletion is in progress")
+
+def generate_random_nickname() -> str:
+    """형용사와 동물을 조합해 표시 이름을 만든다."""
+    return f"{choice(ADJECTIVES)} {choice(ANIMALS)}"
+
+def complete_user_onboarding(db: Session, user_id: UUID, nickname: str) -> User:
+    """표시 이름을 정하고 가입 정보 입력을 완료한다."""
+    try:
+        # Bootstrap·계정 삭제와 같은 순서로 잠근다.
+        user_repo.lock_bootstrap(db=db, user_id=user_id)
+        user = user_repo.lock_user_by_id(db=db, user_id=user_id)
+
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User Profile not found")
+
+        if user.deletion_requested_at is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account Deletion is in progress")
+
+        # 완료 요청이 다시 와도 이미 저장한 이름을 바꾸지 않는다.
+        if user.onboarding_completed:
+            return user
+
+        final_nickname = nickname.strip() or generate_random_nickname()
+        user_repo.complete_onboarding(db=db, user=user, nickname=final_nickname)
+        db.commit()
+        return user
+    except Exception:
+        db.rollback()
+        raise

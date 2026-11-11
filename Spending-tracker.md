@@ -85,7 +85,7 @@
 
 - [ ] 통합 대시보드: 최근 30일 전체 지출, 카드 vs 현금 비율, 카테고리별 분포
 
-- [ ] 카테고리 목록 조회 (운영팀이 정한 기본 13개 제공: Food, Living, Electronics, Fashion, Dining, Transport, Subscription, Utilities·Bills, Health, Entertainment, Travel, Etc, Refund). 사용자는 카테고리를 추가·수정·삭제하지 않는다.
+- [ ] 카테고리 목록 조회 (운영팀이 정한 기본 14개 제공: Food, Living, Electronics, Fashion, Dining, Transport, Subscription, Utilities & Bills, Health, Entertainment, Travel, Etc, Refund, Coffee). 사용자는 카테고리를 추가·수정·삭제하지 않는다.
 
 ### Phase 2 — 핵심 차별화 (Wow Factor)
 
@@ -156,7 +156,7 @@
 | Backend | Python + FastAPI | 핵심 비즈니스 로직, 인증 검증, DB 접근, 외부 API 연동을 한 곳에서 관리 |
 | Mobile App | Flutter (Dart), iOS + Android | 단일 코드베이스로 양 플랫폼 지원, 카메라·갤러리·푸시 등 모바일 기능 확장 용이 |
 | DB | Supabase Managed PostgreSQL | 표준 PostgreSQL 사용. Flutter가 직접 DB에 접근하지 않고 FastAPI → SQLAlchemy를 통해서만 Read / Write |
-| 인증 | Supabase Auth — Email/Password + Email Verification + Guest | 비밀번호 해싱·세션·토큰·이메일 인증은 Supabase Auth가 담당. Google/Apple 로그인은 필요 시 추가 |
+| 인증 | Supabase Auth — 이메일 OTP + Guest | 세션·토큰·이메일 인증은 Supabase Auth가 담당. Google/Apple 로그인은 필요 시 추가 |
 | 인증 이메일 | Resend 등 Transactional Email Provider + 앱 도메인 | Production 인증 메일 발송용. Supabase Auth와 custom SMTP로 연결 |
 | 모바일 결제 | App Store / Google Play IAP, RevenueCat 검토 | Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. 유료화 전 최종 확정 |
 | 이미지 스토리지 | Supabase Storage (private bucket, 도입 검토) | 영수증 원본은 영구 보관하지 않는다. 파싱 중 임시 저장이 필요한지와 삭제 시점은 구현 전 확정 |
@@ -171,7 +171,7 @@
 
 ### 3.1 인증 아키텍처 결정
 
-1. **Email/Password + Email Verification** ✅: 현재 MVP는 이메일과 비밀번호를 받고 이메일 인증을 완료한 뒤 계정을 활성화하는 방향. 비밀번호 해싱과 credential 저장은 Supabase Auth가 담당하며 `public.users`에는 비밀번호 관련 컬럼을 두지 않는다.
+1. **이메일 OTP 인증** ✅: 이메일을 입력하고 Supabase Auth의 OTP를 검증한 뒤 앱 초기화와 가입 정보 입력 여부를 확인한다. 신규·기존 사용자를 이메일 소유권 확인 전에 조회해 구분하지 않는다. 현재 Flutter OTP 요청은 기존 사용자만 허용하므로 신규 사용자 연결은 후속 작업이다. 세션과 인증 정보는 Supabase Auth가 관리한다.
 
 2. **Guest 모드** ✅: 계정 없이 앱을 사용할 수 있다. Guest 데이터는 Flutter 기기 로컬 SQLite에 저장하고, 회원 전환 시 서버로 마이그레이션한다.
 
@@ -185,7 +185,7 @@
 
 7. **Guest → 회원 전환** ✅: Guest 데이터는 인증 완료 후 해당 `user_id`의 서버 데이터로 이전한다. 중복 전송이나 재시도를 고려해 migration은 idempotent하게 설계한다.
 
-8. **초기 표시 이름 (2026-10-17 미팅 방향)**: 가입 때 랜덤 표시 이름을 제안하고 사용자가 수정하거나 건너뛸 수 있게 한다. 이후 프로필에서도 변경할 수 있다. `GET /users/me`와 `PATCH /users/me`는 프로필 조회·이름 수정을 지원한다. 이름 생성 규칙과 Flutter UI 연결은 아직 정하지 않았다.
+8. **초기 표시 이름**: 가입 정보 완료 시 입력한 이름을 저장하며, 빈칸이면 서버가 형용사와 동물을 조합해 생성한다. 인증된 사용자는 `GET /users/me/nickname-suggestion`으로 저장 전 이름 후보를 받을 수 있고, 조회는 프로필과 완료 상태를 바꾸지 않는다. 표시 이름은 중복을 허용한다. `users.onboarding_completed`로 완료 여부를 관리하고 `POST /users/me/bootstrap`은 `onboarding_required`를 반환한다. `POST /users/me/onboarding/complete`는 이름과 완료 상태를 저장하며 재요청 시 기존 이름을 유지한다. 탈퇴 진행 계정은 409로 거부한다. Flutter 가입 흐름 연결은 후속 작업이다.
 
 ### 3.2 Supabase 의존성 경계
 
@@ -240,6 +240,7 @@ auth.users                         # Supabase Auth가 관리
 public.users                       # 앱 전용 프로필
 - id uuid PK, FK -> auth.users.id
 - nickname text nullable
+- onboarding_completed boolean NOT NULL DEFAULT false  # 가입 정보 입력 완료 여부
 - plan text NOT NULL               # free | pro
 - deletion_requested_at timestamp nullable  # 계정 삭제 진행 중인 시각
 - created_at timestamp
@@ -435,7 +436,7 @@ reference_date = 2026-10-16
 
 ## 4.1 기본 카테고리 정의
 
-DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와 Refund). 각 정의는 `categories.description`에 저장되며 LLM 파싱 프롬프트에 사용된다. 카테고리 목록은 운영팀이 관리하고 사용자는 `transaction_items`의 품목에 적용할 카테고리만 선택한다. Tax/Tip은 결제 전체 금액이므로 품목 카테고리를 붙이지 않는다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다. Refund 카테고리의 DB 적용을 확인했다.
+DB migration에서 생성하는 공통 기본 카테고리 14개(기존 12개와 Refund·Coffee). 각 정의는 `categories.description`에 저장된다. 카테고리 목록은 운영팀이 관리하고 사용자는 `transaction_items`의 품목에 적용할 카테고리만 선택한다. Tax/Tip은 결제 전체 금액이므로 품목 카테고리를 붙이지 않는다. 인증된 앱은 `GET /categories`로 같은 목록과 ID를 조회한다. `55c03d2a68ad`는 Utilities & Bills로 이름을 변경하고 Coffee를 추가하며, 사용자에 따르면 DB에 적용됐다. 파서는 현재 별도의 고정 목록을 사용하며 DB 목록을 프롬프트에 연결하는 작업은 남아 있다.
 
 | 카테고리 | 담당 범위 | 예시 | 아닌 것 (경계) |
 |---|---|---|---|
@@ -443,10 +444,11 @@ DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와
 | **Living** | 생활용품·소모품 — 집에서 쓰는 물건 전반 | 세제, 휴지, 샴푸, 수건, 주방용품, 수납용품, 가구, 가전(냉장고·청소기) | 옷은 Fashion, 전자기기는 Electronics |
 | **Electronics** | 전자기기·주변기기 하드웨어 | 폰, 노트북, 모니터, 이어폰, 충전기, 게임 콘솔 | 게임 소프트웨어·콘텐츠는 Entertainment, 디지털 구독은 Subscription, 가전은 Living |
 | **Fashion** | 몸에 걸치는 것 | 옷, 신발, 가방, 액세서리, 화장품 | 세탁 서비스는 Etc |
-| **Dining** | 조리된 음식·음료 구매 | 레스토랑, 카페, 배달(DoorDash 등), 술집 | 마트 식재료는 Food |
+| **Dining** | 조리된 음식·음료 구매 | 레스토랑, 배달(DoorDash 등), 술집 | 마트 식재료는 Food, 커피 전문점의 커피는 Coffee |
+| **Coffee** | 커피 전문점 등에서 구매한 커피 | 커피 전문점의 커피 | 기존 Dining 거래는 자동으로 변경하지 않음 |
 | **Transport** | 이동 비용 | 개스, 대중교통, Uber/Lyft, 주차, 차량 정비 | 여행지 항공·숙박은 Travel |
 | **Subscription** | 반복 결제 디지털/멤버십 서비스 | Netflix, Spotify, iCloud, 짐 멤버십, Amazon Prime | 일회성 구매는 해당 카테고리로 |
-| **Utilities·Bills** | 주거 관련 고정 요금 | 전기, 수도, 개스(주거), 인터넷, 휴대폰 요금 | 렌트는 MVP 범위 외 |
+| **Utilities & Bills** | 주거 관련 고정 요금 | 전기, 수도, 개스(주거), 인터넷, 휴대폰 요금 | 렌트는 MVP 범위 외 |
 | **Health** | 건강·의료 | 병원, 약국, 보험 본인부담금, 영양제 | 짐 멤버십은 Subscription |
 | **Entertainment** | 여가·취미 소비 | 영화, 공연, 게임, 책, 취미용품 | 반복 결제형(게임 구독 등)은 Subscription |
 | **Travel** | 여행 관련 지출 일체 | 항공권, 호텔, 여행지 액티비티 | 일상 이동은 Transport |
@@ -519,7 +521,7 @@ DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와
 
 8. **온보딩 (2단계)**:
 
-- 시작: 가치 제안 한 줄("카드 마감일 기준으로 지출 추적") + "계속하기"(현행 Email/Password·이메일 인증) / "가입 없이 둘러보기"(체험 모드 — 기기 저장·앱 삭제·기기 변경 시 소실 가능 문구 명시). Google/Apple 등 다른 인증 방식은 별도 검토 대상
+- 시작: 가치 제안 한 줄("카드 마감일 기준으로 지출 추적") + "계속하기"(이메일 OTP 인증) / "가입 없이 둘러보기"(체험 모드 — 기기 저장·앱 삭제·기기 변경 시 소실 가능 문구 명시). Google/Apple 등 다른 인증 방식은 별도 검토 대상
 
 - 첫 카드 등록: "카드번호는 필요 없어요 — 이름과 마감일만" 문구로 연동 앱 대비 경계심 해소. 마감일 빠른 선택(1일/5일/15일/직접). 건너뛰기 허용. 등록 즉시 홈 진입
 
@@ -557,7 +559,7 @@ DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와
 
 - MVP 기간에는 무료 카운팅 로직만 구현 (유료화 시 그대로 재사용)
 
-- 무료 회원 파싱 한도는 **Supabase `user_id` 기준**으로 계산. 현행 Email/Password·이메일 인증 외에 다른 인증 수단을 도입하더라도 내부 소유권 키는 `user_id`로 유지
+- 무료 회원 파싱 한도는 **Supabase `user_id` 기준**으로 계산. 이메일 OTP 외에 다른 인증 수단을 도입하더라도 내부 소유권 키는 `user_id`로 유지
 
 - 이미지 리사이즈 후 전송으로 장당 원가 절감
 
@@ -571,9 +573,9 @@ DB migration에서 생성하는 공통 기본 카테고리 13개(기존 12개와
 
 **카테고리 운영 원칙**:
 
-1. 기본 카테고리: DB migration에서 공통 목록으로 생성 (`is_default = true`) — 확정 세트 (13개):
+1. 기본 카테고리: DB migration에서 공통 목록으로 생성 (`is_default = true`) — 확정 세트 (14개):
 
-Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, 수건, 주방용품 등) / Electronics (전자기기·주변기기 하드웨어) / Fashion (옷·신발·액세서리) / Dining (외식·카페·배달) / Transport / Subscription / Utilities·Bills / Health / Entertainment / Travel / Etc / Refund (구매 금액 반환)
+Food (식료품) / Living (생활용품·소모품·가전: detergent, 휴지, 수건, 주방용품 등) / Electronics (전자기기·주변기기 하드웨어) / Fashion (옷·신발·액세서리) / Dining (외식·배달) / Coffee (커피 전문점의 커피) / Transport / Subscription / Utilities & Bills / Health / Entertainment / Travel / Etc / Refund (구매 금액 반환)
 
 - `categories.description` 컬럼 추가: 각 카테고리의 한 줄 정의. LLM 파싱 프롬프트에 이름+설명을 함께 제공해 분류 정확도 확보 (예: Target 영수증에서 detergent → Living, 사과 → Food)
 
@@ -723,7 +725,7 @@ draft·failed 이미지의 7일 보관은 이번 원본 비보관 방향과 충�
 
 - **currency**: ✅ 결정 — USD 단일. 본인 + 초기 테스터 모두 미국 거주. `transaction.currency` 컬럼은 'USD' 기본값으로 유지해 향후 다중 통화 확장 여지만 남김 (지금 복잡도 0)
 
-- **인증 범위**: ✅ 방향 결정 — Guest 사용 허용 + 회원은 Email/Password + Email Verification을 기본으로 사용. credential은 Supabase Auth가 관리하고 앱 데이터는 Supabase `user_id` 기준으로 연결. Google/Apple 로그인과 Account Linking은 일정에 따라 확장
+- **인증 범위**: ✅ 방향 결정 — Guest 사용 허용 + 회원은 이메일 OTP 인증을 사용. 인증과 세션은 Supabase Auth가 관리하고 앱 데이터는 Supabase `user_id` 기준으로 연결. Google/Apple 로그인과 Account Linking은 일정에 따라 확장
 
 ---
 

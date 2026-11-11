@@ -1,17 +1,21 @@
+import ssl
 from functools import lru_cache
 from uuid import UUID
 
+import certifi
 import jwt
 from fastapi import HTTPException, status
 from jwt import PyJWKClient, PyJWTError
+from jwt.exceptions import PyJWKClientConnectionError
 
 from app.core.config import settings
 
 
 @lru_cache
 def _jwks_client(url: str) -> PyJWKClient:
-    """서명 검증용 JWKS 클라이언트를 URL별로 재사용한다."""
-    return PyJWKClient(url, timeout=5)
+    """신뢰할 CA 인증서로 JWKS 클라이언트를 만들고 재사용한다."""
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    return PyJWKClient(url, timeout=5, ssl_context=ssl_context)
 
 
 def verify_access_token(token: str) -> UUID:
@@ -39,6 +43,11 @@ def verify_access_token(token: str) -> UUID:
             raise ValueError("Unexpected token role")
         # sub는 Supabase Auth의 auth.users.id이며 여기서 새 UUID를 만들지 않는다.
         return UUID(claims["sub"])
+    except PyJWKClientConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to retrieve authentication keys",
+        ) from exc
     except (PyJWTError, ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
