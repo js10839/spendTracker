@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
+import '../auth/member_bootstrap.dart';
 import 'widgets/onboarding_actions.dart';
 import 'widgets/onboarding_setup_illustration.dart';
 
@@ -53,7 +54,7 @@ class OnboardingSetupIntroPage extends StatelessWidget {
                       onPressed: () => _startSetup(context),
                       buttonKey: const Key('onboarding-setup-continue'),
                       secondaryLabel: "I'll do it later",
-                      onSecondaryPressed: () => context.goNamed('home'),
+                      onSecondaryPressed: () => context.goNamed('home', extra: const GuestHomeAccess()),
                       secondaryKey: const Key('onboarding-setup-skip'),
                     ),
                     const SizedBox(height: AppSpacing.twoXL),

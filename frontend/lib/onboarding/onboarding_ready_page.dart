@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
+import '../auth/member_bootstrap.dart';
 import 'widgets/onboarding_animation.dart';
 
 /// 온보딩 완료 애니메이션을 보여주고 홈으로 이동한다.
@@ -34,7 +35,7 @@ class OnboardingReadyPage extends StatelessWidget {
                       height: 200,
                       lastFrame: 95,
                       finalFrameDuration: const Duration(milliseconds: 20),
-                      onComplete: () => context.goNamed('home'),
+                      onComplete: () => context.goNamed('home', extra: const GuestHomeAccess()),
                     ),
                     const SizedBox(height: AppSpacing.threeXL),
                     Text(

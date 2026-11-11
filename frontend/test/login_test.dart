@@ -18,9 +18,22 @@ class FakeUserRepository implements UserRepository {
 }
 
 class FakeAuthService implements AuthService {
+  final Object sessionIdentity = Object();
+  @override
+  Object get currentSessionIdentity => sessionIdentity;
+  @override
+  String? get currentUserId => 'test-user';
+  @override
+  bool get hasCurrentUsableSession => true;
   final sent = <String>[];
   final verified = <String>[];
   bool shouldFail = false;
+
+  @override
+  Future<bool> hasUsableSession() async => false;
+
+  @override
+  Future<bool> refreshUsableSession() async => false;
 
   @override
   Future<void> sendCode(String email) async {
@@ -30,7 +43,7 @@ class FakeAuthService implements AuthService {
   @override
   Future<void> verifyCode(String email, String code) async {
     verified.add('$email:$code');
-    if (shouldFail) throw StateError('invalid');
+    if (shouldFail) throw const InvalidOtpException();
   }
 }
 

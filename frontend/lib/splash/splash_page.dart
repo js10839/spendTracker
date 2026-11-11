@@ -4,14 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import '../auth/auth_service.dart';
+import '../auth/member_bootstrap.dart';
+import '../data/users/user_repository.dart';
+import '../design_system/components.dart';
 import '../design_system/tokens.dart';
+import '../design_system/typography.dart';
 
 /// 스플래시에서 다음 화면으로 전환할 때만 페이드를 적용한다.
 const splashExitTransition = 'splash-fade';
 
 const splashFadeDuration = Duration(milliseconds: 250);
 
-/// GIF를 끝까지 재생하고 마지막 화면을 보여준 뒤 온보딩으로 이동한다.
+/// 스플래시 재생과 인증·초기화 확인이 끝나면 다음 화면으로 이동한다.
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
 
@@ -28,6 +33,39 @@ class _SplashPageState extends State<SplashPage> {
   bool _finishScheduled = false;
   bool _showFinalFrame = false;
   bool _holdStarted = false;
+  bool _animationFinished = false;
+  bool _loading = true;
+  bool _failed = false;
+  String? _destination;
+  MemberHomeAccess? _memberAccess;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepare();
+  }
+
+  /// 회원 세션이 있을 때만 백엔드 초기화 성공을 기다린다.
+  Future<void> _prepare() async {
+    setState(() { _loading = true; _failed = false; _destination = null; _memberAccess = null; });
+    try {
+      final signedIn = await AuthService.instance.hasUsableSession();
+      final access = signedIn ? await MemberBootstrap(AuthService.instance, UserRepository.instance).run() : null;
+      if (!mounted) return;
+      setState(() { _loading = false; _memberAccess = access; _destination = access != null ? 'home' : 'onboarding'; });
+      _navigateWhenReady();
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _failed = true; });
+    }
+  }
+
+  /// 애니메이션과 초기화가 모두 끝났을 때만 화면을 이동한다.
+  void _navigateWhenReady() {
+    if (!_animationFinished || _loading || _destination == null || !mounted || ModalRoute.of(context)?.isCurrent != true) return;
+    final destination = _destination!;
+    _destination = null;
+    context.goNamed(destination, extra: destination == 'onboarding' ? splashExitTransition : _memberAccess);
+  }
 
   /// GIF의 마지막 프레임이 그려진 뒤 같은 정지 이미지로 전환한다.
   void _showLastFrame() {
@@ -46,8 +84,8 @@ class _SplashPageState extends State<SplashPage> {
       if (!mounted) return;
       _timer = Timer(_finalFrameDuration, () {
         if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
-        // TODO: 인증 세션 확인이 준비되면 홈 또는 온보딩으로 분기한다.
-        context.goNamed('onboarding', extra: splashExitTransition);
+        setState(() => _animationFinished = true);
+        _navigateWhenReady();
       });
     });
   }
@@ -69,7 +107,8 @@ class _SplashPageState extends State<SplashPage> {
     ),
     child: Scaffold(
       backgroundColor: AppTokens.splashBackground,
-      body: LayoutBuilder(
+      body: Stack(children: [
+        Positioned.fill(child: LayoutBuilder(
         builder: (context, constraints) => ClipRect(
           child: Transform.translate(
             // 원본 로고가 중앙보다 20px 위에 있어 GIF와 마지막 프레임을 함께 보정한다.
@@ -97,7 +136,28 @@ class _SplashPageState extends State<SplashPage> {
             ),
           ),
         ),
-      ),
+        )),
+        if (_animationFinished && (_loading || _failed))
+          Positioned(left: AppSpacing.lg, right: AppSpacing.lg, bottom: AppSpacing.fiveXL, child: _startupStatus()),
+      ]),
     ),
   );
+
+  /// 최종 디자인이 나오기 전까지 표시하는 임시 로딩·재시도 UI다.
+  Widget _startupStatus() {
+    // TODO: 디자이너가 정한 초기화 오류 및 재시도 화면으로 교체한다.
+    if (_loading) return const Center(child: CircularProgressIndicator(color: AppTokens.textPrimary));
+    return Material(
+      color: AppTokens.background,
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('Unable to start. Please check your connection and try again.', textAlign: TextAlign.center, style: AppTypography.bodyMedium),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(label: 'Try again', onPressed: _prepare),
+        ]),
+      ),
+    );
+  }
 }
