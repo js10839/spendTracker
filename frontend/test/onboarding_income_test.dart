@@ -79,9 +79,9 @@ void main() {
               OnboardingClosingPage(cards: state.extra as List<String>),
         ),
         GoRoute(
-          path: '/income',
-          name: 'onboarding-income',
-          builder: (_, _) => const OnboardingIncomePage(),
+          path: '/reminders',
+          name: 'onboarding-reminders',
+          builder: (_, _) => const Scaffold(body: Text('Reminders')),
         ),
       ],
     );
@@ -89,7 +89,7 @@ void main() {
     await tester.pumpWidget(MaterialApp.router(routerConfig: router));
     await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
-    expect(find.byType(OnboardingIncomePage), findsOneWidget);
+    expect(find.text('Reminders'), findsOneWidget);
   });
 
   testWidgets('선택한 수입과 카드 정보를 다음 화면에 전달한다', (tester) async {
@@ -124,7 +124,8 @@ void main() {
     expect(captured?.income, 'Payday · every 14th');
   });
 
-  testWidgets('카드 마감일 설정 완료 후 수입 화면으로 간다', (tester) async {
+  testWidgets('카드 마감일 설정 완료 후 알림 화면에 카드 정보를 전달한다', (tester) async {
+    OnboardingSummary? captured;
     final router = GoRouter(
       initialLocation: '/closing',
       routes: [
@@ -134,9 +135,12 @@ void main() {
           builder: (_, _) => const OnboardingClosingPage(cards: ['Chase']),
         ),
         GoRoute(
-          path: '/income',
-          name: 'onboarding-income',
-          builder: (_, _) => const OnboardingIncomePage(),
+          path: '/reminders',
+          name: 'onboarding-reminders',
+          builder: (_, state) {
+            captured = state.extra as OnboardingSummary;
+            return const Scaffold(body: Text('Reminders'));
+          },
         ),
       ],
     );
@@ -147,7 +151,8 @@ void main() {
     await tester.ensureVisible(find.text('Continue'));
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
-    expect(find.byType(OnboardingIncomePage), findsOneWidget);
+    expect(find.text('Reminders'), findsOneWidget);
+    expect(captured?.cards, {'Chase': 5});
   });
 
   testWidgets('단계 이동과 되돌아가기는 이전 진행률에서 시작한다', (tester) async {
@@ -160,10 +165,9 @@ void main() {
           builder: (_, _) => const OnboardingCardsPage(),
         ),
         GoRoute(
-          path: '/income',
-          name: 'onboarding-income',
-          builder: (_, state) =>
-              OnboardingIncomePage(initialStep: state.extra as int),
+          path: '/reminders',
+          name: 'onboarding-reminders',
+          builder: (_, _) => const Scaffold(body: Text('Reminders')),
         ),
       ],
     );
@@ -172,14 +176,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Skip'));
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<LinearProgressIndicator>(
-            find.byType(LinearProgressIndicator).last,
-          )
-          .value,
-      closeTo(0.8, 0.001),
-    );
+    expect(find.text('Reminders'), findsOneWidget);
     router.pop();
     await tester.pumpAndSettle();
     final bar = tester.widget<AppProgress>(find.byType(AppProgress));

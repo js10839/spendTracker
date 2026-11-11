@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../design_system/components.dart';
 import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
+import 'onboarding_summary.dart';
 import 'widgets/onboarding_custom_card_sheet.dart';
 
 /// 설정할 카드사를 최대 두 개까지 선택한다.
@@ -69,9 +70,9 @@ class _OnboardingCardsPageState extends State<OnboardingCardsPage> {
     if (mounted) setState(() { _progressStart = 3; _progressVersion++; });
   }
 
-  /// 카드 설정을 건너뛰고 수입 주기를 선택한다.
+  /// 카드 설정을 건너뛰고 알림 안내로 이동한다.
   Future<void> _skip() async {
-    await context.pushNamed('onboarding-income', extra: 2);
+    await context.pushNamed('onboarding-reminders', extra: const OnboardingSummary());
     if (mounted) setState(() { _progressStart = 4; _progressVersion++; });
   }
 

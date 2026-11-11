@@ -100,6 +100,7 @@ class SupabaseAuthService implements AuthService {
   }
 
   @override
+  // 신규 가입과 기존 로그인 템플릿 모두 OTP 표시를 위해 {{ .Token }} 설정이 필요하다.
   Future<void> sendCode(String email) =>
       client.auth.signInWithOtp(email: email, shouldCreateUser: true);
 
