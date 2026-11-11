@@ -10,6 +10,7 @@ import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
 import '../data/users/user_repository.dart';
 import 'auth_service.dart';
+import 'member_bootstrap.dart';
 
 /// 기존 회원의 이메일 OTP를 확인한다.
 class LoginCodePage extends StatefulWidget {
@@ -61,10 +62,12 @@ class _LoginCodePageState extends State<LoginCodePage> {
     });
     try {
       await AuthService.instance.verifyCode(widget.email, code);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
-          _message = 'Invalid or expired code. Please try again.';
+          _message = error is InvalidOtpException
+              ? 'Invalid or expired code. Please try again.'
+              : 'Unable to verify the code. Please try again.';
           _error = true;
         });
       }
@@ -80,8 +83,8 @@ class _LoginCodePageState extends State<LoginCodePage> {
   Future<void> _bootstrap() async {
     setState(() { _loading = true; _message = null; _error = false; });
     try {
-      await UserRepository.instance.bootstrap();
-      if (mounted) context.goNamed('home');
+      final access = await MemberBootstrap(AuthService.instance, UserRepository.instance).run();
+      if (mounted) context.goNamed(access != null ? 'home' : 'login-email', extra: access);
     } catch (_) {
       if (mounted) setState(() { _message = 'Unable to set up your account. Please try again.'; _error = true; });
     } finally {

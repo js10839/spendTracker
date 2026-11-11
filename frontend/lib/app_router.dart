@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'home/home_page.dart';
 import 'auth/login_email_page.dart';
 import 'auth/login_code_page.dart';
+import 'auth/auth_service.dart';
+import 'auth/member_bootstrap.dart';
 import 'onboarding/onboarding_page.dart';
 import 'onboarding/onboarding_cards_page.dart';
 import 'onboarding/onboarding_closing_page.dart';
@@ -16,6 +18,7 @@ import 'onboarding/onboarding_setup_intro_page.dart';
 import 'splash/splash_page.dart';
 
 /// 앱의 화면 경로를 한곳에서 관리한다.
+// TODO: 공유 딥링크가 추가되면 인증 전 목적지를 보관하고 bootstrap 성공 후 유효한 경로로 복원한다.
 final GoRouter appRouter = GoRouter(
   initialLocation: '/splash',
   routes: [
@@ -35,9 +38,20 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/',
       name: 'home',
+      redirect: (context, state) {
+        final auth = AuthService.instance;
+        final access = state.extra;
+        if (access is MemberHomeAccess && access.matches(auth)) {
+          return null;
+        }
+        if (access is GuestHomeAccess && auth.currentUserId == null) {
+          return null;
+        }
+        return '/splash';
+      },
       builder: (context, state) => const HomePage(),
     ),
-    // TODO: 인증 상태가 준비되면 최초 진입과 로그아웃 시 온보딩을 표시한다.
+    // TODO: 로그아웃 및 앱 사용 중 세션 무효화 시 온보딩으로 이동한다.
     GoRoute(
       path: '/login',
       name: 'login-email',
