@@ -4,7 +4,7 @@ Independent collections are aggregated before joining them to the date spine:
 items cannot multiply transaction totals, nor can income multiply dot counts.
 """
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import (
@@ -24,7 +24,7 @@ from sqlalchemy import (
     true,
     union_all,
 )
-from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by
+from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by, insert
 from sqlalchemy.engine import Connection
 
 from app.db.models import (
@@ -94,6 +94,15 @@ def find_card(connection: Connection, user_id: UUID, method_id: UUID):
         .mappings()
         .one_or_none()
     )
+
+def find_bank_year(connection: Connection, year: int):
+    """저장된 연도별 은행 휴일 캐시를 조회한다."""
+    return connection.execute(select(bank_years).where(bank_years.c.year == year)).mappings().one_or_none()
+
+def upsert_bank_year(connection: Connection, year:int, holidays: set[date], fetched_at: datetime) -> None:
+    """연도별 은행 휴일을 추가하거나 기존 캐시를 갱신한다."""
+    statement = insert(bank_years).values(year=year, holidays=sorted(day.isoformat() for day in holidays), fetched_at=fetched_at)
+    connection.execute(statement=statement.on_conflict_do_update(index_elements=[bank_years.c.year], set_={"holidays": statement.excluded.holidays, "fetched_at": fetched_at}))
 
 
 def has_paycheck(connection: Connection, ledger_id: UUID) -> bool:

@@ -52,7 +52,7 @@ class _SplashPageState extends State<SplashPage> {
       final signedIn = await AuthService.instance.hasUsableSession();
       final access = signedIn ? await MemberBootstrap(AuthService.instance, UserRepository.instance).run() : null;
       if (!mounted) return;
-      setState(() { _loading = false; _memberAccess = access; _destination = access != null ? 'home' : 'onboarding'; });
+      setState(() { _loading = false; _memberAccess = access; _destination = access == null ? 'onboarding' : access.onboardingRequired ? 'signup' : 'home'; });
       _navigateWhenReady();
     } catch (_) {
       if (mounted) setState(() { _loading = false; _failed = true; });

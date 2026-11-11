@@ -1,3 +1,4 @@
+from random import choice
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -15,6 +16,7 @@ from app.db.session import SessionLocal
 from app.ledgers import repository as ledger_repo
 from app.payment_methods import repository as payment_method_repo
 from app.users import repository as user_repo
+from app.users.nickname_words import ADJECTIVES, ANIMALS
 
 
 def bootstrap_user(db: Session, user_id: UUID, ledger_name: str) -> User:
@@ -56,6 +58,7 @@ def get_user_profile(db: Session, user_id: UUID) -> User:
 
 def update_user_profile(db: Session, user_id: UUID, nickname: str) -> User:
     """인증된 사용자의 표시 이름을 수정하고 저장한다."""
+    # TODO: 공유 가계부 도입 시 표시 이름 중복 허용을 제거할지 검토한다.
     try:
         user = get_user_profile(db, user_id=user_id)
         user_repo.update_user_nickname(db, user=user, nickname=nickname)
@@ -108,3 +111,32 @@ def ensure_user_not_deleting(db: Session, user_id: UUID, for_write: bool = False
 
     if user is not None and user.deletion_requested_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account deletion is in progress")
+
+def generate_random_nickname() -> str:
+    """형용사와 동물을 조합해 표시 이름을 만든다."""
+    return f"{choice(ADJECTIVES)} {choice(ANIMALS)}"
+
+def complete_user_onboarding(db: Session, user_id: UUID, nickname: str) -> User:
+    """표시 이름을 정하고 가입 정보 입력을 완료한다."""
+    try:
+        # Bootstrap·계정 삭제와 같은 순서로 잠근다.
+        user_repo.lock_bootstrap(db=db, user_id=user_id)
+        user = user_repo.lock_user_by_id(db=db, user_id=user_id)
+
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User Profile not found")
+
+        if user.deletion_requested_at is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account Deletion is in progress")
+
+        # 완료 요청이 다시 와도 이미 저장한 이름을 바꾸지 않는다.
+        if user.onboarding_completed:
+            return user
+
+        final_nickname = nickname.strip() or generate_random_nickname()
+        user_repo.complete_onboarding(db=db, user=user, nickname=final_nickname)
+        db.commit()
+        return user
+    except Exception:
+        db.rollback()
+        raise

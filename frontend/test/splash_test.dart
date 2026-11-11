@@ -13,6 +13,8 @@ import 'package:spending_tracker/data/users/user_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SplashFakeAuth implements AuthService {
+  @override
+  String? get currentEmail => 'user@example.com';
   bool signedIn = false;
   bool fails = false;
   final Object sessionIdentity = Object();
@@ -36,14 +38,19 @@ class SplashFakeAuth implements AuthService {
 }
 
 class SplashFakeUsers implements UserRepository {
-  Completer<String>? pending;
+  @override
+  Future<void> completeOnboarding(String nickname) async {}
+  @override
+  Future<String> getNicknameSuggestion() async => 'Mellow Otter';
+  Completer<UserBootstrapResult>? pending;
   bool fails = false;
+  bool onboardingRequired = false;
   int calls = 0;
   @override
-  Future<String> bootstrap() async {
+  Future<UserBootstrapResult> bootstrap() async {
     calls++;
     if (fails) throw StateError('network');
-    return pending == null ? 'user' : pending!.future;
+    return pending == null ? UserBootstrapResult(userId: 'user', onboardingRequired: onboardingRequired) : pending!.future;
   }
 }
 
@@ -53,6 +60,7 @@ GoRouter splashRouter() => GoRouter(
   routes: [
     GoRoute(path: '/splash', builder: (_, _) => const SplashPage()),
     GoRoute(path: '/', name: 'home', builder: (_, _) => const Scaffold(body: Text('Home'))),
+    GoRoute(path: '/signup', name: 'signup', builder: (_, _) => const Scaffold(body: Text('Signup'))),
     GoRoute(
       path: '/onboarding',
       name: 'onboarding',
@@ -200,7 +208,7 @@ void main() {
   // 회원 세션은 서버 초기화가 끝나기 전 홈으로 이동하지 않는다.
   testWidgets('회원은 bootstrap 완료 후 홈으로 이동한다', (tester) async {
     auth.signedIn = true;
-    users.pending = Completer<String>();
+    users.pending = Completer<UserBootstrapResult>();
     final router = splashRouter();
     addTearDown(router.dispose);
     await tester.pumpWidget(MaterialApp.router(routerConfig: router));
@@ -215,10 +223,30 @@ void main() {
     await tester.pump(const Duration(milliseconds: 20));
     expect(find.byType(SplashPage), findsOneWidget);
     expect(find.text('Home'), findsNothing);
-    users.pending!.complete('user');
+    users.pending!.complete(const UserBootstrapResult(userId: 'user', onboardingRequired: false));
     await tester.pumpAndSettle();
     expect(find.text('Home'), findsOneWidget);
     expect(users.calls, 1);
+  });
+
+  testWidgets('가입 정보가 필요한 회원은 재실행 후 가입 화면으로 이동한다', (tester) async {
+    auth.signedIn = true;
+    users.onboardingRequired = true;
+    final router = splashRouter();
+    addTearDown(router.dispose);
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pump();
+    final image = tester.widget<Image>(find.byType(Image));
+    image.frameBuilder!(tester.element(find.byType(Image)), const SizedBox(), 149, false);
+    tester.binding.scheduleFrame();
+    await tester.pump();
+    await tester.pump();
+    tester.widget<Image>(find.byType(Image)).frameBuilder!(tester.element(find.byType(Image)), const SizedBox(), 0, false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pumpAndSettle();
+    expect(find.text('Signup'), findsOneWidget);
+    expect(find.text('Home'), findsNothing);
   });
 
   // 초기화 오류는 로그아웃 처리하지 않고 같은 경로에서 재시도한다.
@@ -301,7 +329,7 @@ void main() {
   // 직접 홈 주소로 들어와도 회원의 초기화 성공 전에는 홈을 만들지 않는다.
   testWidgets('직접 홈 진입은 회원 bootstrap을 기다리고 중복 호출하지 않는다', (tester) async {
     auth.signedIn = true;
-    users.pending = Completer<String>();
+    users.pending = Completer<UserBootstrapResult>();
     appRouter.go('/');
     await tester.pumpWidget(const SpendingTrackerApp());
     await tester.pump();
@@ -315,7 +343,7 @@ void main() {
     tester.widget<Image>(find.byType(Image)).frameBuilder!(tester.element(find.byType(Image)), const SizedBox(), 0, false);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 20));
-    users.pending!.complete('user');
+    users.pending!.complete(const UserBootstrapResult(userId: 'user', onboardingRequired: false));
     await tester.pumpAndSettle();
     expect(find.text('Spent this month'), findsOneWidget);
     expect(users.calls, 1);

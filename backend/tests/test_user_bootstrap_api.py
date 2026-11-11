@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.dependencies import get_active_user_id, get_current_user_id
@@ -10,11 +11,12 @@ from app.main import app
 from app.users import router as users_router
 
 
-def test_bootstrap_api_uses_authenticated_user_id(monkeypatch) -> None:
+@pytest.mark.parametrize("completed,required", [(False, True), (True, False)])
+def test_bootstrap_api_uses_authenticated_user_id(monkeypatch, completed: bool, required: bool) -> None:
     """인증된 사용자 ID로 Service를 호출하고 프로필 ID를 반환한다."""
     user_id = uuid4()
     db = Mock()
-    bootstrap_user = Mock(return_value=User(id=user_id))
+    bootstrap_user = Mock(return_value=User(id=user_id, onboarding_completed=completed))
     monkeypatch.setattr(users_router, "bootstrap_user", bootstrap_user)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
     app.dependency_overrides[get_active_user_id] = lambda: user_id
@@ -27,7 +29,7 @@ def test_bootstrap_api_uses_authenticated_user_id(monkeypatch) -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == {"user_id": str(user_id)}
+    assert response.json() == {"user_id": str(user_id), "onboarding_required": required}
     bootstrap_user.assert_called_once_with(db, user_id=user_id, ledger_name="Personal")
 
 

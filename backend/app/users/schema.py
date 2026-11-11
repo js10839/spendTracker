@@ -16,3 +16,14 @@ class UserProfileUpdate(BaseModel):
     """사용자가 프로필에서 변경할 표시 이름을 받는다."""
 
     nickname: str
+
+class UserBootstrapRead(BaseModel):
+    """초기화된 사용자와 가입 정보 입력 필요 여부를 반환한다."""
+
+    user_id: UUID
+    onboarding_required: bool
+
+class UserOnboardingComplete(BaseModel):
+    """가입 정보 입력 완료 시 선택한 표시 이름을 받는다."""
+
+    nickname: str

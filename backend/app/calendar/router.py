@@ -24,12 +24,4 @@ def get_calendar(
     payment_method_id: UUID | None = None,
 ) -> CalendarRead:
     """Return a complete month/card cycle, grouped and aggregated in PostgreSQL."""
-    try:
-        result = read_calendar(
-            db.connection(), ledger.id, user_id, anchor_date, payment_method_id
-        )
-        db.commit()  # Persist any refreshed holiday cache only after a full read.
-        return result
-    except Exception:
-        db.rollback()
-        raise
+    return read_calendar(db, ledger_id=ledger.id, anchor_date=anchor_date, payment_method_id=payment_method_id, user_id=user_id)

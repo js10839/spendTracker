@@ -12,7 +12,7 @@ import '../data/users/user_repository.dart';
 import 'auth_service.dart';
 import 'member_bootstrap.dart';
 
-/// 기존 회원의 이메일 OTP를 확인한다.
+/// 로그인 또는 가입을 위한 이메일 OTP를 확인한다.
 class LoginCodePage extends StatefulWidget {
   const LoginCodePage({super.key, required this.email});
   final String email;
@@ -84,7 +84,7 @@ class _LoginCodePageState extends State<LoginCodePage> {
     setState(() { _loading = true; _message = null; _error = false; });
     try {
       final access = await MemberBootstrap(AuthService.instance, UserRepository.instance).run();
-      if (mounted) context.goNamed(access != null ? 'home' : 'login-email', extra: access);
+      if (mounted) context.goNamed(access == null ? 'login-email' : access.onboardingRequired ? 'signup' : 'home', extra: access);
     } catch (_) {
       if (mounted) setState(() { _message = 'Unable to set up your account. Please try again.'; _error = true; });
     } finally {
@@ -92,7 +92,7 @@ class _LoginCodePageState extends State<LoginCodePage> {
     }
   }
 
-  /// 같은 이메일로 기존 회원 인증 코드를 다시 요청한다.
+  /// 같은 이메일로 인증 코드를 다시 요청한다.
   Future<void> _resend() async {
     if (_loading || _remaining > 0) return;
     setState(() {

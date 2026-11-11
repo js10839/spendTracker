@@ -16,7 +16,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.auth.dependencies import get_current_user_id
 from app.calendar import repository, service
-from app.calendar.service import read_calendar
+from app.calendar.service import _read_calendar as read_calendar
 from app.core.config import settings
 from app.db.base import Base
 from app.db.models import Category, Ledger, LedgerMember, User
