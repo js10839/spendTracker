@@ -36,7 +36,7 @@ class CalendarDayRead(BaseModel):
 
 
 class CalendarRead(BaseModel):
-    mode: Literal["all", "card"]
+    mode: Literal["all", "card", "cash"]
     payment_method_id: UUID | None
     start_date: date
     end_date: date

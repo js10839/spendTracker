@@ -42,12 +42,14 @@ def period_statement(anchor_date: date, closing_day: int | None):
     return text(PERIOD_SQL).bindparams(anchor_date=anchor_date, closing_day=closing_day)
 
 
-def find_card(connection: Connection, user_id: UUID, method_id: UUID):
+def find_payment_method(connection: Connection, user_id: UUID, method_id: UUID):
+    """현재 사용자가 소유한 결제수단의 종류와 마감일을 조회한다."""
     return (
         connection.execute(
             text("""
-            SELECT closing_day FROM payment_methods
-            WHERE id = :method_id AND user_id = :user_id AND type = 'credit'
+            SELECT type, closing_day
+            FROM payment_methods
+            WHERE id = :method_id AND user_id = :user_id
         """),
             {"method_id": method_id, "user_id": user_id},
         )
@@ -192,18 +194,19 @@ resolved_paydays AS (
        OR (EXTRACT(isodow FROM w.display_date) <= 5
            AND NOT (b.holidays::jsonb @> jsonb_build_array(w.display_date::text)))
 ),
+-- Cash 화면에는 예정 수입과 확정 수입을 모두 표시하지 않는다.
 income_entries AS (
     SELECT 'planned' AS status, w.income_source_id, NULL::uuid AS income_record_id,
            w.income_type, w.from_name, w.payment_method_id, w.amount_cents,
            w.expected_date, NULL::date AS received_at, w.resolved_date AS display_date, w.memo
     FROM resolved_paydays w, params p
-    WHERE w.resolved_date BETWEEN p.start_date AND p.end_date
+    WHERE :include_income AND w.resolved_date BETWEEN p.start_date AND p.end_date
     UNION ALL
     SELECT 'received', r.income_source_id, r.id, r.income_type, r.from_name,
            r.payment_method_id, r.amount_cents, r.expected_date, r.received_at,
            r.received_at, r.memo
     FROM income_records r, params p
-    WHERE r.ledger_id = p.ledger_id AND r.deleted_at IS NULL
+    WHERE :include_income AND r.ledger_id = p.ledger_id AND r.deleted_at IS NULL
       AND r.received_at BETWEEN p.start_date AND p.end_date
       AND (p.payment_method_id IS NULL OR
            (r.income_type = 'cashback' AND r.payment_method_id = p.payment_method_id))
@@ -271,11 +274,14 @@ def calendar_statement(
     start: date,
     end: date,
     payment_method_id: UUID | None,
+    include_income: bool = True,
 ):
+    """선택한 기간과 결제수단으로 달력 집계 SQL을 준비한다."""
     return text(CALENDAR_SQL).bindparams(
         ledger_id=ledger_id,
         user_id=user_id,
         start=start,
         end=end,
         payment_method_id=payment_method_id,
+        include_income=include_income,
     )
