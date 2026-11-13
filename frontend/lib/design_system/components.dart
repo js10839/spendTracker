@@ -133,6 +133,7 @@ class AppInput extends StatelessWidget {
     this.inputStyle = AppInputStyle.standard,
     this.hasError = false,
     this.inputFormatters,
+    this.autofocus = false,
   });
 
   final TextEditingController controller;
@@ -142,6 +143,7 @@ class AppInput extends StatelessWidget {
   final AppInputStyle inputStyle;
   final bool hasError;
   final List<TextInputFormatter>? inputFormatters;
+  final bool autofocus;
 
   @override
   /// 입력값과 실제 포커스에 따라 Figma의 기본·집중·입력 완료 상태를 표시한다.
@@ -153,6 +155,7 @@ class AppInput extends StatelessWidget {
         final cardName = inputStyle == AppInputStyle.cardName;
         return TextField(
           controller: controller,
+          autofocus: autofocus,
           keyboardType: keyboardType,
           onChanged: onChanged,
           inputFormatters: inputFormatters,

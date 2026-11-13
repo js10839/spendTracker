@@ -6,6 +6,7 @@ import '../design_system/components.dart';
 import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
 import 'closing_cycle.dart';
+import 'onboarding_summary.dart';
 
 /// 선택한 카드별 명세서 마감일을 설정한다.
 class OnboardingClosingPage extends StatefulWidget {
@@ -37,7 +38,7 @@ class _OnboardingClosingPageState extends State<OnboardingClosingPage> {
     if (missing >= 0) {
       setState(() => _index = missing);
     } else {
-      await context.pushNamed('onboarding-income', extra: Map<String, int>.of(_days));
+      await context.pushNamed('onboarding-reminders', extra: OnboardingSummary(cards: Map<String, int>.of(_days)));
       if (mounted) setState(() { _progressStart = 4; _progressVersion++; });
     }
   }
@@ -45,7 +46,7 @@ class _OnboardingClosingPageState extends State<OnboardingClosingPage> {
   /// 입력을 초기화하고 다음 단계 연결을 기다린다.
   Future<void> _skip() async {
     setState(_days.clear);
-    await context.pushNamed('onboarding-income', extra: 3);
+    await context.pushNamed('onboarding-reminders', extra: const OnboardingSummary());
     if (mounted) setState(() { _progressStart = 4; _progressVersion++; });
   }
 

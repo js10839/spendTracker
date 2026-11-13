@@ -4,12 +4,14 @@ import 'package:go_router/go_router.dart';
 import 'home/home_page.dart';
 import 'auth/login_email_page.dart';
 import 'auth/login_code_page.dart';
+import 'auth/signup_page.dart';
 import 'auth/auth_service.dart';
 import 'auth/member_bootstrap.dart';
 import 'onboarding/onboarding_page.dart';
 import 'onboarding/onboarding_cards_page.dart';
 import 'onboarding/onboarding_closing_page.dart';
-import 'onboarding/onboarding_income_page.dart';
+// TODO: 수입 설정 화면을 다시 사용할 때 경로와 함께 복원한다.
+// import 'onboarding/onboarding_income_page.dart';
 import 'onboarding/onboarding_reminders_page.dart';
 import 'onboarding/onboarding_ready_page.dart';
 import 'onboarding/onboarding_setting_up_page.dart';
@@ -53,6 +55,15 @@ final GoRouter appRouter = GoRouter(
     ),
     // TODO: 로그아웃 및 앱 사용 중 세션 무효화 시 온보딩으로 이동한다.
     GoRoute(
+      path: '/signup',
+      name: 'signup',
+      redirect: (context, state) {
+        final access = state.extra;
+        return access is MemberHomeAccess && access.onboardingRequired && access.matchesSession(AuthService.instance) ? null : '/splash';
+      },
+      builder: (context, state) => const SignupPage(),
+    ),
+    GoRoute(
       path: '/login',
       name: 'login-email',
       builder: (context, state) => const LoginEmailPage(),
@@ -60,7 +71,9 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/login/code',
       name: 'login-code',
-      builder: (context, state) => LoginCodePage(email: state.extra is String ? state.extra as String : ''),
+      builder: (context, state) => LoginCodePage(
+        email: state.extra is String ? state.extra as String : '',
+      ),
     ),
     GoRoute(
       path: '/onboarding/setup/ready',
@@ -70,22 +83,34 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/onboarding/setup/reminders',
       name: 'onboarding-reminders',
-      builder: (context, state) => OnboardingRemindersPage(summary: state.extra is OnboardingSummary ? state.extra as OnboardingSummary : const OnboardingSummary()),
+      builder: (context, state) => OnboardingRemindersPage(
+        summary: state.extra is OnboardingSummary
+            ? state.extra as OnboardingSummary
+            : const OnboardingSummary(),
+      ),
     ),
     GoRoute(
       path: '/onboarding/setup/setting-up',
       name: 'onboarding-setting-up',
-      builder: (context, state) => OnboardingSettingUpPage(summary: state.extra is OnboardingSummary ? state.extra as OnboardingSummary : const OnboardingSummary()),
+      builder: (context, state) => OnboardingSettingUpPage(
+        summary: state.extra is OnboardingSummary
+            ? state.extra as OnboardingSummary
+            : const OnboardingSummary(),
+      ),
     ),
-    GoRoute(
-      path: '/onboarding/setup/income',
-      name: 'onboarding-income',
-      builder: (context, state) => OnboardingIncomePage(initialStep: state.extra is int ? state.extra as int : 3, cards: state.extra is Map<String, int> ? state.extra as Map<String, int> : const {}),
-    ),
+    // TODO: 수입 설정을 다시 포함할 때 연결한다.
+    // GoRoute(path: '/onboarding/setup/income', name: 'onboarding-income',
+    //   builder: (context, state) => OnboardingIncomePage(
+    //     initialStep: state.extra is int ? state.extra as int : 3,
+    //     cards: state.extra is Map<String, int> ? state.extra as Map<String, int> : const {},
+    //   ),
+    // ),
     GoRoute(
       path: '/onboarding/setup/closing',
       name: 'onboarding-closing',
-      builder: (context, state) => OnboardingClosingPage(cards: (state.extra as List<String>?) ?? const []),
+      builder: (context, state) => OnboardingClosingPage(
+        cards: (state.extra as List<String>?) ?? const [],
+      ),
     ),
     GoRoute(
       path: '/onboarding/setup/cards',

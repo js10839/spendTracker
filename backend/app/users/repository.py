@@ -74,3 +74,10 @@ def lock_bootstrap(db: Session, user_id: UUID) -> None:
     """같은 사용자의 bootstrap 요청을 트랜잭션이 끝날 때까지 순서대로 처리한다."""
     statement = text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))")
     db.execute(statement=statement, params={"lock_key": f"user-bootstrap{user_id}"})
+
+def complete_onboarding(db: Session, user: User, nickname: str) -> User:
+    """표시 이름과 가입 정보 완료 상태를 함께 반영한다."""
+    user.nickname = nickname
+    user.onboarding_completed = True
+    db.flush()
+    return user

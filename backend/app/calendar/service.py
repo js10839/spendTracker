@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy.engine import Connection
+from sqlalchemy.orm import Session
 
 from app.calendar import repository
 from app.calendar.schema import CalendarRead
@@ -11,7 +12,7 @@ from app.integrations.bankday import BankdayUnavailable, fetch_bank_holidays
 
 def ensure_bank_year(connection: Connection, year: int) -> None:
     """Preserve the income API's cache/stale-cache/unadjusted fallback policy."""
-    cached = repository.find_bank_year(connection, year)
+    cached = repository.find_bank_year(connection=connection, year=year)
     now = datetime.now(UTC)
     if cached and (
         year < now.year
@@ -22,10 +23,20 @@ def ensure_bank_year(connection: Connection, year: int) -> None:
         holidays = fetch_bank_holidays(year)
     except BankdayUnavailable:
         return  # SQL uses stale cache, or the original expected date if absent.
-    repository.upsert_bank_year(connection, year, holidays, now)
+    repository.upsert_bank_year(connection=connection, year=year, holidays=holidays, fetched_at=now)
+
+def read_calendar(db: Session, ledger_id: UUID, user_id:UUID, anchor_date: date, payment_method_id: UUID | None = None) -> CalendarRead:
+    """캘린더 조회와 휴일 캐시 갱신을 하나의 트랜잭션으로 처리한다."""
+    try:
+        result = _read_calendar(db.connection(), ledger_id=ledger_id, user_id=user_id, anchor_date=anchor_date, payment_method_id=payment_method_id)
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
 
 
-def read_calendar(
+def _read_calendar(
     connection: Connection,
     ledger_id: UUID,
     user_id: UUID,

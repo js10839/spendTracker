@@ -19,7 +19,7 @@ from sqlalchemy.schema import CreateSchema
 
 from app.auth.dependencies import get_current_user_id
 from app.calendar import repository, service
-from app.calendar.service import read_calendar
+from app.calendar.service import _read_calendar as read_calendar
 from app.core.config import settings
 from app.db.base import Base
 from app.db.models import (
@@ -64,6 +64,14 @@ def calendar_engine():
             conn.execute(
                 text("SELECT set_config('search_path', :schema, true)"),
                 {"schema": schema},
+            )
+            # Match migration bddcfc4a0a05 for retained schemas; create_all
+            # creates missing tables but does not add columns to existing ones.
+            conn.execute(
+                text(
+                    "ALTER TABLE test1.users ADD COLUMN IF NOT EXISTS "
+                    "onboarding_completed boolean NOT NULL DEFAULT false"
+                )
             )
             conn.execute(
                 text("""

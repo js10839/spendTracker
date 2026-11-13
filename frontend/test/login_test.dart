@@ -7,17 +7,23 @@ import 'package:spending_tracker/auth/login_email_page.dart';
 import 'package:spending_tracker/data/users/user_repository.dart';
 
 class FakeUserRepository implements UserRepository {
+  @override
+  Future<void> completeOnboarding(String nickname) async {}
+  @override
+  Future<String> getNicknameSuggestion() async => 'Mellow Otter';
   int calls = 0;
   bool shouldFail = false;
   @override
-  Future<String> bootstrap() async {
+  Future<UserBootstrapResult> bootstrap() async {
     calls++;
     if (shouldFail) throw StateError('unavailable');
-    return 'test-user';
+    return const UserBootstrapResult(userId: 'test-user', onboardingRequired: false);
   }
 }
 
 class FakeAuthService implements AuthService {
+  @override
+  String? get currentEmail => 'user@example.com';
   final Object sessionIdentity = Object();
   @override
   Object get currentSessionIdentity => sessionIdentity;

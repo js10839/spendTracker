@@ -11,10 +11,11 @@ abstract class AuthService {
 
   /// 현재 세션의 사용자와 만료 여부를 라우팅에 제공한다.
   String? get currentUserId;
+  String? get currentEmail;
   bool get hasCurrentUsableSession;
   Object? get currentSessionIdentity;
 
-  /// 기존 회원에게만 인증 코드를 발송한다.
+  /// 이메일로 로그인 또는 가입 인증 코드를 발송한다.
   Future<void> sendCode(String email);
 
   /// 이메일과 인증 코드를 검증해 로그인한다.
@@ -33,6 +34,8 @@ class UnconfiguredAuthService implements AuthService {
 
   @override
   String? get currentUserId => null;
+  @override
+  String? get currentEmail => null;
   @override
   bool get hasCurrentUsableSession => false;
   @override
@@ -60,6 +63,8 @@ class SupabaseAuthService implements AuthService {
 
   @override
   String? get currentUserId => client.auth.currentSession?.user.id;
+  @override
+  String? get currentEmail => client.auth.currentSession?.user.email;
   @override
   Object? get currentSessionIdentity => client.auth.currentSession;
   @override
@@ -95,8 +100,9 @@ class SupabaseAuthService implements AuthService {
   }
 
   @override
+  // 신규 가입과 기존 로그인 템플릿 모두 OTP 표시를 위해 {{ .Token }} 설정이 필요하다.
   Future<void> sendCode(String email) =>
-      client.auth.signInWithOtp(email: email, shouldCreateUser: false);
+      client.auth.signInWithOtp(email: email, shouldCreateUser: true);
 
   @override
   Future<void> verifyCode(String email, String code) async {

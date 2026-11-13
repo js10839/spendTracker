@@ -7,6 +7,8 @@ import 'package:spending_tracker/core/api_client.dart';
 import 'package:spending_tracker/data/users/user_repository.dart';
 
 class BootstrapAuth implements AuthService {
+  @override
+  String? get currentEmail => 'user@example.com';
   String userId = 'user';
   Object sessionIdentity = Object();
   @override
@@ -28,20 +30,28 @@ class BootstrapAuth implements AuthService {
 }
 
 class BootstrapUsers implements UserRepository {
+  @override
+  Future<void> completeOnboarding(String nickname) async {}
+  @override
+  Future<String> getNicknameSuggestion() async => 'Mellow Otter';
   int calls = 0;
   int status = 401;
   @override
-  Future<String> bootstrap() async {
+  Future<UserBootstrapResult> bootstrap() async {
     calls++;
     if (calls == 1) throw ApiException(status);
-    return 'user';
+    return const UserBootstrapResult(userId: 'user', onboardingRequired: false);
   }
 }
 
 class PendingUsers implements UserRepository {
-  final result = Completer<String>();
   @override
-  Future<String> bootstrap() => result.future;
+  Future<void> completeOnboarding(String nickname) async {}
+  @override
+  Future<String> getNicknameSuggestion() async => 'Mellow Otter';
+  final result = Completer<UserBootstrapResult>();
+  @override
+  Future<UserBootstrapResult> bootstrap() => result.future;
 }
 
 void main() {
@@ -73,7 +83,7 @@ void main() {
     final users = PendingUsers();
     final result = MemberBootstrap(auth, users).run();
     auth.userId = 'another-user';
-    users.result.complete('user');
+    users.result.complete(const UserBootstrapResult(userId: 'user', onboardingRequired: false));
     await expectLater(result, throwsStateError);
   });
 
@@ -81,7 +91,7 @@ void main() {
     final auth = BootstrapAuth();
     final users = PendingUsers();
     final future = MemberBootstrap(auth, users).run();
-    users.result.complete('user');
+    users.result.complete(const UserBootstrapResult(userId: 'user', onboardingRequired: false));
     final access = (await future)!;
     expect(access.matches(auth), isTrue);
     auth.sessionIdentity = Object();
