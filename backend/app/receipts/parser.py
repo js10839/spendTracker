@@ -1,4 +1,4 @@
-# Reencoding image + call the Vision LLM
+# Load image + Reencoding image + Call the Vision LLM
 
 import base64
 import io
@@ -13,20 +13,33 @@ from .prompts import SYSTEM_PROMPT
 from .schemas import ReceiptData
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
-MAX_PIXELS = 24_000_000
+# Allow 24 MP camera images such as 5712 x 4284 (24,470,208 pixels).
+MAX_PIXELS = 32_000_000
 MAX_EDGE = 2200
 
-# 업로드 파일 검증 + 재인코딩
+# (로컬 파일 경로 || 업로드 파일) 로드 
+# 파일 검증
 # 이미지를 문자열로 변환
-def prepare_image(path: Path) -> str:
+def prepare_image(path: Path | bytes) -> str:
+    # (업로드 파일)
+    if isinstance(path, bytes):
+        if len(path) > MAX_FILE_BYTES:
+            raise ValueError("Image exceeds 10 MB")
+        return _encode_image(io.BytesIO(path))
+
+    # (로컬 파일)
     # 경로 내 파일 없음
     if not path.is_file():
         raise ValueError(f"Image not found: {path}")
     # 파일 크기 제한
     if path.stat().st_size > MAX_FILE_BYTES:
         raise ValueError("Image exceeds 10 MB")
+    return _encode_image(path)
+
+# 이미지 재인코딩
+def _encode_image(source: Path | io.BytesIO) -> str:
     try:
-        with Image.open(path) as img:
+        with Image.open(source) as img:
             if img.format not in ("JPEG", "PNG", "WEBP", "MPO"): # 파일 검증
                 raise ValueError("Only JPEG, PNG, WEBP, MPO supported")
             if img.width * img.height > MAX_PIXELS:
@@ -43,7 +56,7 @@ def prepare_image(path: Path) -> str:
                 rgb.paste(img.convert("RGB"))
             output = io.BytesIO()
             rgb.save(output, format="JPEG", quality=90)
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValueError("Invalid image") from exc
     # JPEG → Base64 Data URL
     # data URL:image format/jpeg;base64 encoding, data
@@ -67,7 +80,7 @@ def prepare_image(path: Path) -> str:
 # receipt1 = parse_receipt(path1, client=my_client)
 # receipt2 = parse_receipt(path2, client=my_client)
 def parse_receipt(
-    image_path: Path,
+    image_path: Path | bytes,
     *,
     client: OpenAI | None = None,
     model: str | None = None
