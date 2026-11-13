@@ -1,25 +1,40 @@
-"""Real PostgreSQL coverage; every test rolls back in unique temporary schemas.
+"""Real PostgreSQL coverage with retained fixtures in test1 and test1_auth.
 
-Set CALENDAR_TEST_DB_URL, or explicitly opt into the local configured database
-with CALENDAR_TEST_USE_CONFIGURED_DB=1. No existing app/auth rows are touched.
+Set CALENDAR_TEST_DB_URL, or explicitly opt into the configured database with
+CALENDAR_TEST_USE_CONFIGURED_DB=1. App/auth data outside these schemas is untouched.
+Each test reuses a versioned dataset with stable IDs; inserts ignore duplicates.
+Only the shared holiday cache is reset before each test for deterministic results.
 """
 
 import os
 from datetime import UTC, date, datetime
-from uuid import uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, insert, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema, DropSchema
+from sqlalchemy.schema import CreateSchema
 
 from app.auth.dependencies import get_current_user_id
 from app.calendar import repository, service
 from app.calendar.service import _read_calendar as read_calendar
 from app.core.config import settings
 from app.db.base import Base
-from app.db.models import Category, Ledger, LedgerMember, User
+from app.db.models import (
+    BankCalendarYear,
+    Category,
+    DayNote,
+    IncomeRecord,
+    IncomeSource,
+    Ledger,
+    LedgerMember,
+    PaymentMethod,
+    Transaction,
+    TransactionItem,
+    User,
+)
 from app.db.models.user import auth_users
 from app.db.session import get_db
 from app.main import app
@@ -35,38 +50,110 @@ def calendar_engine():
             "Set CALENDAR_TEST_DB_URL to run PostgreSQL calendar integration tests"
         )
     engine = create_engine(url, connect_args={"connect_timeout": 10})
-    schema = "calendar_test_" + uuid4().hex
-    auth_schema = schema + "_auth"
+    schema = "test1"
+    auth_schema = "test1_auth"
     with engine.begin() as conn:
-        conn.execute(CreateSchema(schema))
-        conn.execute(CreateSchema(auth_schema))
+        conn.execute(CreateSchema(schema, if_not_exists=True))
+        conn.execute(CreateSchema(auth_schema, if_not_exists=True))
     isolated = engine.execution_options(
         schema_translate_map={None: schema, "auth": auth_schema}
     )
     try:
         Base.metadata.create_all(isolated)
+        with isolated.begin() as conn:
+            conn.execute(
+                text("SELECT set_config('search_path', :schema, true)"),
+                {"schema": schema},
+            )
+            # Match migration bddcfc4a0a05 for retained schemas; create_all
+            # creates missing tables but does not add columns to existing ones.
+            conn.execute(
+                text(
+                    "ALTER TABLE test1.users ADD COLUMN IF NOT EXISTS "
+                    "onboarding_completed boolean NOT NULL DEFAULT false"
+                )
+            )
+            conn.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS calendar_test_cases (
+                    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                    test_name text NOT NULL,
+                    fixture_ids jsonb NOT NULL,
+                    created_at timestamptz NOT NULL DEFAULT now()
+                )
+            """)
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_calendar_test_cases_name "
+                    "ON calendar_test_cases (test_name)"
+                )
+            )
         yield isolated
     finally:
-        with engine.begin() as conn:
-            conn.execute(DropSchema(schema, cascade=True))
-            conn.execute(DropSchema(auth_schema, cascade=True))
-        engine.dispose()
+        engine.dispose()  # Keep schemas and rows for inspection in Supabase.
 
 
 @pytest.fixture
-def db(calendar_engine, monkeypatch):
+def db(calendar_engine, monkeypatch, request):
     # Bankday is deterministic here; API cache failure is tested separately.
     monkeypatch.setattr(service, "fetch_bank_holidays", lambda year: set())
     with calendar_engine.connect() as conn:
         transaction = conn.begin()
-        yield conn
-        transaction.rollback()
+        # Raw SQL does not honor SQLAlchemy's schema_translate_map. Keep its
+        # unqualified table names inside the same persistent test schema as ORM setup.
+        schema = calendar_engine.get_execution_options()["schema_translate_map"][None]
+        conn.execute(
+            text("SELECT set_config('search_path', :schema, true)"), {"schema": schema}
+        )
+        assert conn.scalar(text("SELECT current_schema()")) == schema
+        # Holiday-provider tests need a known initial cache, independent of prior
+        # runs. Financial fixtures remain intact and are scoped to per-test ledgers.
+        conn.execute(text("DELETE FROM bank_calendar_years"))
+        conn.info["calendar_test_name"] = request.node.nodeid
+        conn.info["calendar_seed_index"] = 0
+        try:
+            yield conn
+        finally:
+            try:
+                transaction.commit()
+            finally:
+                conn.info.pop("calendar_test_name", None)
+                conn.info.pop("calendar_seed_index", None)
 
 
 @pytest.fixture
 def data(db):
+    # One indexed lookup skips base data creation on subsequent runs. The
+    # version separates reusable datasets from earlier randomly generated ones.
+    existing = db.scalar(
+        text(
+            "SELECT fixture_ids FROM calendar_test_cases "
+            "WHERE test_name = :name AND fixture_ids ->> '_version' = '1' "
+            "ORDER BY id DESC LIMIT 1"
+        ),
+        {"name": db.info["calendar_test_name"]},
+    )
+    if existing is not None:
+        return {
+            key: UUID(value) for key, value in existing.items() if key != "_version"
+        }
     user, other, ledger, other_ledger, card, second, cash, foreign, category = [
-        uuid4() for _ in range(9)
+        uuid5(
+            NAMESPACE_URL,
+            f"spendTracker/calendar/v1/{db.info['calendar_test_name']}/{role}",
+        )
+        for role in (
+            "user",
+            "other",
+            "ledger",
+            "other_ledger",
+            "card",
+            "second",
+            "cash",
+            "foreign",
+            "category",
+        )
     ]
     db.execute(insert(auth_users), [{"id": user}, {"id": other}])
     db.execute(insert(User.__table__), [{"id": user}, {"id": other}])
@@ -82,7 +169,7 @@ def data(db):
         {"ledger_id": ledger, "user_id": user, "role": "owner"},
     )
     db.execute(
-        insert(repository.methods),
+        insert(PaymentMethod.__table__),
         [
             {
                 "id": card,
@@ -118,8 +205,13 @@ def data(db):
             },
         ],
     )
-    db.execute(insert(Category.__table__), {"id": category, "name": "Food"})
-    return {
+    category = db.scalar(
+        pg_insert(Category.__table__)
+        .values(id=category, name="Food")
+        .on_conflict_do_update(index_elements=["name"], set_={"name": "Food"})
+        .returning(Category.id)
+    )
+    fixture_ids = {
         "user": user,
         "other": other,
         "ledger": ledger,
@@ -130,16 +222,47 @@ def data(db):
         "foreign": foreign,
         "category": category,
     }
+    import json
+
+    db.execute(
+        text(
+            "INSERT INTO calendar_test_cases (test_name, fixture_ids) "
+            "VALUES (:name, CAST(:ids AS jsonb))"
+        ),
+        {
+            "name": db.info["calendar_test_name"],
+            "ids": json.dumps(
+                {
+                    "_version": "1",
+                    **{key: str(value) for key, value in fixture_ids.items()},
+                }
+            ),
+        },
+    )
+    return fixture_ids
+
+
+def seed_insert(db, table, values):
+    """Reuse deterministic sample rows without SELECTs for individual inserts."""
+    index = db.info["calendar_seed_index"]
+    db.info["calendar_seed_index"] = index + 1
+    identifier = uuid5(
+        NAMESPACE_URL,
+        f"spendTracker/calendar/v1/{db.info['calendar_test_name']}/{table.name}/{index}",
+    )
+    db.execute(
+        pg_insert(table).values(id=identifier, **values).on_conflict_do_nothing()
+    )
+    return identifier
 
 
 def transaction(
     db, data, day, amount=100, method=None, ledger=None, deleted=False, item_count=0
 ):
-    identifier = uuid4()
-    db.execute(
-        insert(repository.transactions),
+    identifier = seed_insert(
+        db,
+        Transaction.__table__,
         {
-            "id": identifier,
             "ledger_id": ledger or data["ledger"],
             "payment_method_id": method or data["card"],
             "transacted_at": date.fromisoformat(day),
@@ -152,8 +275,9 @@ def transaction(
         },
     )
     for index in range(item_count):
-        db.execute(
-            insert(repository.items),
+        seed_insert(
+            db,
+            TransactionItem.__table__,
             {
                 "transaction_id": identifier,
                 "name": f"Item {index}",
@@ -173,11 +297,10 @@ def plan(
     income_type="paycheck",
     **extra,
 ):
-    identifier = uuid4()
-    db.execute(
-        insert(repository.sources),
+    identifier = seed_insert(
+        db,
+        IncomeSource.__table__,
         {
-            "id": identifier,
             "ledger_id": data["ledger"],
             "income_type": income_type,
             "from_name": "Employer",
@@ -193,22 +316,28 @@ def plan(
 
 @pytest.mark.parametrize("closing", [None, 1, 12, 28, 29, 30, 31])
 def test_periods_partition_dates_and_navigation(db, closing):
-    # One batched SQL statement covers leap February, ordinary February and New
-    # Year for every supported closing-day edge, including anchor-on-close.
+    # Batch leap February, ordinary February and New Year, including
+    # anchor-on-close, using the same raw period SQL as the endpoint.
     from calendar import monthrange
-
-    from sqlalchemy import union_all
 
     anchors = [
         date(year, month, day)
         for year, month in [(2024, 2), (2025, 2), (2026, 12)]
         for day in range(1, monthrange(year, month)[1] + 1)
     ]
+    values = ", ".join(f"(CAST(:anchor_{i} AS date), {i})" for i in range(len(anchors)))
+    period_sql = repository.PERIOD_SQL.replace(":anchor_date", "a.anchor_date")
     rows = (
         db.execute(
-            union_all(
-                *[repository.period_statement(anchor, closing) for anchor in anchors]
-            )
+            text(
+                f"WITH anchors(anchor_date, ordinal) AS (VALUES {values}) "
+                f"SELECT bounds.* FROM anchors a CROSS JOIN LATERAL ({period_sql}) bounds "
+                "ORDER BY a.ordinal"
+            ),
+            {
+                "closing_day": closing,
+                **{f"anchor_{i}": day for i, day in enumerate(anchors)},
+            },
         )
         .mappings()
         .all()
@@ -260,16 +389,18 @@ def test_card_filter_keeps_notes_but_hides_other_closings_and_general_income(db,
     transaction(db, data, "2026-11-12")
     transaction(db, data, "2026-11-13")
     transaction(db, data, "2026-11-06", method=data["second"])
-    db.execute(
-        insert(repository.notes),
+    seed_insert(
+        db,
+        DayNote.__table__,
         {
             "ledger_id": data["ledger"],
             "note_date": date(2026, 10, 31),
             "content": "Pay bills",
         },
     )
-    db.execute(
-        insert(repository.records),
+    seed_insert(
+        db,
+        IncomeRecord.__table__,
         {
             "ledger_id": data["ledger"],
             "income_type": "other",
@@ -346,8 +477,9 @@ def test_income_filter_matches_type_card_and_status(db, data, monkeypatch, selec
             payment_method_id=method,
             expected_amount_cents=amount,
         )
-        db.execute(
-            insert(repository.records),
+        seed_insert(
+            db,
+            IncomeRecord.__table__,
             {
                 "ledger_id": data["ledger"],
                 "income_type": income_type,
@@ -362,8 +494,9 @@ def test_income_filter_matches_type_card_and_status(db, data, monkeypatch, selec
         {"received_at": date(2027, 1, 1)},
         {"deleted_at": datetime.now(UTC)},
     ]:
-        db.execute(
-            insert(repository.records),
+        seed_insert(
+            db,
+            IncomeRecord.__table__,
             {
                 "ledger_id": data["ledger"],
                 "income_type": "cashback",
@@ -435,8 +568,9 @@ def test_recurring_income_holiday_boundary_and_deleted_records(db, data, monkeyp
     plan(db, data, "2026-10-15", is_active=False)
     plan(db, data, "2026-10-15", deleted_at=datetime.now(UTC))
     for deleted in [None, datetime.now(UTC)]:
-        db.execute(
-            insert(repository.records),
+        seed_insert(
+            db,
+            IncomeRecord.__table__,
             {
                 "ledger_id": data["ledger"],
                 "income_type": "other",
@@ -486,9 +620,9 @@ def test_monthly_reference_day_survives_february_and_year_shift(db, data, monkey
     )
 
 
-def test_api_uses_real_authorization_and_core_response(db, data):
-    # Join the fixture transaction with savepoints so the route's commit cannot
-    # persist fixtures or end the outer test rollback.
+def test_api_uses_real_authorization_and_raw_sql_response(db, data):
+    # Keep route commits inside savepoints; the fixture commits the outer
+    # transaction afterward so the dataset remains available for inspection.
     with Session(bind=db, join_transaction_mode="create_savepoint") as session:
         app.dependency_overrides[get_db] = lambda: session
         app.dependency_overrides[get_current_user_id] = lambda: data["user"]
@@ -546,7 +680,7 @@ def test_holiday_provider_failure_uses_original_date_or_stale_cache(
     result = read_calendar(db, data["ledger"], data["user"], date(2026, 11, 1))
     assert len(result.days[7].income) == 1
     db.execute(
-        insert(repository.bank_years),
+        insert(BankCalendarYear.__table__),
         {
             "year": 2026,
             "holidays": ["2026-11-06"],
@@ -559,8 +693,9 @@ def test_holiday_provider_failure_uses_original_date_or_stale_cache(
 
 def test_confirmed_occurrence_is_received_without_duplicate_plan(db, data):
     source = plan(db, data, "2026-11-30", "monthly", reference="2026-10-31")
-    db.execute(
-        insert(repository.records),
+    seed_insert(
+        db,
+        IncomeRecord.__table__,
         {
             "ledger_id": data["ledger"],
             "income_source_id": source,
@@ -597,14 +732,9 @@ def test_constant_query_count_and_explain(db, data):
     statement = repository.calendar_statement(
         data["ledger"], data["user"], result.start_date, result.end_date, None
     )
-    sql = statement.compile(
-        dialect=db.dialect,
-        schema_translate_map=db.get_execution_options()["schema_translate_map"],
-        render_schema_translate=True,
-        compile_kwargs={"literal_binds": True},
-    )
-    explanation = db.exec_driver_sql(
-        "EXPLAIN (ANALYZE, FORMAT JSON) " + str(sql)
+    explanation = db.execute(
+        text("EXPLAIN (ANALYZE, FORMAT JSON) " + repository.CALENDAR_SQL),
+        statement.compile().params,
     ).scalar_one()[0]
     assert explanation["Plan"]["Actual Rows"] == 1
     print(
