@@ -9,6 +9,7 @@ from app.receipts.parser import parse_receipt
 from app.receipts.schemas import ReceiptData
 from app.receipts.validator import ValidationReport, validate_receipt
 
+
 # 반환: {receipt, validation}
 class ReceiptParseResponse(BaseModel):
     receipt: ReceiptData
