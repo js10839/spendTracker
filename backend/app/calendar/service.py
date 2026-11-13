@@ -2,8 +2,6 @@ from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Connection
 
 from app.calendar import repository
@@ -13,12 +11,7 @@ from app.integrations.bankday import BankdayUnavailable, fetch_bank_holidays
 
 def ensure_bank_year(connection: Connection, year: int) -> None:
     """Preserve the income API's cache/stale-cache/unadjusted fallback policy."""
-    table = repository.bank_years
-    cached = (
-        connection.execute(select(table).where(table.c.year == year))
-        .mappings()
-        .one_or_none()
-    )
+    cached = repository.find_bank_year(connection, year)
     now = datetime.now(UTC)
     if cached and (
         year < now.year
@@ -29,15 +22,7 @@ def ensure_bank_year(connection: Connection, year: int) -> None:
         holidays = fetch_bank_holidays(year)
     except BankdayUnavailable:
         return  # SQL uses stale cache, or the original expected date if absent.
-    statement = insert(table).values(
-        year=year, holidays=sorted(day.isoformat() for day in holidays), fetched_at=now
-    )
-    connection.execute(
-        statement.on_conflict_do_update(
-            index_elements=[table.c.year],
-            set_={"holidays": statement.excluded.holidays, "fetched_at": now},
-        )
-    )
+    repository.upsert_bank_year(connection, year, holidays, now)
 
 
 def read_calendar(
