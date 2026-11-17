@@ -530,7 +530,7 @@ html{scroll-behavior:auto}
 <section id="s5">
 <div class="sec-head"><span class="sec-ico">🗄️</span><h2>데이터 모델</h2></div>
 <p class="lead">지출 결제는 <code>ledger</code>에, 내 지갑의 결제수단은 <code>user</code>에 귀속된다. 카테고리는 전체 공통 목록이며 각 일반 품목이 이를 참조한다. 로그인 credential은 Supabase Auth가 별도로 관리한다. <code>public.users.id = auth.users.id</code>로 연결한다. 금액은 <em>cents 정수</em>로 저장·전송하고 Flutter 화면에서는 USD로 포맷한다(예: 1099 → $10.99, -1000 → -$10.00).</p>
-<p>사용자 bootstrap 시 기본 <code>Cash</code> 결제수단을 한 번 생성한다. Cash는 현금 결제만 뜻하고, 은행 이체로 지출할 때는 별도의 <code>cash-like</code> 결제수단을 지갑에 등록한다. 계좌 사이의 단순 이체는 지출 거래가 아니다.</p>
+<p>사용자 bootstrap 시 기본 <code>Cash</code> 결제수단을 한 번 생성한다. Cash에는 현금과 계좌이체로 지불한 지출을 함께 기록한다. 본인 계좌 사이의 단순 자금 이동은 지출 거래가 아니다.</p>
 <p><strong>현행 구현과 확정 목표를 구분한다.</strong> SQLAlchemy/Alembic에는 <code>income_sources</code>·<code>income_records</code>를 포함한 모델과 결제 헤더 <code>transactions</code> 1건 + 필수 품목 <code>transaction_items</code> 1건 이상 구조가 있다. 수동 결제 생성·기간 조회·품목 추가·수정·제거·거래 soft delete API가 작성됐다. <code>total_cents</code>·Refund 카테고리·활성 거래 부분 인덱스 migration은 DB에 적용됐다; 인증 의존성을 대체한 실제 DB API 검증에서 생성·조회·수정·삭제가 통과했고 임시 데이터는 롤백했다. 품목 수량은 저장하지 않고 한 줄의 전체 금액을 <code>amount_cents</code>에 저장한다. 영수증 파싱 생성은 미구현이고, 관리자 복구·30일 경과 정리는 내부 코드만 있어 운영 연결 전이다. <code>receipts</code>·<code>categorization_rules</code>·<code>transactions.receipt_id</code>는 Phase 2 계획이며, <code>categories</code>는 공통 목록이다.</p>
 <p>수입은 실제 기록과 예정 규칙의 생성·조회·수정, 입금 확정, 두 종류의 soft delete와 확정 Undo API가 있다. 삭제 시각과 원래 예정일을 추가한 migration까지 DB에 적용됐고 확인된 head는 <code>c2b9befbaace</code>이다. HTTP 경로는 임시 SQLite에서, Service·Repository의 예정 생성·확정·Undo·삭제·관리자 복구 흐름은 임시 프로필·가계부를 이용해 실제 PostgreSQL에서 확인했다. 외부 트랜잭션을 롤백한 후 관련 테이블이 0건임을 확인했다. 실제 JWT를 이용한 수입 API 검증은 아직 하지 않았다. 30일 이내 관리자 복구 함수와 만료 정리 명령을 작성하고 FK 제약을 켠 임시 DB에서 기록 보존을 확인했다. 배포 스케줄러·관리자 운영 절차·달력 통합 표시·알림 실행은 후속 작업이다.</p>
 <div class="demo" style="padding-bottom:18px">
@@ -782,9 +782,11 @@ html{scroll-behavior:auto}
 <li>날짜 셀엔 결제수단별 <em>색 도트만</em> (금액 없음). cash-like도 색 보유. Demo B가 이 명세.</li>
 <li>마감일 셀 = 카드 색 배경 + <em>사이클 누적액만</em> — 카드명 생략, 색이 식별. 하단 색 범례.</li>
 <li>오늘은 테두리 강조. 하단 패널: 선택 날짜 거래 리스트(도트 포함). 상단에 그 달 합계.</li>
-<li>Detail Mode를 기본으로, Simple Mode는 주요 closing date 중심으로 축약한다. 날짜별 메모를 추가하고 존재 여부는 아이콘 상태로 표시하는 방향이다. 거래별 <code>transactions.memo</code>와는 별개이며 저장 구조·전환 UX는 TBD.</li>
+<li>Detail Mode를 기본으로, Simple Mode는 주요 closing date 중심으로 축약한다. 메모는 개별 거래의 <code>transactions.memo</code>에만 기록한다.</li>
+<li>거래 메모는 <code>PATCH /ledgers/{ledger_id}/transactions/{transaction_id}/memo</code>로 별도 수정한다. <code>null</code>·빈 문자열·공백만 입력하면 메모를 지우며 다른 거래 데이터는 변경하지 않는다.</li>
 <li>일반 달력은 월 단위로 탐색하고 현재 월의 미래 날짜도 같은 기본 스타일로 표시한다. 카드 선택 시 시작일이 보이는 사이클 범위로 재배치하는 UI는 검토 중이며, 이전/다음 달 날짜 노출은 TBD.</li>
 <li>월간 합계와 카드별 billing-cycle 합계는 서로 다른 기간이다. 사이클은 마감일 다음 날부터 다음 마감일까지 양 끝을 포함하고, 전월·다음 월 날짜까지 걸칠 수 있다. 월말·윤년·연도 경계와 카드별 마감일은 계산 테스트 대상이다.</li>
+<li>Cash를 포함한 <code>cash-like</code> 결제수단 선택 시 일반 월의 해당 결제수단 거래를 표시한다. 달력 API의 <code>mode</code>는 <code>cash</code>이며 수입과 카드 마감일은 표시하지 않는다.</li>
 </ul></div>
 </details>
 <details class="acc">

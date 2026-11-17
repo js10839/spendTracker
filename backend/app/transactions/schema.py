@@ -66,6 +66,17 @@ class TransactionGroupUpdate(BaseModel):
     tip_cents: int = Field(ge=0)
     items: list[TransactionItemUpdate] = Field(min_length=1)
 
+class TransactionMemoUpdate(BaseModel):
+    """거래 메모만 전달하고 null 또는 빈 문자열로 지운다."""
+    model_config = ConfigDict(extra="forbid")
+
+    memo: str | None
+
+class TransactionMemoRead(BaseModel):
+    """변경된 거래 ID와 메모를 반환한다."""
+    id: UUID
+    memo: str | None
+
 class TransactionSearchItemRead(BaseModel):
     """검색에 일치한 품목과 캘린더 표시 정보를 반환한다."""
 

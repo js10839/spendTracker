@@ -71,9 +71,9 @@ curl -X POST http://127.0.0.1:8000/users/me/bootstrap \
 ## Calendar API
 
 `GET /ledgers/{ledger_id}/calendar?anchor_date=2026-11-06` returns the ordinary
-month. Add `payment_method_id=<credit-card UUID>` to resolve that card's billing
-cycle and limit transactions to that card. The card must belong to the caller;
-invalid, foreign and cash-like selections return 404. Ledger membership and
+month. Add `payment_method_id` to filter transactions by a wallet entry owned by
+the caller. A credit card selects its billing cycle; a cash-like method selects
+the ordinary month and returns `mode: "cash"`. Missing or foreign methods return 404. Ledger membership and
 active-account checks apply as on other ledger routes. Anchor years 2–9997 are
 supported, leaving space for adjacent periods and holiday years.
 
@@ -81,11 +81,13 @@ The response contains `mode`, `payment_method_id`, inclusive `start_date` and
 `end_date`, `previous_anchor_date`, `next_anchor_date`, `payment_methods`, `cards`, and
 ordered `days` including empty dates. Each day includes full `transactions` and
 their `items`, `dots` with payment-method colors/counts, planned/received `income`,
-`closing_cards`, `note`, `spending_cents`, and `received_income_cents`. All mode
+`closing_cards`, `spending_cents`, and `received_income_cents`. All mode
 includes Paycheck, Cashback and Other income. Card mode includes only planned or
 received Cashback linked to that card; received-income totals follow the same
 filter. All mode shows every wallet card's closing event; card mode shows only
-the selected card's closing event. Notes remain visible in either mode.
+the selected card's closing event. Cash mode excludes income and closing events.
+The default Cash method covers both cash and
+bank-transfer expenses; transfers between the user's own accounts are not expenses.
 Stored transaction totals already include tax/tip; planned income does not count
 as received money. A closing day of 12 yields the 13th through the following 12th;
 days 29–31 clamp to the month's actual last date.
@@ -97,9 +99,8 @@ stale holidays are used where available; without a calendar, the expected payday
 is returned unadjusted. Only refreshed holiday caches are written by this GET.
 
 To verify in `/docs`, authorize with an existing access token, expand the calendar
-GET, supply your ledger UUID and anchor date, and optionally a card UUID. Use its
-returned navigation anchors for adjacent windows. Notes still use the existing
-day-note PUT, followed by a reload.
+GET, supply your ledger UUID and anchor date, and optionally a payment-method UUID. Use its
+returned navigation anchors for adjacent windows.
 
 ### Calendar PostgreSQL tests
 

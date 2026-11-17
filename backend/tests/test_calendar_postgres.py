@@ -25,7 +25,6 @@ from app.db.base import Base
 from app.db.models import (
     BankCalendarYear,
     Category,
-    DayNote,
     IncomeRecord,
     IncomeSource,
     Ledger,
@@ -384,20 +383,11 @@ def test_full_day_items_dots_totals_and_empty_days(db, data):
     assert result.days[0].spending_cents == 0
 
 
-def test_card_filter_keeps_notes_but_hides_other_closings_and_general_income(db, data):
+def test_card_filter_hides_other_closings_and_general_income(db, data):
     transaction(db, data, "2026-10-13")
     transaction(db, data, "2026-11-12")
     transaction(db, data, "2026-11-13")
     transaction(db, data, "2026-11-06", method=data["second"])
-    seed_insert(
-        db,
-        DayNote.__table__,
-        {
-            "ledger_id": data["ledger"],
-            "note_date": date(2026, 10, 31),
-            "content": "Pay bills",
-        },
-    )
     seed_insert(
         db,
         IncomeRecord.__table__,
@@ -418,7 +408,6 @@ def test_card_filter_keeps_notes_but_hides_other_closings_and_general_income(db,
     )
     assert sum(len(day.transactions) for day in result.days) == 2
     day = next(day for day in result.days if day.date == date(2026, 10, 31))
-    assert day.note.content == "Pay bills"
     assert day.income == []
     assert day.received_income_cents == 0
     assert day.closing_cards == []
@@ -535,8 +524,58 @@ def test_income_filter_matches_type_card_and_status(db, data, monkeypatch, selec
         assert day.received_income_cents == 1500
 
 
-@pytest.mark.parametrize("kind", ["cash", "foreign", "missing"])
-def test_invalid_selected_card_is_404(db, data, kind):
+@pytest.mark.parametrize("selected", [None, "card", "cash"])
+def test_calendar_unqualified_tables_with_recursive_ctes(db, data, selected):
+    """스키마 없는 테이블 이름을 쓰는 실제 요청에서도 달력을 조회한다."""
+    transaction(db, data, "2026-11-06", amount=200, method=data["cash"])
+    transaction(db, data, "2026-11-06", amount=300, method=data["card"])
+    schema_map = db.get_execution_options()["schema_translate_map"]
+    db.execute(text("SELECT set_config('search_path', :schema, true)"), {"schema": schema_map[None]})
+    db.execution_options(schema_translate_map=None)
+
+    with Session(bind=db, join_transaction_mode="create_savepoint") as session:
+        app.dependency_overrides[get_db] = lambda: session
+        app.dependency_overrides[get_current_user_id] = lambda: data["user"]
+        try:
+            with TestClient(app) as client:
+                params = {"anchor_date": "2026-11-06"}
+                if selected:
+                    params["payment_method_id"] = str(data[selected])
+                response = client.get(f"/ledgers/{data['ledger']}/calendar", params=params)
+                assert response.status_code == 200
+                body = response.json()
+                assert body["mode"] == (selected or "all")
+                day = next(day for day in body["days"] if day["date"] == "2026-11-06")
+                assert day["spending_cents"] == {None: 500, "card": 300, "cash": 200}[selected]
+                assert len(day["transactions"]) == (2 if selected is None else 1)
+        finally:
+            app.dependency_overrides.clear()
+
+
+def test_cash_calendar_filters_transactions_and_hides_income(db, data):
+    """Cash는 월별 거래만 보여주고 모든 수입과 마감일을 숨긴다."""
+    transaction(db, data, "2026-11-06", amount=200, method=data["cash"])
+    transaction(db, data, "2026-11-06", amount=300, method=data["card"])
+    transaction(db, data, "2026-10-31", method=data["cash"])
+    transaction(db, data, "2026-11-06", method=data["cash"], deleted=True)
+    transaction(db, data, "2026-11-06", method=data["cash"], ledger=data["other_ledger"])
+    for income_type, method in [("paycheck", None), ("cashback", data["cash"])]:
+        plan(db, data, "2026-11-06", income_type=income_type, payment_method_id=method)
+        seed_insert(db, IncomeRecord.__table__, {"ledger_id": data["ledger"], "income_type": income_type, "payment_method_id": method, "amount_cents": 100, "received_at": date(2026, 11, 6)})
+
+    result = read_calendar(db, data["ledger"], data["user"], date(2026, 11, 6), data["cash"])
+    assert result.mode == "cash"
+    assert result.payment_method_id == data["cash"]
+    assert (result.start_date, result.end_date) == (date(2026, 11, 1), date(2026, 11, 30))
+    assert len(result.days) == 30
+    day = result.days[5]
+    assert [item.payment_method_id for item in day.transactions] == [data["cash"]]
+    assert day.spending_cents == 200
+    assert all(not day.income and day.received_income_cents == 0 and not day.closing_cards for day in result.days)
+
+
+@pytest.mark.parametrize("kind", ["foreign", "missing"])
+def test_invalid_selected_payment_method_is_404(db, data, kind):
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as error:
@@ -632,6 +671,10 @@ def test_api_uses_real_authorization_and_raw_sql_response(db, data):
                 response = client.get(path, params={"anchor_date": "2026-11-06"})
                 assert response.status_code == 200
                 assert len(response.json()["days"]) == 30
+                cash_response = client.get(path, params={"anchor_date": "2026-11-06", "payment_method_id": str(data["cash"])})
+                assert cash_response.status_code == 200
+                assert cash_response.json()["mode"] == "cash"
+                assert cash_response.json()["payment_method_id"] == str(data["cash"])
                 assert client.get(path).status_code == 422
                 assert (
                     client.get(path, params={"anchor_date": "bad"}).status_code == 422
