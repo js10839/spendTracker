@@ -81,12 +81,12 @@ The response contains `mode`, `payment_method_id`, inclusive `start_date` and
 `end_date`, `previous_anchor_date`, `next_anchor_date`, `payment_methods`, `cards`, and
 ordered `days` including empty dates. Each day includes full `transactions` and
 their `items`, `dots` with payment-method colors/counts, planned/received `income`,
-`closing_cards`, `note`, `spending_cents`, and `received_income_cents`. All mode
+`closing_cards`, `spending_cents`, and `received_income_cents`. All mode
 includes Paycheck, Cashback and Other income. Card mode includes only planned or
 received Cashback linked to that card; received-income totals follow the same
 filter. All mode shows every wallet card's closing event; card mode shows only
 the selected card's closing event. Cash mode excludes income and closing events.
-Notes remain visible in all modes. The default Cash method covers both cash and
+The default Cash method covers both cash and
 bank-transfer expenses; transfers between the user's own accounts are not expenses.
 Stored transaction totals already include tax/tip; planned income does not count
 as received money. A closing day of 12 yields the 13th through the following 12th;
@@ -100,8 +100,7 @@ is returned unadjusted. Only refreshed holiday caches are written by this GET.
 
 To verify in `/docs`, authorize with an existing access token, expand the calendar
 GET, supply your ledger UUID and anchor date, and optionally a payment-method UUID. Use its
-returned navigation anchors for adjacent windows. Notes still use the existing
-day-note PUT, followed by a reload.
+returned navigation anchors for adjacent windows.
 
 ### Calendar PostgreSQL tests
 

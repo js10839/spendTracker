@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.calendar.router import router as calendar_router
 from app.categories.router import router as categories_router
 from app.core.config import settings
-from app.day_notes.router import router as day_notes_router
 from app.income.router import router as income_router
 from app.ledgers.router import router as ledgers_router
 from app.payment_methods.router import router as payment_methods_router
@@ -37,8 +36,6 @@ app.include_router(categories_router)
 app.include_router(transaction_router)
 # 가계부 멤버의 수입 기록 API를 연결한다.
 app.include_router(income_router)
-# 가계부별 하루 메모 기록 API를 연결한다
-app.include_router(day_notes_router)
 app.include_router(calendar_router)
 
 @app.get("/health/live")

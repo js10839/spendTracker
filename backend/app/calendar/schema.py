@@ -4,7 +4,6 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.day_notes.schema import DayNoteRead
 from app.income.schema import IncomeCalendarEntryRead
 from app.transactions.schema import TransactionGroupRead
 
@@ -30,7 +29,6 @@ class CalendarDayRead(BaseModel):
     dots: list[CalendarDotRead]
     income: list[IncomeCalendarEntryRead]
     closing_cards: list[CalendarPaymentMethodRead]
-    note: DayNoteRead | None
     spending_cents: int
     received_income_cents: int
 

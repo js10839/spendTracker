@@ -238,26 +238,17 @@ closings AS (
          EXTRACT(day FROM date_trunc('month', d.date) + INTERVAL '1 month - 1 day')::integer) - 1
     GROUP BY d.date
 ),
-active_notes AS (
-    SELECT n.* FROM day_notes n, params p
-    WHERE n.ledger_id = p.ledger_id AND n.note_date BETWEEN p.start_date AND p.end_date
-      AND btrim(n.content) <> ''
-),
 daily AS (
     SELECT d.date, COALESCE(t.transactions, '[]'::jsonb) AS transactions,
            COALESCE(dots.dots, '[]'::jsonb) AS dots,
            COALESCE(i.income, '[]'::jsonb) AS income,
            COALESCE(c.closing_cards, '[]'::jsonb) AS closing_cards,
-           CASE WHEN n.id IS NOT NULL THEN jsonb_build_object(
-               'id', n.id, 'ledger_id', n.ledger_id, 'note_date', n.note_date,
-               'content', n.content) END AS note,
            COALESCE(t.spending_cents, 0) AS spending_cents,
            COALESCE(i.received_income_cents, 0) AS received_income_cents
     FROM dates d LEFT JOIN daily_transactions t ON t.date = d.date
     LEFT JOIN daily_dots dots ON dots.date = d.date
     LEFT JOIN daily_income i ON i.date = d.date
     LEFT JOIN closings c ON c.date = d.date
-    LEFT JOIN active_notes n ON n.note_date = d.date
 )
 SELECT (SELECT COALESCE(jsonb_agg(details ORDER BY id), '[]'::jsonb)
         FROM method_details) AS payment_methods,

@@ -782,10 +782,11 @@ html{scroll-behavior:auto}
 <li>날짜 셀엔 결제수단별 <em>색 도트만</em> (금액 없음). cash-like도 색 보유. Demo B가 이 명세.</li>
 <li>마감일 셀 = 카드 색 배경 + <em>사이클 누적액만</em> — 카드명 생략, 색이 식별. 하단 색 범례.</li>
 <li>오늘은 테두리 강조. 하단 패널: 선택 날짜 거래 리스트(도트 포함). 상단에 그 달 합계.</li>
-<li>Detail Mode를 기본으로, Simple Mode는 주요 closing date 중심으로 축약한다. 날짜별 메모를 추가하고 존재 여부는 아이콘 상태로 표시하는 방향이다. 거래별 <code>transactions.memo</code>와는 별개이며 저장 구조·전환 UX는 TBD.</li>
+<li>Detail Mode를 기본으로, Simple Mode는 주요 closing date 중심으로 축약한다. 메모는 개별 거래의 <code>transactions.memo</code>에만 기록한다.</li>
+<li>거래 메모는 <code>PATCH /ledgers/{ledger_id}/transactions/{transaction_id}/memo</code>로 별도 수정한다. <code>null</code>·빈 문자열·공백만 입력하면 메모를 지우며 다른 거래 데이터는 변경하지 않는다.</li>
 <li>일반 달력은 월 단위로 탐색하고 현재 월의 미래 날짜도 같은 기본 스타일로 표시한다. 카드 선택 시 시작일이 보이는 사이클 범위로 재배치하는 UI는 검토 중이며, 이전/다음 달 날짜 노출은 TBD.</li>
 <li>월간 합계와 카드별 billing-cycle 합계는 서로 다른 기간이다. 사이클은 마감일 다음 날부터 다음 마감일까지 양 끝을 포함하고, 전월·다음 월 날짜까지 걸칠 수 있다. 월말·윤년·연도 경계와 카드별 마감일은 계산 테스트 대상이다.</li>
-<li>Cash를 포함한 <code>cash-like</code> 결제수단 선택 시 일반 월의 해당 결제수단 거래와 날짜 메모를 표시한다. 달력 API의 <code>mode</code>는 <code>cash</code>이며 수입과 카드 마감일은 표시하지 않는다.</li>
+<li>Cash를 포함한 <code>cash-like</code> 결제수단 선택 시 일반 월의 해당 결제수단 거래를 표시한다. 달력 API의 <code>mode</code>는 <code>cash</code>이며 수입과 카드 마감일은 표시하지 않는다.</li>
 </ul></div>
 </details>
 <details class="acc">
