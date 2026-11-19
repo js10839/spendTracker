@@ -108,20 +108,12 @@ From `backend/`, set `CALENDAR_TEST_DB_URL` to a PostgreSQL test connection and 
 `uv run pytest tests/test_calendar_postgres.py`. Alternatively, explicitly opt in
 to the configured local `DB_URL` with
 `CALENDAR_TEST_USE_CONFIGURED_DB=1 uv run pytest tests/test_calendar_postgres.py`.
-Tests create/reuse permanent `test1` and `test1_auth` schemas and retain their
-fixture data afterward for inspection in Supabase's Table Editor. Each test has
-a reusable dataset: one indexed lookup skips existing base fixtures, and stable
-IDs with `ON CONFLICT DO NOTHING` prevent duplicate scenario records on reruns.
-The shared test holiday cache is reset before each test; financial records are
-retained. Earlier random datasets remain untouched; each test seeds its reusable
-version once. Increment the fixture version when changing scenario data.
-`test1.calendar_test_cases` maps test names to their user, ledger and card UUIDs.
-The fixture definitions in `backend/tests/test_calendar_postgres.py` recreate the
-sample data for teammates; no database contents or credentials need to be copied.
-The connection needs create-schema permission; existing app/auth tables outside
-these test schemas are not modified. Run this suite sequentially because its
-holiday cache is shared. Tests skip without either opt-in. CI supplies a
-disposable PostgreSQL service and runs these tests too.
+Each run creates its own PostgreSQL schemas for application and Auth tables.
+The connection needs permission to create schemas. Each test seeds its scenario
+inside a transaction that rolls back at teardown, so earlier runs cannot mask
+fixture changes or affect the holiday cache. The suite drops its two schemas
+at teardown. Existing `test1` and `test1_auth` data stays available for inspection.
+Tests skip without either opt-in. CI supplies a disposable PostgreSQL service.
 
 For the optional real Dart HTTP smoke test, also set `CALENDAR_TEST_DART` to the
 installed `dart` executable. It runs the frontend adapter against a temporary
