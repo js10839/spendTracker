@@ -1,21 +1,14 @@
-"""Real PostgreSQL coverage with retained fixtures in test1 and test1_auth.
-
-Set CALENDAR_TEST_DB_URL, or explicitly opt into the configured database with
-CALENDAR_TEST_USE_CONFIGURED_DB=1. App/auth data outside these schemas is untouched.
-Each test reuses a versioned dataset with stable IDs; inserts ignore duplicates.
-Only the shared holiday cache is reset before each test for deterministic results.
-"""
+"""실제 PostgreSQL에서 실행별 스키마와 테스트별 트랜잭션으로 달력을 검증한다."""
 
 import os
 from datetime import UTC, date, datetime
-from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, insert, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.auth.dependencies import get_current_user_id
 from app.calendar import repository, service
@@ -49,111 +42,50 @@ def calendar_engine():
             "Set CALENDAR_TEST_DB_URL to run PostgreSQL calendar integration tests"
         )
     engine = create_engine(url, connect_args={"connect_timeout": 10})
-    schema = "test1"
-    auth_schema = "test1_auth"
+    schema = f"calendar_test_{uuid4().hex}"
+    auth_schema = f"{schema}_auth"
     with engine.begin() as conn:
-        conn.execute(CreateSchema(schema, if_not_exists=True))
-        conn.execute(CreateSchema(auth_schema, if_not_exists=True))
+        conn.execute(CreateSchema(schema))
+        conn.execute(CreateSchema(auth_schema))
     isolated = engine.execution_options(
         schema_translate_map={None: schema, "auth": auth_schema}
     )
     try:
         Base.metadata.create_all(isolated)
-        with isolated.begin() as conn:
-            conn.execute(
-                text("SELECT set_config('search_path', :schema, true)"),
-                {"schema": schema},
-            )
-            # Match migration bddcfc4a0a05 for retained schemas; create_all
-            # creates missing tables but does not add columns to existing ones.
-            conn.execute(
-                text(
-                    "ALTER TABLE test1.users ADD COLUMN IF NOT EXISTS "
-                    "onboarding_completed boolean NOT NULL DEFAULT false"
-                )
-            )
-            conn.execute(
-                text("""
-                CREATE TABLE IF NOT EXISTS calendar_test_cases (
-                    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                    test_name text NOT NULL,
-                    fixture_ids jsonb NOT NULL,
-                    created_at timestamptz NOT NULL DEFAULT now()
-                )
-            """)
-            )
-            conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_calendar_test_cases_name "
-                    "ON calendar_test_cases (test_name)"
-                )
-            )
         yield isolated
     finally:
-        engine.dispose()  # Keep schemas and rows for inspection in Supabase.
+        # 이번 실행에서 만든 두 스키마만 정리한다.
+        with engine.begin() as conn:
+            conn.execute(DropSchema(schema, cascade=True))
+            conn.execute(DropSchema(auth_schema, cascade=True))
+        engine.dispose()
 
 
 @pytest.fixture
-def db(calendar_engine, monkeypatch, request):
+def db(calendar_engine, monkeypatch):
     # Bankday is deterministic here; API cache failure is tested separately.
     monkeypatch.setattr(service, "fetch_bank_holidays", lambda year: set())
     with calendar_engine.connect() as conn:
         transaction = conn.begin()
         # Raw SQL does not honor SQLAlchemy's schema_translate_map. Keep its
-        # unqualified table names inside the same persistent test schema as ORM setup.
+        # unqualified table names inside the same isolated test schema as ORM setup.
         schema = calendar_engine.get_execution_options()["schema_translate_map"][None]
         conn.execute(
             text("SELECT set_config('search_path', :schema, true)"), {"schema": schema}
         )
         assert conn.scalar(text("SELECT current_schema()")) == schema
-        # Holiday-provider tests need a known initial cache, independent of prior
-        # runs. Financial fixtures remain intact and are scoped to per-test ledgers.
-        conn.execute(text("DELETE FROM bank_calendar_years"))
-        conn.info["calendar_test_name"] = request.node.nodeid
-        conn.info["calendar_seed_index"] = 0
         try:
             yield conn
         finally:
-            try:
-                transaction.commit()
-            finally:
-                conn.info.pop("calendar_test_name", None)
-                conn.info.pop("calendar_seed_index", None)
+            transaction.rollback()
 
 
 @pytest.fixture
 def data(db):
-    # One indexed lookup skips base data creation on subsequent runs. The
-    # version separates reusable datasets from earlier randomly generated ones.
-    existing = db.scalar(
-        text(
-            "SELECT fixture_ids FROM calendar_test_cases "
-            "WHERE test_name = :name AND fixture_ids ->> '_version' = '1' "
-            "ORDER BY id DESC LIMIT 1"
-        ),
-        {"name": db.info["calendar_test_name"]},
+    # 각 테스트에서 독립적인 사용자·가계부·결제수단을 생성한다.
+    user, other, ledger, other_ledger, card, second, cash, foreign, category = (
+        uuid4() for _ in range(9)
     )
-    if existing is not None:
-        return {
-            key: UUID(value) for key, value in existing.items() if key != "_version"
-        }
-    user, other, ledger, other_ledger, card, second, cash, foreign, category = [
-        uuid5(
-            NAMESPACE_URL,
-            f"spendTracker/calendar/v1/{db.info['calendar_test_name']}/{role}",
-        )
-        for role in (
-            "user",
-            "other",
-            "ledger",
-            "other_ledger",
-            "card",
-            "second",
-            "cash",
-            "foreign",
-            "category",
-        )
-    ]
     db.execute(insert(auth_users), [{"id": user}, {"id": other}])
     db.execute(insert(User.__table__), [{"id": user}, {"id": other}])
     db.execute(
@@ -204,13 +136,8 @@ def data(db):
             },
         ],
     )
-    category = db.scalar(
-        pg_insert(Category.__table__)
-        .values(id=category, name="Food")
-        .on_conflict_do_update(index_elements=["name"], set_={"name": "Food"})
-        .returning(Category.id)
-    )
-    fixture_ids = {
+    db.execute(insert(Category.__table__), {"id": category, "name": "Food"})
+    return {
         "user": user,
         "other": other,
         "ledger": ledger,
@@ -221,37 +148,12 @@ def data(db):
         "foreign": foreign,
         "category": category,
     }
-    import json
-
-    db.execute(
-        text(
-            "INSERT INTO calendar_test_cases (test_name, fixture_ids) "
-            "VALUES (:name, CAST(:ids AS jsonb))"
-        ),
-        {
-            "name": db.info["calendar_test_name"],
-            "ids": json.dumps(
-                {
-                    "_version": "1",
-                    **{key: str(value) for key, value in fixture_ids.items()},
-                }
-            ),
-        },
-    )
-    return fixture_ids
 
 
 def seed_insert(db, table, values):
-    """Reuse deterministic sample rows without SELECTs for individual inserts."""
-    index = db.info["calendar_seed_index"]
-    db.info["calendar_seed_index"] = index + 1
-    identifier = uuid5(
-        NAMESPACE_URL,
-        f"spendTracker/calendar/v1/{db.info['calendar_test_name']}/{table.name}/{index}",
-    )
-    db.execute(
-        pg_insert(table).values(id=identifier, **values).on_conflict_do_nothing()
-    )
+    """시나리오의 행을 추가하고 다른 테스트 데이터에서 참조할 ID를 반환한다."""
+    identifier = uuid4()
+    db.execute(insert(table), {"id": identifier, **values})
     return identifier
 
 
@@ -660,8 +562,7 @@ def test_monthly_reference_day_survives_february_and_year_shift(db, data, monkey
 
 
 def test_api_uses_real_authorization_and_raw_sql_response(db, data):
-    # Keep route commits inside savepoints; the fixture commits the outer
-    # transaction afterward so the dataset remains available for inspection.
+    # 서비스가 커밋해도 테스트 종료 시 외부 트랜잭션에서 모두 롤백한다.
     with Session(bind=db, join_transaction_mode="create_savepoint") as session:
         app.dependency_overrides[get_db] = lambda: session
         app.dependency_overrides[get_current_user_id] = lambda: data["user"]
