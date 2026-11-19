@@ -14,8 +14,6 @@ class CalendarState {
     this.selectedCardId,
     this.isLoading = false,
     this.error,
-    this.isSavingNote = false,
-    this.noteError,
   });
 
   final CalendarPeriod? period;
@@ -23,8 +21,6 @@ class CalendarState {
   final String? selectedCardId;
   final bool isLoading;
   final Object? error;
-  final bool isSavingNote;
-  final Object? noteError;
 
   /// Null until the backend has resolved the initial period.
   CalendarWindow? get window => period?.window;
@@ -41,8 +37,6 @@ class CalendarState {
     Object? selectedCardId = _unchanged,
     bool? isLoading,
     Object? error = _unchanged,
-    bool? isSavingNote,
-    Object? noteError = _unchanged,
   }) => CalendarState(
     selectedDate: selectedDate ?? this.selectedDate,
     period: period ?? this.period,
@@ -51,8 +45,6 @@ class CalendarState {
         : selectedCardId as String?,
     isLoading: isLoading ?? this.isLoading,
     error: identical(error, _unchanged) ? this.error : error,
-    isSavingNote: isSavingNote ?? this.isSavingNote,
-    noteError: identical(noteError, _unchanged) ? this.noteError : noteError,
   );
 }
 
@@ -175,25 +167,6 @@ class CalendarController {
       );
     }
     _emit(_state._copy(selectedDate: calendarDate(date)));
-  }
-
-  Future<bool> saveSelectedNote(String content) async {
-    _checkActive();
-    if (_state.isSavingNote) throw StateError('A note save is already pending');
-    final date = _state.selectedDate;
-    _emit(_state._copy(isSavingNote: true, noteError: null));
-    try {
-      await _source.saveNote(ledgerId: ledgerId, date: date, content: content);
-      if (_disposed) return true;
-      _emit(_state._copy(isSavingNote: false, noteError: null));
-      await refresh();
-      return true;
-    } catch (error) {
-      if (!_disposed) {
-        _emit(_state._copy(isSavingNote: false, noteError: error));
-      }
-      return false;
-    }
   }
 
   void dispose() {

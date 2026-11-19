@@ -42,7 +42,6 @@ void main() {
       expect(day.dots.single.color, '#1234AB');
       expect(day.income.single.expectedDate, DateTime.utc(2026, 10, 21));
       expect(day.closingCards.single.id, 'other');
-      expect(day.note!.content, 'Day note');
       expect(day.spendingCents, 650);
       expect(day.receivedIncomeCents, 0);
       expect(() => period.days.clear(), throwsUnsupportedError);
@@ -83,17 +82,6 @@ void main() {
       expect(requests.single.url.queryParameters, {
         'anchor_date': '2026-10-20',
       });
-      expect(
-        await source.saveNote(
-          ledgerId: 'personal',
-          date: DateTime(2026, 10, 20),
-          content: '',
-        ),
-        isNull,
-      );
-      expect(requests.last.method, 'PUT');
-      expect(requests.last.url.path, '/ledgers/personal/day-notes/2026-10-20');
-      expect(jsonDecode(requests.last.body), {'content': ''});
     },
   );
 
@@ -140,8 +128,6 @@ void main() {
     await controller.refresh();
     controller.selectDate(DateTime(2026, 10, 6));
     expect(requests.length, 1);
-    expect(await controller.saveSelectedNote(''), isTrue);
-    expect(requests.map((r) => r.method), ['GET', 'PUT', 'GET']);
   });
 
   test('backend failures reach controller and manual retry recovers', () async {

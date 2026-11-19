@@ -8,10 +8,4 @@ abstract interface class CalendarDataSource {
     String? paymentMethodId,
   });
 
-  /// Existing PUT /ledgers/{ledgerId}/day-notes/{date}; empty content clears.
-  Future<CalendarNote?> saveNote({
-    required String ledgerId,
-    required DateTime date,
-    required String content,
-  });
 }
