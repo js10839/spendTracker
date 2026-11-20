@@ -27,8 +27,8 @@ flutter test
 `anchor_date` and an optional `payment_method_id`. FastAPI resolves the month or
 card cycle and returns ordered daily transactions (including items), income,
 notes, card closings, dot counts/colors and integer-cent totals. Filtering,
-grouping, recurrence and billing calculations run in PostgreSQL via SQLAlchemy
-Core. The frontend decodes the response and handles interaction state.
+grouping, recurrence and billing calculations run in PostgreSQL via
+parameterized raw SQL. The frontend decodes the response and handles interaction state.
 
 `All` omits the card parameter. A selected card limits transactions to that card;
 only Cashback income linked to that card is included (planned and received).
