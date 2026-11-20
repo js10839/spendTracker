@@ -30,6 +30,7 @@ spendTracker/
 * Python 3.12
 * uv
 * Access to the team's Supabase project (PostgreSQL and Auth)
+* Nginx for deployment with request size and IP rate limits (installation below)
 
 ## Backend setup
 
@@ -140,6 +141,45 @@ Authenticated users can read their app profile with `GET /users/me` and update t
 
 Operators can retry pending requests from `backend/` with `uv run python -m app.users.retry_deletions`. This command is not scheduled automatically. Set up and monitor a deployment job before relying on unattended retries. Shared-ledger ownership and removal are not yet supported; deletion of an owned ledger with other members is blocked by database constraints and rolled back.
 
+## Receipt parsing API
+
+`POST /receipts/parse` accepts a `multipart/form-data` image in the `file` field
+and does not require a login or access token. Set
+`OPENAI_API_KEY` in `backend/.env`; optionally set `OPENAI_RECEIPT_MODEL`.
+Supported formats are JPEG, PNG, WEBP, and MPO, up to 10 MiB and 32 million pixels.
+
+```bash
+curl http://127.0.0.1:8000/receipts/parse \
+  -F "file=@/path/to/receipt.jpg"
+```
+
+The response contains `receipt` (merchant, location, date, currency, items, tax,
+tip, total) and `validation` (status, calculated_total, receipt_total, difference,
+item_count, issues). Monetary amounts are JSON strings. A `review` status is a
+successful parse requiring user review, such as when totals differ. This endpoint
+uses the fixed categories in `app/receipts/schemas.py` and does not save a transaction
+or receipt image. The DB-driven schema in `schemas_DB.py` is not used here.
+
+Errors: 413 for oversized files; 422 for missing, empty, invalid, or unsupported
+images; 502 for parsing provider/output failures; 503 if the API key is missing;
+504 for provider timeouts. Try the upload directly through `/docs`.
+
+### Deployment
+
+Install Nginx on the deployment server first. For Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install nginx
+nginx -v
+```
+
+See the [Ubuntu installation guide](https://ubuntu.com/server/docs/how-to/web-services/install-nginx/).
+For local installation on macOS with Homebrew, use `brew install nginx`
+([Homebrew formula](https://formulae.brew.sh/formula/nginx)); 
+
+The supplied Nginx proxy limits request bodies to 11 MiB and receipt parsing to an average of 5 requests per minute per IP, including Guests. **Installation alone does not enable these limits;** apply the supplied configuration using the [Nginx deployment guide](docs/nginx-deployment.md) for setup, policy details, and verification commands.
+
 ## Frontend setup
 
 ```bash
@@ -164,3 +204,5 @@ uv run pytest
 For product details, see [Spending-tracker.md](./Spending-tracker.md).
 
 For AI-assisted Flutter work, see the [GJC frontend workflow](./docs/gjc-frontend-workflow.md).
+
+For Nginx deployment and request limits, see the [Nginx deployment](./docs/nginx-deployment.md).
