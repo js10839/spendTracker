@@ -38,9 +38,21 @@ separate-currency product decision before they can be summed.
   Uses the existing bank-holiday cache refresh and preceding-business-day rules;
   stale cache is usable, absent cache falls back to the original expected date.
   Cashback and Other income never count as payday.
-- `monthly_spending`: daily buckets for the selected calendar month.
+- `monthly_spending`: daily buckets for the selected calendar month. Each day
+  returns `total_cents` and `payment_methods`, grouped by payment method with
+  `payment_method_id`, `name`, `color`, and signed `total_cents` for stacked bars.
+  The daily total equals the sum of its payment-method amounts. Empty days have
+  total zero and an empty list; unused methods are omitted. Methods are ordered
+  by name then ID; use ID to identify a series and its stored color for display.
+  Includes cash-like methods in All mode; card selection restricts the breakdown.
+  No monthly total is added.
 - `yearly_spending`: twelve buckets, dated on each month's first day.
   Both include zeros; future buckets are zero. Card selection applies to both.
+- `monthly_cash_spending`: selected calendar month's `start_date`, `end_date`,
+  and `total_cents` across all `cash-like` payment methods, including bank transfers
+  recorded under those methods. Independent of the optional credit-card filter.
+  Uses recorded spending transactions only, excludes deleted/future transactions,
+  retains signed refunds, and returns zero when there is no cash-like spending.
 - `cycle_pace`: All plus every owned credit card. All uses calendar months; cards
   use billing cycles. Each compares current spending through `as_of` with the same
   number of elapsed days in the previous period, capped at that period's end.
@@ -87,6 +99,10 @@ UUIDs and conflict-safe inserts reuse the scenario rows. Run tests sequentially.
 To change a retained scenario, increment its fixture version/UUID namespace rather
 than expecting existing sample values to be overwritten.
 
-Verified: 40 dashboard tests pass, including 17 against PostgreSQL. A repeated run
+Original implementation verification: 40 dashboard tests passed, including 17 against PostgreSQL. A repeated run
 left exact row counts unchanged across all 13 test2/test2_auth tables. The existing
 non-live backend suite plus dashboard API/service tests passes (192 tests).
+
+Monthly stack and Cash-summary follow-up: 192 non-live tests and Ruff pass.
+New PostgreSQL assertions are included, but live verification is pending because
+the configured Supabase hostname could not be resolved.

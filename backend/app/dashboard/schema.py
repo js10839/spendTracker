@@ -53,6 +53,21 @@ class SpendingChart(BaseModel):
     buckets: list[SpendingBucket]
 
 
+class PaymentMethodTotal(BaseModel):
+    payment_method_id: UUID
+    name: str
+    color: str
+    total_cents: int
+
+
+class MonthlySpendingBucket(SpendingBucket):
+    payment_methods: list[PaymentMethodTotal]
+
+
+class MonthlySpendingChart(SpendingChart):
+    buckets: list[MonthlySpendingBucket]
+
+
 class CyclePace(BaseModel):
     mode: Literal["all", "card"]
     payment_method_id: UUID | None
@@ -77,7 +92,8 @@ class DashboardRead(BaseModel):
     spending_30_days: SpendingPeriod
     card_statements: list[CardStatement]
     next_payday: NextPayday | None
-    monthly_spending: SpendingChart
+    monthly_spending: MonthlySpendingChart
+    monthly_cash_spending: SpendingPeriod
     yearly_spending: SpendingChart
     cycle_pace: list[CyclePace]
     category_breakdown: CategoryBreakdown

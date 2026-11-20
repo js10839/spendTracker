@@ -18,9 +18,11 @@ from app.main import app
 def test_empty_ledger_returns_zero_buckets_and_all_cards(samples):
     result = samples.read()
     assert result.spending_30_days.total_cents == 0
+    assert result.monthly_cash_spending.total_cents == 0
     assert len(result.monthly_spending.buckets) == 30
     assert len(result.yearly_spending.buckets) == 12
     assert all(b.total_cents == 0 for b in result.monthly_spending.buckets)
+    assert all(b.payment_methods == [] for b in result.monthly_spending.buckets)
     assert all(b.total_cents == 0 for b in result.yearly_spending.buckets)
     assert len(result.card_statements) == 2
     assert all(
@@ -123,6 +125,10 @@ def test_selected_card_filters_charts_and_pie_but_not_global_summaries(samples):
     samples.tx("cash", "2026-11-13", 300, method="cash")
     result = samples.read(payment_method_id=samples.id("card"))
     assert sum(b.total_cents for b in result.monthly_spending.buckets) == 100
+    day = result.monthly_spending.buckets[12]
+    assert [(m.payment_method_id, m.total_cents) for m in day.payment_methods] == [
+        (samples.id("card"), 100)
+    ]
     assert sum(b.total_cents for b in result.yearly_spending.buckets) == 100
     assert result.category_breakdown.total_cents == 100
     assert result.spending_30_days.total_cents == 600
@@ -144,6 +150,41 @@ def test_selected_card_filters_charts_and_pie_but_not_global_summaries(samples):
     assert error.value.status_code == 404
 
 
+def test_monthly_stacks_group_by_method_and_reconcile_daily_totals(samples):
+    samples.tx("first", "2026-11-13", 1000, items=(("Food", 600), ("Travel", 400)))
+    samples.tx("second_purchase", "2026-11-13", 200)
+    samples.tx("refund", "2026-11-13", -300)
+    samples.tx("other_card", "2026-11-13", 400, method="second")
+    samples.tx("cash", "2026-11-13", 500, method="cash")
+    samples.tx("earlier_day", "2026-11-12", 50, method="cash")
+    samples.tx("outside_month", "2026-10-31", 9000)
+    samples.tx("future", "2026-11-14", 9000)
+    samples.tx("deleted", "2026-11-13", 9000, deleted=True)
+    samples.tx(
+        "other_ledger", "2026-11-13", 9000, method="foreign", ledger="other_ledger"
+    )
+    chart = samples.read().monthly_spending
+    assert (chart.start_date, chart.end_date) == (date(2026, 11, 1), date(2026, 11, 30))
+    assert len(chart.buckets) == 30
+    day = chart.buckets[12]
+    assert day.total_cents == 1800
+    assert [
+        (m.name, m.payment_method_id, m.color, m.total_cents)
+        for m in day.payment_methods
+    ] == [
+        ("card", samples.id("card"), "#3366FF", 900),
+        ("cash", samples.id("cash"), "#3366FF", 500),
+        ("second", samples.id("second"), "#3366FF", 400),
+    ]
+    assert chart.buckets[11].payment_methods[0].total_cents == 50
+    assert chart.buckets[13].payment_methods == []
+    assert all(
+        b.total_cents == sum(m.total_cents for m in b.payment_methods)
+        for b in chart.buckets
+    )
+    assert "total_cents" not in chart.model_dump()
+
+
 def test_month_year_and_category_windows_can_be_selected_independently(samples):
     samples.tx("sep", "2025-09-30", 100)
     samples.tx("oct", "2025-10-01", 200)
@@ -159,6 +200,45 @@ def test_month_year_and_category_windows_can_be_selected_independently(samples):
     assert sum(b.total_cents for b in result.yearly_spending.buckets) == 300
     assert result.category_breakdown.total_cents == 100
     assert result.spending_30_days.total_cents == 300
+
+
+def test_monthly_cash_includes_transfers_and_ignores_card_filter(samples):
+    samples.insert(
+        "payment_methods",
+        "transfer",
+        user_id=samples.id("user"),
+        name="Bank transfer",
+        type="cash-like",
+        color="#999999",
+    )
+    samples.tx(
+        "cash_purchase",
+        "2025-10-01",
+        500,
+        method="cash",
+        items=(("Food", 300), ("Travel", 200)),
+    )
+    samples.tx("transfer_purchase", "2025-10-31", 800, method="transfer")
+    samples.tx("refund", "2025-10-15", -100, method="cash")
+    samples.tx("credit", "2025-10-15", 9000)
+    samples.tx("before", "2025-09-30", 9000, method="cash")
+    samples.tx("after", "2025-11-01", 9000, method="cash")
+    samples.tx("deleted", "2025-10-15", 9000, method="cash", deleted=True)
+    samples.tx("foreign", "2025-10-15", 9000, method="cash", ledger="other_ledger")
+    samples.tx("future", "2026-11-14", 9000, method="cash")
+    all_result = samples.read(month=date(2025, 10, 1))
+    selected = samples.read(
+        month=date(2025, 10, 1), payment_method_id=samples.id("card")
+    )
+    summary = selected.monthly_cash_spending
+    assert summary == all_result.monthly_cash_spending
+    assert (summary.start_date, summary.end_date, summary.total_cents) == (
+        date(2025, 10, 1),
+        date(2025, 10, 31),
+        1200,
+    )
+    assert sum(b.total_cents for b in selected.monthly_spending.buckets) == 9000
+    assert samples.read().monthly_cash_spending.total_cents == 0
 
 
 def test_next_payday_combines_same_day_sources_and_ignores_other_income(samples):
