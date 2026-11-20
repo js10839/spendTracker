@@ -10,10 +10,12 @@ class HomeMonthSheet extends StatefulWidget {
     super.key,
     required this.initialMonth,
     required this.maxHeight,
+    this.showPreviewTotals = true,
   });
 
   final DateTime initialMonth;
   final double maxHeight;
+  final bool showPreviewTotals;
 
   @override
   /// 현재 표시 월을 시트의 임시 선택값으로 사용한다.
@@ -202,7 +204,7 @@ class _HomeMonthSheetState extends State<HomeMonthSheet> {
   /// 미래 월도 선택 가능하게 두고 예시 금액은 2026년의 해당 월에만 보여준다.
   Widget _monthTile(int month) {
     final selected = _selected.month == month;
-    final previewTotal = _selected.year == 2026 ? _previewTotals[month] : null;
+    final previewTotal = widget.showPreviewTotals && _selected.year == 2026 ? _previewTotals[month] : null;
     return Material(
       key: Key('home-month-$month'),
       color: selected ? AppTokens.brandPurple : AppTokens.surface,

@@ -134,10 +134,7 @@ void main() {
       find.descendant(of: summary, matching: find.text('+1')),
       findsOneWidget,
     );
-    expect(
-      tester.getSize(find.byKey(const Key('home-day-edit-icon'))),
-      const Size(28, 28),
-    );
+    expect(find.byKey(const Key('home-day-edit-icon')), findsNothing);
     expect(
       tester.widget<Container>(summary).padding,
       const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -850,10 +847,7 @@ void main() {
       find.descendant(of: summary, matching: find.text('\$86.20')),
       findsOneWidget,
     );
-    expect(
-      tester.getSize(find.byKey(const Key('home-day-edit-icon'))),
-      const Size(30, 30),
-    );
+    expect(find.byKey(const Key('home-day-edit-icon')), findsNothing);
     expect(
       tester.getBottomRight(summary).dy,
       lessThanOrEqualTo(tester.getTopLeft(find.byType(AppBottomNavigation)).dy),
@@ -899,79 +893,6 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('home-day-summary')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  // 연필 아이콘은 거래 카드를 펼치지 않고 메모 시트를 열며 저장·취소를 구분한다.
-  testWidgets('홈 날짜 메모 열기와 저장', (tester) async {
-    tester.view.physicalSize = const Size(402, 874);
-    tester.view.devicePixelRatio = 1;
-    tester.view.padding = const FakeViewPadding(top: 62, bottom: 34);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPadding);
-    addTearDown(tester.view.resetViewInsets);
-    await tester.pumpWidget(const SpendingTrackerApp());
-    await tester.tap(find.text('Simple'));
-    await tester.pumpAndSettle();
-    final editIcon = find.byKey(const Key('home-day-edit-icon'));
-    expect(
-      (tester.widget<Container>(editIcon).decoration as BoxDecoration).color,
-      AppTokens.brandLime,
-    );
-
-    await tester.tap(editIcon);
-    await tester.pumpAndSettle();
-    expect(find.text('Tue, Aug 24'), findsOneWidget);
-    expect(find.text('Note'), findsOneWidget);
-    expect(find.text('Costco run for the party this weekend'), findsOneWidget);
-    expect(find.text('37 / 200'), findsOneWidget);
-    expect(tester.testTextInput.isVisible, isTrue);
-    expect(find.text('4 payment methods · 13 items'), findsNothing);
-
-    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-    await tester.pumpAndSettle();
-    expect(
-      tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
-      AppTokens.brandPurple,
-    );
-    expect(
-      tester.getBottomRight(find.byKey(const Key('home-note-sheet'))).dy,
-      574,
-    );
-    await tester.enterText(
-      find.byKey(const Key('home-note-input')),
-      'New note',
-    );
-    await tester.pump();
-    expect(find.text('8 / 200'), findsOneWidget);
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
-    expect(tester.testTextInput.isVisible, isFalse);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    tester.view.resetViewInsets();
-    await tester.pumpAndSettle();
-
-    await tester.tap(editIcon);
-    await tester.pumpAndSettle();
-    expect(find.text('Costco run for the party this weekend'), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const Key('home-note-input')),
-      'Saved note',
-    );
-    await tester.tap(find.byKey(const Key('home-note-save')));
-    await tester.pumpAndSettle();
-    await tester.tap(editIcon);
-    await tester.pumpAndSettle();
-    expect(find.text('Saved note'), findsOneWidget);
-    await tester.enterText(find.byKey(const Key('home-note-input')), '');
-    await tester.tap(find.byKey(const Key('home-note-save')));
-    await tester.pumpAndSettle();
-    expect(
-      (tester.widget<Container>(editIcon).decoration as BoxDecoration).color,
-      AppTokens.surface,
-    );
     expect(tester.takeException(), isNull);
   });
 
