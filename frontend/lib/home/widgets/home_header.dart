@@ -90,7 +90,10 @@ class HomeHeader extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(child: Text(
                       switch (totalMode) {
                         HomeTotalMode.spending => liveSpendingLabel ?? (card == 0 ? 'Spent this month' : '8/5~9/4'),
                         HomeTotalMode.net => 'Total Spending + Income',
@@ -101,6 +104,10 @@ class HomeHeader extends StatelessWidget {
                       style: AppTypography.bodyMedium.copyWith(
                         color: _controlColor.withValues(alpha: 0.70),
                       ),
+                        )),
+                        const SizedBox(width: AppSpacing.sm),
+                        AppPageIndicator(count: HomeTotalMode.values.length, activeIndex: totalMode.index, color: _controlColor),
+                      ],
                     ),
                   ),
                   AppSegmentedControl(

@@ -26,18 +26,31 @@ void main() {
 
     final amount = find.byKey(const Key('home-total-amount'));
     expect(find.text('\$812.45'), findsOneWidget);
+    final indicator = find.byType(AppPageIndicator);
+    expect(tester.widget<AppPageIndicator>(indicator).activeIndex, 0);
+    expect(tester.widget<AppPageIndicator>(indicator).color, AppTokens.textInverse);
+    expect(tester.getSize(find.byKey(const ValueKey('page-indicator-dot-0'))), const Size(7, 7));
+    expect(tester.getSize(find.byKey(const ValueKey('page-indicator-dot-1'))), const Size(6, 6));
+    expect((tester.widget<Container>(find.byKey(const ValueKey('page-indicator-dot-1'))).decoration! as BoxDecoration).color, AppTokens.textInverse.withValues(alpha: .45));
+    await tester.tap(indicator);
+    await tester.pump();
+    expect(tester.widget<AppPageIndicator>(indicator).activeIndex, 0);
     await tester.tap(amount);
     await tester.pump();
+    expect(tester.widget<AppPageIndicator>(indicator).activeIndex, 1);
     expect(find.text('Total Spending + Income'), findsOneWidget);
     expect(find.text('-\$45.00'), findsOneWidget);
     expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor, Colors.black);
     await tester.tap(amount);
     await tester.pump();
+    expect(tester.widget<AppPageIndicator>(indicator).activeIndex, 2);
+    expect(tester.widget<AppPageIndicator>(indicator).color, AppTokens.textPrimary);
     expect(find.text('Total Income'), findsOneWidget);
     expect(find.text('\$767.45'), findsOneWidget);
     expect(tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor, AppPalette.lime600);
     await tester.tap(amount);
     await tester.pump();
+    expect(tester.widget<AppPageIndicator>(indicator).activeIndex, 0);
     expect(find.text('\$812.45'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('home-card-filter')));
@@ -53,6 +66,20 @@ void main() {
     await tester.tap(amount);
     await tester.pump();
     expect(find.descendant(of: amount, matching: find.text('\$0.00')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 작은 화면에서도 헤더 표시 점과 토글이 겹치지 않는다.
+  testWidgets('홈 헤더 표시 점은 좁은 화면에 맞게 배치된다', (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(const SpendingTrackerApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('home-total-amount')));
+    await tester.pump();
+    expect(tester.getRect(find.byType(AppPageIndicator)).right, lessThanOrEqualTo(tester.getRect(find.byType(AppSegmentedControl)).left));
     expect(tester.takeException(), isNull);
   });
 
