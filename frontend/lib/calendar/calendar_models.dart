@@ -156,27 +156,6 @@ class CalendarIncome {
   final String? memo;
 }
 
-class CalendarNote {
-  CalendarNote({
-    required this.id,
-    required this.ledgerId,
-    required DateTime date,
-    required this.content,
-  }) : date = calendarDate(date);
-
-  factory CalendarNote.fromJson(Map<String, dynamic> json) => CalendarNote(
-    id: json['id'] as String,
-    ledgerId: json['ledger_id'] as String,
-    date: parseCalendarDate(json['note_date'] as String),
-    content: json['content'] as String,
-  );
-
-  final String id;
-  final String ledgerId;
-  final DateTime date;
-  final String content;
-}
-
 /// One indicator per payment method with transactions, not per purchase.
 class CalendarTransactionDot {
   const CalendarTransactionDot({
@@ -201,7 +180,6 @@ class CalendarDay {
     required List<CalendarTransactionDot> dots,
     required List<CalendarIncome> income,
     required List<CalendarPaymentMethod> closingCards,
-    this.note,
     required this.spendingCents,
     required this.receivedIncomeCents,
   }) : transactions = List.unmodifiable(transactions),
@@ -214,7 +192,6 @@ class CalendarDay {
   final List<CalendarTransactionDot> dots;
   final List<CalendarIncome> income;
   final List<CalendarPaymentMethod> closingCards;
-  final CalendarNote? note;
 
   final int spendingCents;
   final int receivedIncomeCents;
@@ -236,9 +213,6 @@ class CalendarDay {
       json['closing_cards'],
       CalendarPaymentMethod.fromJson,
     ),
-    note: json['note'] == null
-        ? null
-        : CalendarNote.fromJson(json['note'] as Map<String, dynamic>),
     spendingCents: json['spending_cents'] as int,
     receivedIncomeCents: json['received_income_cents'] as int,
   );

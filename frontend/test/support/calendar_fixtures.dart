@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:spending_tracker/calendar/calendar.dart';
 
 /// Explicit server fixtures, not a second implementation of billing rules.
@@ -41,7 +39,7 @@ Map<String, dynamic> calendarJson({
       'color': '#1234AB',
     },
   ],
-  'days': [
+  'days': <Map<String, dynamic>>[
     for (
       var date = parseCalendarDate(start);
       !date.isAfter(parseCalendarDate(end));
@@ -53,7 +51,6 @@ Map<String, dynamic> calendarJson({
         'dots': <Object>[],
         'income': <Object>[],
         'closing_cards': <Object>[],
-        'note': null,
         'spending_cents': 0,
         'received_income_cents': 0,
       },
@@ -62,7 +59,7 @@ Map<String, dynamic> calendarJson({
 
 Map<String, dynamic> detailedDayJson() => {
   'date': '2026-10-20',
-  'transactions': [
+  'transactions': <Map<String, dynamic>>[
     {
       'id': 'purchase',
       'ledger_id': 'personal',
@@ -116,12 +113,6 @@ Map<String, dynamic> detailedDayJson() => {
       'color': '#FF0000',
     },
   ],
-  'note': {
-    'id': 'note',
-    'ledger_id': 'personal',
-    'note_date': '2026-10-20',
-    'content': 'Day note',
-  },
   'spending_cents': 650,
   'received_income_cents': 0,
 };
@@ -137,9 +128,6 @@ class FakeCalendarDataSource implements CalendarDataSource {
   CalendarPeriod response = CalendarPeriod.fromJson(calendarJson());
   Future<CalendarPeriod> Function(CalendarRequest)? loader;
   final requests = <CalendarRequest>[];
-  final writes = <({String ledgerId, DateTime date, String content})>[];
-  Object? saveError;
-  Completer<void>? saveGate;
 
   @override
   Future<CalendarPeriod> loadCalendar({
@@ -152,22 +140,4 @@ class FakeCalendarDataSource implements CalendarDataSource {
     return loader == null ? response : await loader!(request);
   }
 
-  @override
-  Future<CalendarNote?> saveNote({
-    required String ledgerId,
-    required DateTime date,
-    required String content,
-  }) async {
-    writes.add((ledgerId: ledgerId, date: date, content: content));
-    if (saveGate != null) await saveGate!.future;
-    if (saveError != null) throw saveError!;
-    return content.isEmpty
-        ? null
-        : CalendarNote(
-            id: 'note',
-            ledgerId: ledgerId,
-            date: date,
-            content: content,
-          );
-  }
 }

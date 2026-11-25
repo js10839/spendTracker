@@ -13,6 +13,7 @@ from app.transactions.schema import (
     TransactionGroupRead,
     TransactionGroupUpdate,
     TransactionItemRead,
+    TransactionMemoRead,
     TransactionSearchItemRead,
     TransactionSearchRead,
 )
@@ -110,6 +111,20 @@ def update_transaction_group(db: Session, ledger_id: UUID, transaction_id: UUID,
         result = build_transaction_group_read(transaction=transaction, items=response_items)
         db.commit()
         return result
+    except Exception:
+        db.rollback()
+        raise
+
+def update_ledger_transaction_memo(db: Session, ledger_id: UUID, transaction_id: UUID, memo: str | None) -> TransactionMemoRead:
+    """빈 메모를 지우고 가계부에 속한 활성 거래만 갱신한다."""
+    try:
+        normalized = None if memo is None or not memo.strip() else memo
+        result = repository.update_transaction_memo(db, ledger_id=ledger_id, transaction_id=transaction_id, memo=normalized)
+        if result is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+        response = TransactionMemoRead(id=result.id, memo=result.memo)
+        db.commit()
+        return response
     except Exception:
         db.rollback()
         raise

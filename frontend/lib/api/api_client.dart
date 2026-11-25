@@ -75,6 +75,12 @@ class ApiClient {
     required Map<String, Object?> body,
   }) => _request('PUT', pathSegments, body: body);
 
+  /// 일부 필드만 갱신하는 인증된 JSON 요청을 보낸다.
+  Future<Object?> patchJson(List<String> pathSegments, {required Map<String, Object?> body}) => _request('PATCH', pathSegments, body: body);
+
+  /// 인증된 JSON POST 요청을 보낸다.
+  Future<Object?> postJson(List<String> pathSegments, {Map<String, Object?>? body}) => _request('POST', pathSegments, body: body);
+
   Future<Object?> _request(
     String method,
     List<String> pathSegments, {
