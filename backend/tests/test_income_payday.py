@@ -120,3 +120,47 @@ def test_income_plan_list_returns_adjusted_date_in_api(monkeypatch: pytest.Monke
     assert response.status_code == 200
     assert response.json()[0]["next_expected_date"] == "2026-07-04"
     assert response.json()[0]["adjusted_expected_date"] == "2026-07-03"
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "lookups", "display_dates"),
+    [
+        # 11월 1일(일)이 10월 30일(금)로 이동하면 10월 조회에 포함되고 11월 조회에서는 빠진다.
+        (date(2026, 10, 1), date(2026, 10, 31), [None, set()], [date(2026, 10, 30)] * 2),
+        (date(2026, 11, 1), date(2026, 11, 30), [None, set()], []),
+        (date(2026, 11, 1), date(2026, 11, 30), [None, None], [date(2026, 11, 1)] * 2),
+    ],
+)
+def test_income_calendar_resolves_failed_paychecks_before_filtering(monkeypatch, start, end, lookups, display_dates):
+    """후속 급여 조회의 성공 여부에 따라 최초 회차도 최종 표시일로 포함하거나 제외한다."""
+    db = Mock()
+    ledger_id = uuid4()
+    payday = date(2026, 11, 1)
+    plans = [IncomeSource(id=uuid4(), ledger_id=ledger_id, income_type="paycheck", expected_amount_cents=1000, frequency="once", reference_date=payday, next_expected_date=payday) for _ in range(2)]
+    monkeypatch.setattr(service.repository, "list_income_records_in_range", Mock(return_value=[]))
+    monkeypatch.setattr(service.repository, "list_active_income_sources", Mock(return_value=plans))
+    holidays = Mock(side_effect=lookups)
+    monkeypatch.setattr(service, "get_bank_holidays", holidays)
+
+    entries = service.list_income_calendar(db, ledger_id, start, end)
+
+    assert [entry.display_date for entry in entries] == display_dates
+    assert all(entry.expected_date == payday for entry in entries)
+    assert [call.args[1] for call in holidays.call_args_list] == [2026, 2026]
+
+
+def test_income_calendar_recovers_first_recurring_payday_across_new_year(monkeypatch):
+    """후속 격주 급여가 연간 목록을 확보하면 첫 회차도 전년의 휴일까지 반영한다."""
+    db = Mock()
+    ledger_id = uuid4()
+    first = date(2027, 1, 1)
+    plan = IncomeSource(id=uuid4(), ledger_id=ledger_id, income_type="paycheck", expected_amount_cents=1000, frequency="biweekly", reference_date=first, next_expected_date=first)
+    monkeypatch.setattr(service.repository, "list_income_records_in_range", Mock(return_value=[]))
+    monkeypatch.setattr(service.repository, "list_active_income_sources", Mock(return_value=[plan]))
+    holidays = Mock(side_effect=[None, {first}, {date(2026, 12, 31)}])
+    monkeypatch.setattr(service, "get_bank_holidays", holidays)
+
+    entries = service.list_income_calendar(db, ledger_id, date(2026, 12, 1), date(2027, 1, 15))
+
+    assert [(entry.expected_date, entry.display_date) for entry in entries] == [(first, date(2026, 12, 30)), (date(2027, 1, 15), date(2027, 1, 15))]
+    assert [call.args[1] for call in holidays.call_args_list] == [2027, 2027, 2026]

@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../design_system/tokens.dart';
 import '../../design_system/typography.dart';
+import '../../calendar/calendar_models.dart';
 
 /// 홈의 지출 범위를 고르고 Show를 누를 때 선택값을 반환한다.
 class HomeFilterSheet extends StatefulWidget {
@@ -11,11 +12,13 @@ class HomeFilterSheet extends StatefulWidget {
     required this.initialSelection,
     required this.month,
     required this.maxHeight,
+    this.methods,
   });
 
   final int initialSelection;
   final DateTime month;
   final double maxHeight;
+  final List<CalendarPaymentMethod>? methods;
 
   @override
   /// 필터 선택을 Show 전까지 시트 안에서만 유지한다.
@@ -79,12 +82,15 @@ class _HomeFilterSheetState extends State<HomeFilterSheet> {
       widget.month.month,
     );
     final calendarRange = '$monthName 1 – $lastDay';
-    final descriptions = [
+    final descriptions = widget.methods == null ? [
       'Cards & cash combined ·\n$calendarRange',
       'Cycle $monthName 6 – $nextMonthName 5',
       'Cycle $monthName 16 – $nextMonthName 15',
       calendarRange,
       calendarRange,
+    ] : [
+      'Cards & cash combined ·\n$calendarRange',
+      for (final method in widget.methods!) method.isCredit ? 'Closes on day ${method.closingDay}' : calendarRange,
     ];
 
     return Material(
@@ -142,7 +148,7 @@ class _HomeFilterSheetState extends State<HomeFilterSheet> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  for (var index = 0; index < _titles.length; index++) ...[
+                  for (var index = 0; index < descriptions.length; index++) ...[
                     if (index > 0) const SizedBox(height: 6),
                     _filterRow(index, descriptions[index]),
                   ],
@@ -178,7 +184,12 @@ class _HomeFilterSheetState extends State<HomeFilterSheet> {
   }
 
   /// 선택 행만 회색 바탕과 Figma의 라디오 SVG로 강조한다.
-  Widget _filterRow(int index, String description) => Material(
+  Widget _filterRow(int index, String description) {
+    final method = widget.methods != null && index > 0 ? widget.methods![index - 1] : null;
+    final title = widget.methods == null ? _titles[index] : method?.name ?? 'All';
+    final hex = method?.color;
+    final color = hex != null && RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(hex) ? Color(int.parse('FF${hex.substring(1)}', radix: 16)) : AppTokens.textSecondary;
+    return Material(
     key: Key('home-filter-option-$index'),
     color: _selected == index ? AppTokens.surface : AppTokens.background,
     borderRadius: BorderRadius.circular(AppRadius.md),
@@ -201,11 +212,11 @@ class _HomeFilterSheetState extends State<HomeFilterSheet> {
                 height: 36,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: _badgeColors[index],
+                  color: widget.methods == null ? _badgeColors[index] : color,
                   shape: BoxShape.circle,
                 ),
                 child: Text(
-                  _badges[index],
+                  widget.methods == null ? _badges[index] : title.substring(0, 1).toUpperCase(),
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: index == 1
                         ? AppTokens.background
@@ -220,7 +231,7 @@ class _HomeFilterSheetState extends State<HomeFilterSheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _titles[index],
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.bodyLargeStrong,
@@ -236,7 +247,7 @@ class _HomeFilterSheetState extends State<HomeFilterSheet> {
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
-            Text(
+            if (widget.methods == null) Text(
               _amounts[index],
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: AppPalette.neutral600,
@@ -256,4 +267,5 @@ class _HomeFilterSheetState extends State<HomeFilterSheet> {
       ),
     ),
   );
+  }
 }

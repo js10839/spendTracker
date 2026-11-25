@@ -28,6 +28,11 @@ abstract class AuthService {
   Future<bool> refreshUsableSession();
 }
 
+/// 인증 제공자의 로그아웃 기능을 화면과 분리한다.
+abstract interface class SignOutService {
+  Future<void> signOut();
+}
+
 /// 공개 설정이 없는 실행 환경에서 인증 미설정을 알린다.
 class UnconfiguredAuthService implements AuthService {
   const UnconfiguredAuthService();
@@ -57,9 +62,13 @@ class UnconfiguredAuthService implements AuthService {
 }
 
 /// 인증 요청과 세션 관리를 Supabase Auth에 위임한다.
-class SupabaseAuthService implements AuthService {
+class SupabaseAuthService implements AuthService, SignOutService {
   const SupabaseAuthService(this.client);
   final SupabaseClient client;
+
+  @override
+  /// 현재 기기의 인증 세션을 종료한다.
+  Future<void> signOut() => client.auth.signOut(scope: SignOutScope.local);
 
   @override
   String? get currentUserId => client.auth.currentSession?.user.id;

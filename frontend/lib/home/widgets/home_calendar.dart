@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../../design_system/components.dart';
 import '../../design_system/tokens.dart';
 import '../../design_system/typography.dart';
+import '../../calendar/calendar_controller.dart';
+import '../../calendar/calendar_dates.dart';
+import '../../calendar/calendar_models.dart';
+import '../home_format.dart';
 import '../home_preview_data.dart';
 
 /// 홈에 맞는 날짜 칸과 범례를 공통 월 달력에 제공한다.
@@ -16,21 +20,68 @@ class HomeCalendar extends StatelessWidget {
     required this.showSearch,
     required this.search,
     required this.onDateSelected,
+    this.liveState,
+    this.matchedDates = const {},
   });
   final DateTime month, selectedDate;
   final int card, view;
   final bool showSearch;
   final String search;
   final ValueChanged<DateTime> onDateSelected;
+  final CalendarState? liveState;
+  final Set<DateTime> matchedDates;
+
+  /// 현재 기간의 주 수에 맞춰 스와이프 영역 높이를 계산한다.
+  double get gridHeight {
+    final start = liveState?.window?.start ?? DateTime.utc(month.year, month.month);
+    final end = liveState?.window?.endInclusive ?? DateTime.utc(month.year, month.month + 1).subtract(const Duration(days: 1));
+    final weeks = ((start.weekday % 7) + end.difference(start).inDays + 1 + 6) ~/ 7;
+    return 17 + 4 + weeks * 60 + (weeks - 1) * 4;
+  }
 
   @override
   /// 홈의 날짜 표현을 공통 월 달력에 연결한다.
   Widget build(BuildContext context) => AppMonthCalendar(
     month: month,
+    rangeStart: liveState?.window?.start,
+    rangeEnd: liveState?.window?.endInclusive,
     selectedDate: selectedDate,
     onDateSelected: onDateSelected,
-    dayBuilder: _dayCell,
+    dayBuilder: liveState == null ? _dayCell : _liveDayCell,
   );
+
+  /// 서버가 반환한 색상 문자열을 표시용 색상으로 변환한다.
+  Color _methodColor(String? value) {
+    if (value == null || !RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(value)) return AppTokens.textSecondary;
+    return Color(int.parse('FF${value.substring(1)}', radix: 16));
+  }
+
+  /// 서버의 날짜별 지출, 결제수단과 마감일을 현재 달력 칸에 표시한다.
+  Widget _liveDayCell(BuildContext context, DateTime date, bool enabled, bool selected) {
+    final day = liveState!.days[calendarDate(date)];
+    final today = DateUtils.isSameDay(date, DateTime.now());
+    final closing = day?.closingCards ?? const <CalendarPaymentMethod>[];
+    final payday = day?.income.any((item) => item.incomeType == 'paycheck') ?? false;
+    final dots = day?.dots ?? const <CalendarTransactionDot>[];
+    final textColor = today ? AppTokens.textInverse : AppTokens.textPrimary;
+    return Container(
+      key: Key('home-day-${date.year}-${date.month}-${date.day}'),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+      decoration: BoxDecoration(color: today ? AppTokens.brandPurple : payday ? AppTokens.brandLime.withValues(alpha: .4) : AppTokens.surface, borderRadius: BorderRadius.circular(AppRadius.md)),
+      foregroundDecoration: matchedDates.contains(calendarDate(date)) ? BoxDecoration(border: Border.all(color: AppTokens.textPrimary, width: 1.5), borderRadius: BorderRadius.circular(AppRadius.md)) : closing.isEmpty ? null : BoxDecoration(border: Border.all(color: _methodColor(closing.first.color), width: 1.5), borderRadius: BorderRadius.circular(AppRadius.md)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${date.day}', style: AppTypography.caption.copyWith(color: today ? AppTokens.textInverse : AppTokens.textSecondary)),
+        if ((day?.spendingCents ?? 0) != 0 && view == 1) ...[
+          const SizedBox(height: 2),
+          Flexible(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(formatHomeMoney(day!.spendingCents), style: AppTypography.caption.copyWith(color: textColor)))),
+        ],
+        if (dots.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          SingleChildScrollView(scrollDirection: Axis.horizontal, physics: const NeverScrollableScrollPhysics(), child: Row(mainAxisSize: MainAxisSize.min, children: [for (final dot in dots) Padding(padding: const EdgeInsets.only(right: 3), child: Container(width: 6, height: 6, decoration: BoxDecoration(color: _methodColor(dot.color), shape: BoxShape.circle)))])),
+        ],
+      ]),
+    );
+  }
 
   /// 선택일·급여일·마감일과 보기 모드에 따라 날짜 칸을 구분한다.
   Widget _dayCell(
@@ -199,6 +250,7 @@ class HomeCalendar extends StatelessWidget {
 
   /// Simple은 마감일 설명만, Detail은 카드·급여·마감일·오늘 범례를 표시한다.
   Widget legend() {
+    if (liveState != null) return _liveLegend();
     if (view == 0) {
       if (card != 0 && HomePreviewData.closingDays[card] == null) {
         return const SizedBox.shrink();
@@ -324,6 +376,28 @@ class HomeCalendar extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// 실제 선택된 결제수단과 서버에서 제공한 마감일 범례를 표시한다.
+  Widget _liveLegend() {
+    final state = liveState!;
+    final methods = state.selectedCardId == null ? state.paymentMethods : state.paymentMethods.where((method) => method.id == state.selectedCardId).toList();
+    final closing = methods.where((method) => method.isCredit).toList();
+    if (view == 0) {
+      if (closing.isEmpty) return const SizedBox.shrink();
+      return Row(children: [Container(width: 10, height: 10, decoration: BoxDecoration(borderRadius: BorderRadius.circular(3), border: Border.all(color: _methodColor(closing.first.color), width: 1.5))), const SizedBox(width: 5), Flexible(child: Text('Closing day', style: AppTypography.caption.copyWith(color: AppTokens.textSecondary), overflow: TextOverflow.ellipsis))]);
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+        for (final method in methods) ...[_legendItem(method.name, _methodColor(method.color)), const SizedBox(width: AppSpacing.md)],
+        if (state.period?.mode == 'all' && state.days.values.any((day) => day.income.any((income) => income.incomeType == 'paycheck'))) _legendItem('Payday', AppTokens.brandLime),
+      ])),
+      const SizedBox(height: 6),
+      Row(children: [
+        if (closing.isNotEmpty) ...[for (final method in closing) Padding(padding: const EdgeInsets.only(right: 2), child: Container(width: 10, height: 10, decoration: BoxDecoration(borderRadius: BorderRadius.circular(3), border: Border.all(color: _methodColor(method.color), width: 1.5)))), const SizedBox(width: 3), Text('Closing day', style: AppTypography.caption.copyWith(color: AppTokens.textSecondary)), const SizedBox(width: AppSpacing.md)],
+        Container(width: 10, height: 10, decoration: BoxDecoration(color: AppTokens.brandPurple, borderRadius: BorderRadius.circular(3))), const SizedBox(width: 5), Text('Today', style: AppTypography.caption.copyWith(color: AppTokens.textSecondary)),
+      ]),
+    ]);
   }
 
   /// 범례 한 항목의 색 점과 이름을 배치한다.

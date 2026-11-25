@@ -18,7 +18,6 @@ from app.auth.admin import AuthAdminUnavailable
 from app.auth.dependencies import get_current_user_id
 from app.db.base import Base
 from app.db.models.category import Category
-from app.db.models.day_note import DayNote
 from app.db.models.income_record import IncomeRecord
 from app.db.models.income_source import IncomeSource
 from app.db.models.ledger import Ledger
@@ -53,7 +52,7 @@ def test_delete_app_data_keeps_other_user_and_records_pending_state(db: Session)
     db.flush()
     db.add_all([Ledger(id=ledger_id, owner_user_id=user_id, name="Personal"), Ledger(id=other_ledger_id, owner_user_id=other_id, name="Other"), PaymentMethod(id=method_id, user_id=user_id, name="Cash", type="cash-like", color="#FCA05A")])
     db.flush()
-    db.add_all([LedgerMember(ledger_id=ledger_id, user_id=user_id, role="owner"), LedgerMember(ledger_id=other_ledger_id, user_id=other_id, role="owner"), Transaction(id=transaction_id, ledger_id=ledger_id, payment_method_id=method_id, transacted_at=date(2026, 10, 1), total_cents=100, tax_cents=0, tip_cents=0, source="manual", deleted_at=datetime.now(UTC)), IncomeSource(id=source_id, ledger_id=ledger_id, expected_amount_cents=100, frequency="once", reference_date=date(2026, 10, 1), next_expected_date=date(2026, 10, 1)), DayNote(ledger_id=ledger_id, note_date=date(2026, 10, 1), content="Memo")])
+    db.add_all([LedgerMember(ledger_id=ledger_id, user_id=user_id, role="owner"), LedgerMember(ledger_id=other_ledger_id, user_id=other_id, role="owner"), Transaction(id=transaction_id, ledger_id=ledger_id, payment_method_id=method_id, transacted_at=date(2026, 10, 1), total_cents=100, tax_cents=0, tip_cents=0, source="manual", deleted_at=datetime.now(UTC)), IncomeSource(id=source_id, ledger_id=ledger_id, expected_amount_cents=100, frequency="once", reference_date=date(2026, 10, 1), next_expected_date=date(2026, 10, 1))])
     db.flush()
     db.add_all([TransactionItem(transaction_id=transaction_id, category_id=category_id, name="Coffee", amount_cents=100), IncomeRecord(ledger_id=ledger_id, income_source_id=source_id, amount_cents=100, income_type="other", received_at=date(2026, 10, 1))])
     db.commit()
@@ -69,7 +68,6 @@ def test_delete_app_data_keeps_other_user_and_records_pending_state(db: Session)
     assert db.scalars(select(TransactionItem)).all() == []
     assert db.scalars(select(IncomeRecord)).all() == []
     assert db.scalars(select(IncomeSource)).all() == []
-    assert db.scalars(select(DayNote)).all() == []
     assert db.get(User, other_id) is not None
     assert db.get(Ledger, other_ledger_id) is not None
     assert db.get(LedgerMember, (other_ledger_id, other_id)) is not None
@@ -83,7 +81,7 @@ def test_delete_app_data_rolls_back_on_failure(db: Session, monkeypatch) -> None
     db.flush()
     db.add(Ledger(id=ledger_id, owner_user_id=user_id, name="Personal"))
     db.commit()
-    monkeypatch.setattr(repository, "delete_ledger_income_and_notes", Mock(side_effect=RuntimeError("DB error")))
+    monkeypatch.setattr(repository, "delete_ledger_income", Mock(side_effect=RuntimeError("DB error")))
 
     with pytest.raises(RuntimeError, match="DB error"):
         service.delete_user_app_data(db, user_id)
