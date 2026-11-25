@@ -19,6 +19,8 @@ class AppMonthCalendar extends StatelessWidget {
     this.selectedDate,
     this.firstDate,
     this.lastDate,
+    this.rangeStart,
+    this.rangeEnd,
     this.onDateSelected,
     this.dayBuilder,
     this.weekdayLabels = const [
@@ -39,6 +41,8 @@ class AppMonthCalendar extends StatelessWidget {
   final DateTime? selectedDate;
   final DateTime? firstDate;
   final DateTime? lastDate;
+  final DateTime? rangeStart;
+  final DateTime? rangeEnd;
   final ValueChanged<DateTime>? onDateSelected;
   final AppCalendarDayBuilder? dayBuilder;
   final List<String> weekdayLabels;
@@ -50,8 +54,10 @@ class AppMonthCalendar extends StatelessWidget {
   /// 일요일부터 시작하는 월 그리드를 만들고 빈 날짜도 같은 너비로 유지한다.
   Widget build(BuildContext context) {
     assert(weekdayLabels.length == 7);
-    final firstDay = DateTime(month.year, month.month);
-    final dayCount = DateUtils.getDaysInMonth(month.year, month.month);
+    assert((rangeStart == null) == (rangeEnd == null));
+    final firstDay = rangeStart == null ? DateTime.utc(month.year, month.month) : DateTime.utc(rangeStart!.year, rangeStart!.month, rangeStart!.day);
+    final end = rangeEnd == null ? DateTime.utc(month.year, month.month + 1).subtract(const Duration(days: 1)) : DateTime.utc(rangeEnd!.year, rangeEnd!.month, rangeEnd!.day);
+    final dayCount = end.difference(firstDay).inDays + 1;
     final leadingDays = firstDay.weekday % 7;
     final weekCount = (leadingDays + dayCount + 6) ~/ 7;
 
@@ -89,6 +95,7 @@ class AppMonthCalendar extends StatelessWidget {
                     context,
                     week * 7 + weekday - leadingDays + 1,
                     dayCount,
+                    firstDay,
                   ),
                 ),
               ],
@@ -100,10 +107,11 @@ class AppMonthCalendar extends StatelessWidget {
   }
 
   /// 선택 가능 범위와 선택 상태를 날짜별로 계산해 화면별 칸 표현에 전달한다.
-  Widget _daySlot(BuildContext context, int day, int dayCount) {
+  Widget _daySlot(BuildContext context, int day, int dayCount, DateTime firstDay) {
     if (day < 1 || day > dayCount) return SizedBox(height: dayHeight);
 
-    final date = DateTime(month.year, month.month, day);
+    final utcDate = firstDay.add(Duration(days: day - 1));
+    final date = DateTime(utcDate.year, utcDate.month, utcDate.day);
     final enabled =
         (firstDate == null || !date.isBefore(DateUtils.dateOnly(firstDate!))) &&
         (lastDate == null || !date.isAfter(DateUtils.dateOnly(lastDate!)));
@@ -120,7 +128,7 @@ class AppMonthCalendar extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: Text(
-              '$day',
+              '${date.day}',
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: !enabled
                     ? AppTokens.textDisabled

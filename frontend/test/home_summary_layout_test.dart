@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:spending_tracker/home/home_transaction_data.dart';
 import 'package:spending_tracker/home/widgets/home_transaction_section.dart';
 
 void main() {
@@ -10,17 +11,15 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(MaterialApp(home: Scaffold(body: HomeTransactionSection(
-        selectedDate: date, card: 0, view: 1, expanded: false,
-        expandedTransactions: const {}, notes: const {}, merchantNotes: const {},
+        selectedDate: date, transactions: previewHomeTransactions(date, 0), isToday: date == DateTime(2026, 8, 24), view: 1, expanded: false,
+        expandedTransactions: const {}, merchantNotes: const {},
         onExpand: () {}, onCollapse: () {}, onCollapseAll: () {},
         onToggleTransaction: (_) {}, onOpenNoteEditor: (_) {},
       ))));
       await tester.pumpAndSettle();
       final box = tester.getRect(find.byKey(const Key('home-day-summary')));
-      final icon = tester.getRect(find.byKey(const Key('home-day-edit-icon')));
-      expect(icon.center.dy, closeTo(box.center.dy, 0.01));
-      expect(box.right - icon.right, closeTo(19, 0.01));
-      expect(icon.size, const Size(28, 28));
+      expect(box.width, lessThanOrEqualTo(320));
+      expect(find.byKey(const Key('home-day-edit-icon')), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }

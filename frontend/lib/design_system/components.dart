@@ -10,6 +10,7 @@ export 'bottom_navigation.dart';
 export 'category_icon.dart';
 export 'chevron.dart';
 export 'tooltip.dart';
+export 'page_indicator.dart';
 
 enum AppButtonVariant { primary, secondary, social, outline, surface, disabled, danger }
 

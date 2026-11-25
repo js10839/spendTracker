@@ -35,6 +35,13 @@ class HomeHeader extends StatelessWidget {
     required this.onOpenSearch,
     required this.onCancelSearch,
     required this.onSearchChanged,
+    this.liveFilterName,
+    this.liveRangeLabel,
+    this.liveSpendingLabel,
+    this.hideExampleTotals = false,
+    this.searchEnabled = true,
+    this.totalsEnabled = true,
+    this.onLightBackground,
   });
   final int amount, income, card, view;
   final HomeTotalMode totalMode;
@@ -51,9 +58,14 @@ class HomeHeader extends StatelessWidget {
       onOpenSearch,
       onCancelSearch;
   final ValueChanged<String> onSearchChanged;
+  final String? liveFilterName, liveRangeLabel, liveSpendingLabel;
+  final bool hideExampleTotals;
+  final bool searchEnabled;
+  final bool totalsEnabled;
+  final bool? onLightBackground;
 
   /// 수입 화면에서 밝은 배경에 맞는 컨트롤을 사용한다.
-  bool get _lightHeader => totalMode == HomeTotalMode.income;
+  bool get _lightHeader => onLightBackground ?? totalMode == HomeTotalMode.income;
   /// 배경에 맞춰 헤더 텍스트의 기본 색을 정한다.
   Color get _controlColor => _lightHeader ? AppTokens.textPrimary : AppTokens.textInverse;
 
@@ -78,9 +90,12 @@ class HomeHeader extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(child: Text(
                       switch (totalMode) {
-                        HomeTotalMode.spending => card == 0 ? 'Spent this month' : '8/5~9/4',
+                        HomeTotalMode.spending => liveSpendingLabel ?? (card == 0 ? 'Spent this month' : '8/5~9/4'),
                         HomeTotalMode.net => 'Total Spending + Income',
                         HomeTotalMode.income => 'Total Income',
                       },
@@ -89,6 +104,10 @@ class HomeHeader extends StatelessWidget {
                       style: AppTypography.bodyMedium.copyWith(
                         color: _controlColor.withValues(alpha: 0.70),
                       ),
+                        )),
+                        const SizedBox(width: AppSpacing.sm),
+                        AppPageIndicator(count: HomeTotalMode.values.length, activeIndex: totalMode.index, color: _controlColor),
+                      ],
                     ),
                   ),
                   AppSegmentedControl(
@@ -99,15 +118,15 @@ class HomeHeader extends StatelessWidget {
                 ],
               ),
               Semantics(
-                button: true,
+                button: totalsEnabled,
                 child: GestureDetector(
                   key: const Key('home-total-amount'),
-                  onTap: onTotalTap,
+                  onTap: totalsEnabled ? onTotalTap : null,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      formatHomeMoney(switch (totalMode) {
+                      hideExampleTotals ? '—' : formatHomeMoney(switch (totalMode) {
                         HomeTotalMode.spending => amount,
                         HomeTotalMode.net => income - amount,
                         HomeTotalMode.income => income,
@@ -146,7 +165,7 @@ class HomeHeader extends StatelessWidget {
                 ),
               )
             else
-              _headerCircle('imgIconSearch.svg', onOpenSearch),
+              Opacity(opacity: searchEnabled ? 1 : .5, child: IgnorePointer(ignoring: !searchEnabled, child: _headerCircle('imgIconSearch.svg', onOpenSearch))),
           ],
         ),
       ],
@@ -176,7 +195,7 @@ class HomeHeader extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                HomePreviewData.cardNames[card],
+                liveFilterName ?? HomePreviewData.cardNames[card],
                 style: AppTypography.bodyLarge.copyWith(color: _lightHeader ? AppTokens.textInverse : AppTokens.textPrimary),
               ),
               const SizedBox(width: 6),
@@ -265,9 +284,9 @@ class HomeHeader extends StatelessWidget {
   );
 
   /// 헤더와 강조 표시에서 같은 월 문구를 사용한다.
-  String get _monthLabel => card == 0
+  String get _monthLabel => liveRangeLabel ?? (card == 0
       ? '${homeMonths[month.month - 1]} ${month.year}'
-      : '${homeMonths[month.month - 1]} - ${homeMonths[month.month % 12]} ${month.year}';
+      : '${homeMonths[month.month - 1]} - ${homeMonths[month.month % 12]} ${month.year}');
 
   /// 헤더의 원형 아이콘 버튼을 Figma 크기로 만든다.
   Widget _headerCircle(String asset, VoidCallback onTap) => InkWell(

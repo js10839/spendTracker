@@ -3,16 +3,18 @@ import 'package:flutter/material.dart';
 import '../../design_system/tokens.dart';
 import '../../design_system/typography.dart';
 
-/// 홈 달력의 선택 날짜에 짧은 메모를 입력하는 시트다.
+/// 선택한 거래의 메모를 입력하고 저장하는 시트다.
 class HomeNoteSheet extends StatefulWidget {
   const HomeNoteSheet({
     super.key,
     required this.date,
     required this.initialText,
+    this.onSave,
   });
 
   final DateTime date;
   final String initialText;
+  final Future<void> Function(String)? onSave;
 
   @override
   /// 입력 내용과 글자 수를 시트 안에서 관리한다.
@@ -21,6 +23,22 @@ class HomeNoteSheet extends StatefulWidget {
 
 class _HomeNoteSheetState extends State<HomeNoteSheet> {
   late final TextEditingController _controller;
+  bool _saving = false;
+  bool _saveFailed = false;
+
+  /// 저장 실패 시 입력을 유지해 같은 시트에서 재시도한다.
+  Future<void> _save() async {
+    if (_saving) return;
+    final text = _controller.text;
+    if (widget.onSave == null) { Navigator.of(context).pop(text); return; }
+    setState(() { _saving = true; _saveFailed = false; });
+    try {
+      await widget.onSave!(text);
+      if (mounted) Navigator.of(context).pop(text);
+    } catch (_) {
+      if (mounted) setState(() { _saving = false; _saveFailed = true; });
+    }
+  }
 
   static const _weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   static const _months = [
@@ -115,7 +133,7 @@ class _HomeNoteSheetState extends State<HomeNoteSheet> {
                           ],
                         ),
                         TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
+                          onPressed: _saving ? null : () => Navigator.of(context).pop(),
                           style: TextButton.styleFrom(
                             foregroundColor: AppPalette.neutral600,
                             padding: EdgeInsets.zero,
@@ -149,6 +167,7 @@ class _HomeNoteSheetState extends State<HomeNoteSheet> {
                             child: TextField(
                               key: const Key('home-note-input'),
                               controller: _controller,
+                              readOnly: _saving,
                               autofocus: true,
                               maxLength: 200,
                               maxLines: null,
@@ -185,6 +204,10 @@ class _HomeNoteSheetState extends State<HomeNoteSheet> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
+                    if (_saveFailed) ...[
+                      Text('Unable to save your note. Please try again.', style: AppTypography.bodyMedium.copyWith(color: AppTokens.statusDanger)),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
                     SizedBox(
                       width: double.infinity,
                       height: 52,
@@ -194,11 +217,10 @@ class _HomeNoteSheetState extends State<HomeNoteSheet> {
                         child: InkWell(
                           key: const Key('home-note-save'),
                           borderRadius: BorderRadius.circular(16),
-                          onTap: () =>
-                              Navigator.of(context).pop(_controller.text),
+                          onTap: _saving ? null : _save,
                           child: Center(
                             child: Text(
-                              'Save',
+                              _saving ? 'Saving...' : 'Save',
                               style: AppTypography.heading3.copyWith(
                                 color: AppTokens.background,
                               ),

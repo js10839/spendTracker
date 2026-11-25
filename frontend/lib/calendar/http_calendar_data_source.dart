@@ -24,19 +24,6 @@ class HttpCalendarDataSource implements CalendarDataSource {
     CalendarPeriod.fromJson,
   );
 
-  @override
-  Future<CalendarNote?> saveNote({
-    required String ledgerId,
-    required DateTime date,
-    required String content,
-  }) async {
-    final json = await api.putJson(
-      ['ledgers', ledgerId, 'day-notes', calendarDateKey(date)],
-      body: {'content': content},
-    );
-    return json == null ? null : _decode(json, CalendarNote.fromJson);
-  }
-
   T _decode<T>(Object? json, T Function(Map<String, dynamic>) decode) {
     if (json is! Map<String, dynamic>) {
       throw const FormatException('Expected an API JSON object');

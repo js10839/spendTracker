@@ -51,7 +51,7 @@ final GoRouter appRouter = GoRouter(
         }
         return '/splash';
       },
-      builder: (context, state) => const HomePage(),
+      builder: (context, state) => HomePage(isMember: AuthService.instance.currentUserId != null),
     ),
     // TODO: 로그아웃 및 앱 사용 중 세션 무효화 시 온보딩으로 이동한다.
     GoRoute(
