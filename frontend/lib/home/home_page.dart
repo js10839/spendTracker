@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../calendar/calendar_access.dart';
 import '../calendar/calendar_controller.dart';
+import '../calendar/calendar_models.dart';
 import '../data/transactions/transaction_search.dart';
 import '../design_system/components.dart';
 import '../design_system/typography.dart';
@@ -68,6 +70,7 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _search = TextEditingController();
   final ScrollController _calendarScroll = ScrollController();
   final GlobalKey _daySummaryAnchor = GlobalKey();
+  final GlobalKey<AppCalendarPagerState> _calendarPagerKey = GlobalKey<AppCalendarPagerState>();
 
   static const _addTooltipSeenKey = 'home_add_tooltip_seen';
   static const _addTooltipDuration = Duration(seconds: 3);
@@ -239,7 +242,10 @@ class _HomePageState extends State<HomePage> {
       }),
       onOpenFilter: _openFilter,
       onOpenMonthPicker: _openMonthPicker,
-      onMoveMonth: _moveMonth,
+      onMoveMonth: (delta) {
+        final pager = _calendarPagerKey.currentState;
+        if (pager == null) { _moveMonth(delta); } else { pager.move(delta); }
+      },
       onOpenSearch: () => setState(() => _showSearch = true),
       onCancelSearch: _cancelSearch,
       onSearchChanged: (_) { setState(() {}); if (widget.isMember) _scheduleSearch(); },
@@ -289,7 +295,7 @@ class _HomePageState extends State<HomePage> {
                         clipBehavior: Clip.none,
                         alignment: Alignment.topCenter,
                         children: [
-                          const AppBottomNavigation(selectedIndex: 0),
+                          AppBottomNavigation(selectedIndex: 0, onSelected: (index) { if (index == 4) context.push('/profile', extra: widget.isMember); }),
                           if (_showAddTooltip &&
                               !_showSearch &&
                               keyboardInset == 0)
@@ -375,6 +381,15 @@ class _HomePageState extends State<HomePage> {
       liveState: widget.isMember ? state : null,
       matchedDates: widget.isMember && _showSearch ? _searchResult?.dates ?? const {} : const {},
     );
+    // 현재 달력과 같은 위젯으로 인접 기간을 표시한다.
+    HomeCalendar? adjacent(CalendarPeriod? period, int delta) {
+      if (widget.isMember && period == null) return null;
+      final month = widget.isMember ? period!.window.start : DateTime(_month.year, _month.month + delta);
+      final adjacentState = widget.isMember ? CalendarState(selectedDate: month, period: period, selectedCardId: period!.paymentMethodId) : null;
+      return HomeCalendar(month: month, selectedDate: month, card: _card, view: _view, showSearch: false, search: '', onDateSelected: (_) {}, liveState: adjacentState);
+    }
+    final previous = adjacent(state?.previousPeriod, -1);
+    final next = adjacent(state?.nextPeriod, 1);
     return ListView(
       controller: _calendarScroll,
       padding: const EdgeInsets.fromLTRB(
@@ -384,7 +399,16 @@ class _HomePageState extends State<HomePage> {
         AppSpacing.twoXL,
       ),
       children: [
-        calendar,
+        AppCalendarPager(
+          key: _calendarPagerKey,
+          current: calendar,
+          currentHeight: calendar.gridHeight,
+          previous: previous == null ? null : IgnorePointer(child: previous),
+          previousHeight: previous?.gridHeight,
+          next: next == null ? null : IgnorePointer(child: next),
+          nextHeight: next?.gridHeight,
+          onMove: _moveMonth,
+        ),
         const SizedBox(height: AppSpacing.md),
         if (widget.isMember && _showSearch && _search.text.trim().isNotEmpty && _searchLoading)
           const Center(child: CircularProgressIndicator())
@@ -525,10 +549,22 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 월 넘김 뒤 선택일을 같은 월의 첫날로 맞춘다.
-  void _moveMonth(int delta) {
+  void _moveMonth(int delta) async {
     if (widget.isMember) {
       setState(() { _expanded = false; _expandedTransactions.clear(); });
-      if (delta < 0) { _calendarController!.previousPeriod(); } else { _calendarController!.nextPeriod(); }
+      final controller = _calendarController!;
+      final currentPeriod = controller.state.period;
+      final currentCard = controller.state.selectedCardId;
+      final adjacent = delta < 0 ? controller.state.previousPeriod : controller.state.nextPeriod;
+      if (adjacent == null) {
+        final ready = await controller.prepareAdjacent(forward: delta > 0);
+        if (!mounted || !ready) return;
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted || controller.state.period != currentPeriod || controller.state.selectedCardId != currentCard) return;
+        final pager = _calendarPagerKey.currentState;
+        if (pager != null) { await pager.move(delta); return; }
+      }
+      if (delta < 0) { await controller.previousPeriod(); } else { await controller.nextPeriod(); }
       return;
     }
     setState(() {

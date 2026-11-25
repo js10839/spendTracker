@@ -31,6 +31,14 @@ class HomeCalendar extends StatelessWidget {
   final CalendarState? liveState;
   final Set<DateTime> matchedDates;
 
+  /// 현재 기간의 주 수에 맞춰 스와이프 영역 높이를 계산한다.
+  double get gridHeight {
+    final start = liveState?.window?.start ?? DateTime.utc(month.year, month.month);
+    final end = liveState?.window?.endInclusive ?? DateTime.utc(month.year, month.month + 1).subtract(const Duration(days: 1));
+    final weeks = ((start.weekday % 7) + end.difference(start).inDays + 1 + 6) ~/ 7;
+    return 17 + 4 + weeks * 60 + (weeks - 1) * 4;
+  }
+
   @override
   /// 홈의 날짜 표현을 공통 월 달력에 연결한다.
   Widget build(BuildContext context) => AppMonthCalendar(
@@ -69,7 +77,7 @@ class HomeCalendar extends StatelessWidget {
         ],
         if (dots.isNotEmpty) ...[
           const SizedBox(height: 2),
-          SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(mainAxisSize: MainAxisSize.min, children: [for (final dot in dots) Padding(padding: const EdgeInsets.only(right: 3), child: Container(width: 6, height: 6, decoration: BoxDecoration(color: _methodColor(dot.color), shape: BoxShape.circle)))])),
+          SingleChildScrollView(scrollDirection: Axis.horizontal, physics: const NeverScrollableScrollPhysics(), child: Row(mainAxisSize: MainAxisSize.min, children: [for (final dot in dots) Padding(padding: const EdgeInsets.only(right: 3), child: Container(width: 6, height: 6, decoration: BoxDecoration(color: _methodColor(dot.color), shape: BoxShape.circle)))])),
         ],
       ]),
     );

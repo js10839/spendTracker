@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'home/home_page.dart';
+import 'profile/profile_page.dart';
 import 'auth/login_email_page.dart';
 import 'auth/login_code_page.dart';
 import 'auth/signup_page.dart';
@@ -24,6 +25,7 @@ import 'splash/splash_page.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: '/splash',
   routes: [
+    GoRoute(path: '/profile', name: 'profile', redirect: (context, state) => state.extra is bool ? null : '/splash', builder: (context, state) => ProfilePage(isMember: state.extra == true)),
     GoRoute(
       path: '/splash',
       name: 'splash',
