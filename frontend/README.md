@@ -20,6 +20,19 @@ flutter test
 
 `lib/main.dart` currently contains only a minimal launch screen. Calendar logic and its FastAPI request adapter are available, but feature screens and Supabase Auth/session handling have not been added yet. App data must go through FastAPI; the mobile app may call Supabase directly only for Auth.
 
+## Dashboard prototype data
+
+`lib/dashboard/dashboard_preview_data.dart` provides local August 2026 sample
+transactions and `DashboardPreviewData.monthlySpending`, a map matching the
+dashboard API's `monthly_spending` section. Import it with
+`package:spending_tracker/dashboard/dashboard_preview_data.dart`.
+It contains 2–4 purchases on 29 days, with two empty days, four payment methods
+(including Cash), daily totals, and colored payment-method breakdowns.
+The fixed preview date is August 31, 2026. It reuses Home's card names/colors but
+uses a separate transaction set; Home's existing sample totals are unchanged.
+No backend, Supabase, credentials, or network requests are needed. No dashboard
+screen is connected yet. The real app should use the backend's calculated data.
+
 ## Calendar requests
 
 `ApiClient` sends JSON requests using a token supplied by the caller.

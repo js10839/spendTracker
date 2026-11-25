@@ -60,6 +60,10 @@ class PaymentMethodTotal(BaseModel):
     total_cents: int
 
 
+class PaymentMethodBreakdown(SpendingPeriod):
+    payment_methods: list[PaymentMethodTotal]
+
+
 class MonthlySpendingBucket(SpendingBucket):
     payment_methods: list[PaymentMethodTotal]
 
@@ -93,7 +97,7 @@ class DashboardRead(BaseModel):
     card_statements: list[CardStatement]
     next_payday: NextPayday | None
     monthly_spending: MonthlySpendingChart
-    monthly_cash_spending: SpendingPeriod
+    payment_method_breakdown: PaymentMethodBreakdown
     yearly_spending: SpendingChart
     cycle_pace: list[CyclePace]
     category_breakdown: CategoryBreakdown

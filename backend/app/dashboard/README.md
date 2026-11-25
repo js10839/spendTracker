@@ -48,11 +48,16 @@ separate-currency product decision before they can be summed.
   No monthly total is added.
 - `yearly_spending`: twelve buckets, dated on each month's first day.
   Both include zeros; future buckets are zero. Card selection applies to both.
-- `monthly_cash_spending`: selected calendar month's `start_date`, `end_date`,
-  and `total_cents` across all `cash-like` payment methods, including bank transfers
-  recorded under those methods. Independent of the optional credit-card filter.
-  Uses recorded spending transactions only, excludes deleted/future transactions,
-  retains signed refunds, and returns zero when there is no cash-like spending.
+- `payment_method_breakdown`: replaces `monthly_cash_spending`. Selected calendar
+  month's `start_date`, `end_date`, overall `total_cents`, and `payment_methods`:
+  each has `payment_method_id`, `name`, `color`, and `total_cents`. Includes every
+  method used for spending, including cash-like methods/bank transfers, independently
+  of the optional credit-card filter. Methods remain separate by ID, even with
+  identical names; cash-like methods are not merged into a single Cash slice.
+  Ordered by amount descending, then name/ID; net-zero methods are omitted.
+  Excludes deleted/future transactions and retains signed refunds. Empty months
+  return zero and an empty list. Negative net amounts need explicit UI handling
+  for a pie chart; the backend does not silently discard them or take absolute values.
 - `cycle_pace`: All plus every owned credit card. All uses calendar months; cards
   use billing cycles. Each compares current spending through `as_of` with the same
   number of elapsed days in the previous period, capped at that period's end.
@@ -103,6 +108,7 @@ Original implementation verification: 40 dashboard tests passed, including 17 ag
 left exact row counts unchanged across all 13 test2/test2_auth tables. The existing
 non-live backend suite plus dashboard API/service tests passes (192 tests).
 
-Monthly stack and Cash-summary follow-up: 192 non-live tests and Ruff pass.
-New PostgreSQL assertions are included, but live verification is pending because
-the configured Supabase hostname could not be resolved.
+Monthly stack and Cash-summary follow-up: all 19 PostgreSQL tests passed in the
+user's terminal. Payment-method pie replacement: 192 non-live tests and Ruff pass;
+20 PostgreSQL cases are included, but verification of the replacement is pending
+because this command environment cannot resolve the configured Supabase hostname.

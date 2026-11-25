@@ -133,7 +133,7 @@ windows AS (
     UNION ALL SELECT 'rolling', NULL, as_of - 29, as_of FROM params
     UNION ALL SELECT 'month', selected_card, month_start,
         (month_start + INTERVAL '1 month')::date - 1 FROM params
-    UNION ALL SELECT 'cash_month', NULL, month_start,
+    UNION ALL SELECT 'method_month', NULL, month_start,
         (month_start + INTERVAL '1 month')::date - 1 FROM params
     UNION ALL SELECT 'year', selected_card, year_start,
         (year_start + INTERVAL '1 year')::date - 1 FROM params
@@ -154,9 +154,6 @@ totals AS (
     FROM windows w LEFT JOIN spending t
       ON t.transacted_at BETWEEN w.start_date AND w.end_date
      AND (w.method_id IS NULL OR t.payment_method_id = w.method_id)
-     AND (w.kind <> 'cash_month' OR EXISTS (
-         SELECT 1 FROM payment_methods m
-         WHERE m.id = t.payment_method_id AND m.type = 'cash-like'))
     GROUP BY w.kind, w.method_id
 ),
 category_sums AS (
@@ -181,6 +178,16 @@ pie_categories AS (
     SELECT NULL::uuid, 'Tax, tip & unitemized',
         (SELECT amount FROM totals WHERE kind = 'category') -
         COALESCE((SELECT sum(amount_cents) FROM category_sums WHERE kind = 'category'), 0)
+),
+monthly_methods AS (
+    SELECT m.id AS payment_method_id, m.name, m.color,
+           sum(t.total_cents)::bigint AS total_cents
+    FROM spending t JOIN payment_methods m ON m.id = t.payment_method_id
+    CROSS JOIN params p
+    WHERE t.transacted_at >= p.month_start
+      AND t.transacted_at < (p.month_start + INTERVAL '1 month')::date
+    GROUP BY m.id, m.name, m.color
+    HAVING sum(t.total_cents) <> 0
 ),
 daily_methods AS (
     SELECT t.transacted_at AS date, m.id AS payment_method_id, m.name, m.color,
@@ -247,7 +254,10 @@ SELECT EXISTS(SELECT 1 FROM spending WHERE currency <> 'USD') AS unsupported_cur
            'buckets', (SELECT jsonb_agg(to_jsonb(d) ORDER BY d.date) FROM days d)) AS monthly_spending,
        jsonb_build_object('start_date', p.month_start,
            'end_date', (p.month_start + INTERVAL '1 month')::date - 1,
-           'total_cents', (SELECT amount FROM totals WHERE kind = 'cash_month')) AS monthly_cash_spending,
+           'total_cents', (SELECT amount FROM totals WHERE kind = 'method_month'),
+           'payment_methods', (SELECT COALESCE(jsonb_agg(to_jsonb(m)
+               ORDER BY m.total_cents DESC, m.name, m.payment_method_id), '[]'::jsonb)
+               FROM monthly_methods m)) AS payment_method_breakdown,
        jsonb_build_object('start_date', p.year_start,
            'end_date', (p.year_start + INTERVAL '1 year')::date - 1,
            'buckets', (SELECT jsonb_agg(to_jsonb(m) ORDER BY m.date) FROM months m)) AS yearly_spending,

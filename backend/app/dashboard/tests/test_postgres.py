@@ -18,7 +18,8 @@ from app.main import app
 def test_empty_ledger_returns_zero_buckets_and_all_cards(samples):
     result = samples.read()
     assert result.spending_30_days.total_cents == 0
-    assert result.monthly_cash_spending.total_cents == 0
+    assert result.payment_method_breakdown.total_cents == 0
+    assert result.payment_method_breakdown.payment_methods == []
     assert len(result.monthly_spending.buckets) == 30
     assert len(result.yearly_spending.buckets) == 12
     assert all(b.total_cents == 0 for b in result.monthly_spending.buckets)
@@ -202,7 +203,7 @@ def test_month_year_and_category_windows_can_be_selected_independently(samples):
     assert result.spending_30_days.total_cents == 300
 
 
-def test_monthly_cash_includes_transfers_and_ignores_card_filter(samples):
+def test_payment_method_breakdown_includes_cash_and_ignores_card_filter(samples):
     samples.insert(
         "payment_methods",
         "transfer",
@@ -221,6 +222,7 @@ def test_monthly_cash_includes_transfers_and_ignores_card_filter(samples):
     samples.tx("transfer_purchase", "2025-10-31", 800, method="transfer")
     samples.tx("refund", "2025-10-15", -100, method="cash")
     samples.tx("credit", "2025-10-15", 9000)
+    samples.tx("second_card", "2025-10-16", 2000, method="second")
     samples.tx("before", "2025-09-30", 9000, method="cash")
     samples.tx("after", "2025-11-01", 9000, method="cash")
     samples.tx("deleted", "2025-10-15", 9000, method="cash", deleted=True)
@@ -230,15 +232,42 @@ def test_monthly_cash_includes_transfers_and_ignores_card_filter(samples):
     selected = samples.read(
         month=date(2025, 10, 1), payment_method_id=samples.id("card")
     )
-    summary = selected.monthly_cash_spending
-    assert summary == all_result.monthly_cash_spending
+    summary = selected.payment_method_breakdown
+    assert summary == all_result.payment_method_breakdown
     assert (summary.start_date, summary.end_date, summary.total_cents) == (
         date(2025, 10, 1),
         date(2025, 10, 31),
-        1200,
+        12200,
+    )
+    assert [(m.payment_method_id, m.total_cents) for m in summary.payment_methods] == [
+        (samples.id("card"), 9000),
+        (samples.id("second"), 2000),
+        (samples.id("transfer"), 800),
+        (samples.id("cash"), 400),
+    ]
+    assert summary.payment_methods[2].name == "Bank transfer"
+    assert summary.payment_methods[2].color == "#999999"
+    assert sum(m.total_cents for m in summary.payment_methods) == summary.total_cents
+    assert (
+        sum(b.total_cents for b in all_result.monthly_spending.buckets)
+        == summary.total_cents
     )
     assert sum(b.total_cents for b in selected.monthly_spending.buckets) == 9000
-    assert samples.read().monthly_cash_spending.total_cents == 0
+    assert samples.read().payment_method_breakdown.total_cents == 0
+    assert "monthly_cash_spending" not in selected.model_dump()
+
+
+def test_payment_method_pie_preserves_signed_refunds_and_omits_zero_methods(samples):
+    samples.tx("purchase", "2026-11-13", 200, method="cash")
+    samples.tx("refunded_purchase", "2026-11-13", 100, method="second")
+    samples.tx("full_refund", "2026-11-13", -100, method="second")
+    samples.tx("net_refund", "2026-11-13", -50)
+    summary = samples.read().payment_method_breakdown
+    assert summary.total_cents == 150
+    assert [(m.payment_method_id, m.total_cents) for m in summary.payment_methods] == [
+        (samples.id("cash"), 200),
+        (samples.id("card"), -50),
+    ]
 
 
 def test_next_payday_combines_same_day_sources_and_ignores_other_income(samples):
