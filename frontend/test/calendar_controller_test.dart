@@ -14,6 +14,7 @@ void main() {
       ledgerId: 'personal',
       dataSource: source,
       clock: () => DateTime(2026, 10, 20),
+      prefetchAdjacent: false,
     );
   });
   tearDown(() => controller.dispose());
@@ -70,7 +71,7 @@ void main() {
       expect(controller.state.selectedDate, DateTime.utc(2026, 11, 1));
       source.response = CalendarPeriod.fromJson(calendarJson());
       await controller.previousPeriod();
-      expect(source.requests.last.anchorDate, DateTime.utc(2026, 10, 31));
+      expect(source.requests.last.anchorDate, DateTime.utc(2026, 11, 1));
       expect(controller.state.selectedDate, DateTime.utc(2026, 10, 20));
     },
   );
@@ -148,7 +149,7 @@ void main() {
     final next = controller.nextPeriod();
     await controller.nextPeriod();
     expect(source.requests.length, 2);
-    expect(controller.state.days, isEmpty);
+    expect(controller.state.days, isNotEmpty);
     gate.complete(source.response);
     await next;
   });

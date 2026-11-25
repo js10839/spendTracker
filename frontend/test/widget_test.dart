@@ -83,6 +83,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // 달력의 수평 이동은 기간을 바꾸고 수직 이동은 홈을 스크롤한다.
+  testWidgets('달력에서 좌우 전환과 세로 스크롤을 함께 사용한다', (tester) async {
+    tester.view.physicalSize = const Size(402, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(const SpendingTrackerApp());
+    await tester.pumpAndSettle();
+    final pager = find.byType(AppCalendarPager);
+    await tester.timedDrag(pager, const Offset(-250, 0), const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Sep 2026'), findsOneWidget);
+    await tester.timedDrag(pager, const Offset(250, 0), const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Aug 2026'), findsOneWidget);
+    final before = tester.getTopLeft(pager).dy;
+    await tester.drag(pager, const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(pager).dy, lessThan(before));
+    expect(find.text('Aug 2026'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   // 첫 진입 안내는 추가 버튼 위에 3초간 보이고 재진입 시 다시 나타나지 않는다.
   testWidgets('홈 첫 진입 추가 버튼 안내', (tester) async {
     tester.view.physicalSize = const Size(402, 874);
