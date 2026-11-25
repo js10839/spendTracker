@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../calendar/calendar_access.dart';
@@ -289,7 +290,7 @@ class _HomePageState extends State<HomePage> {
                         clipBehavior: Clip.none,
                         alignment: Alignment.topCenter,
                         children: [
-                          const AppBottomNavigation(selectedIndex: 0),
+                          AppBottomNavigation(selectedIndex: 0, onSelected: (index) { if (index == 4) context.push('/profile', extra: widget.isMember); }),
                           if (_showAddTooltip &&
                               !_showSearch &&
                               keyboardInset == 0)
