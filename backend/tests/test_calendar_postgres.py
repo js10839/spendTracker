@@ -1,6 +1,7 @@
 """실제 PostgreSQL에서 실행별 스키마와 테스트별 트랜잭션으로 달력을 검증한다."""
 
 import os
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from uuid import uuid4
 
@@ -33,7 +34,8 @@ from app.main import app
 
 
 @pytest.fixture(scope="module")
-def calendar_engine():
+def calendar_db_url():
+    """명시적으로 선택된 PostgreSQL 테스트 연결 주소를 가져온다."""
     url = os.environ.get("CALENDAR_TEST_DB_URL")
     if not url and os.environ.get("CALENDAR_TEST_USE_CONFIGURED_DB") == "1":
         url = settings.db_url
@@ -41,6 +43,12 @@ def calendar_engine():
         pytest.skip(
             "Set CALENDAR_TEST_DB_URL to run PostgreSQL calendar integration tests"
         )
+    return url
+
+
+@contextmanager
+def isolated_calendar_engine(url):
+    """테스트 전용 스키마를 열고 커밋된 샘플까지 종료 시 정리한다."""
     engine = create_engine(url, connect_args={"connect_timeout": 10})
     schema = f"calendar_test_{uuid4().hex}"
     auth_schema = f"{schema}_auth"
@@ -59,6 +67,13 @@ def calendar_engine():
             conn.execute(DropSchema(schema, cascade=True))
             conn.execute(DropSchema(auth_schema, cascade=True))
         engine.dispose()
+
+
+@pytest.fixture(scope="module")
+def calendar_engine(calendar_db_url):
+    """롤백으로 격리하는 테스트들은 같은 임시 스키마를 사용한다."""
+    with isolated_calendar_engine(calendar_db_url) as engine:
+        yield engine
 
 
 @pytest.fixture
@@ -82,7 +97,12 @@ def db(calendar_engine, monkeypatch):
 
 @pytest.fixture
 def data(db):
-    # 각 테스트에서 독립적인 사용자·가계부·결제수단을 생성한다.
+    """현재 테스트의 트랜잭션에 기본 데이터를 준비한다."""
+    return seed_calendar_data(db)
+
+
+def seed_calendar_data(db):
+    """지정한 연결에 사용자·가계부·결제수단을 생성한다."""
     user, other, ledger, other_ledger, card, second, cash, foreign, category = (
         uuid4() for _ in range(9)
     )
@@ -720,8 +740,8 @@ def test_constant_query_count_and_explain(db, data):
     )
 
 
-def test_dart_adapter_over_http_to_postgres(db, data):
-    """Optional real transport test without requiring a Supabase Auth session."""
+def test_dart_adapter_over_http_to_postgres(calendar_db_url, monkeypatch):
+    """Dart의 달력 이동과 인접 기간 조회를 요청별 DB 세션으로 검증한다."""
     import socket
     import subprocess
     import threading
@@ -735,10 +755,27 @@ def test_dart_adapter_over_http_to_postgres(db, data):
         pytest.skip(
             "Set CALENDAR_TEST_DART to a Dart executable for the cross-stack smoke test"
         )
-    transaction(db, data, "2026-11-06", amount=130, item_count=1)
-    with Session(bind=db, join_transaction_mode="create_savepoint") as session:
-        app.dependency_overrides[get_db] = lambda: session
-        app.dependency_overrides[get_current_user_id] = lambda: data["user"]
+    with isolated_calendar_engine(calendar_db_url) as engine:
+        # 다른 연결의 요청도 샘플을 볼 수 있도록 전용 스키마에 먼저 커밋한다.
+        with engine.begin() as conn:
+            data = seed_calendar_data(conn)
+            transaction(conn, data, "2026-11-06", amount=130, item_count=1)
+
+        schema = engine.get_execution_options()["schema_translate_map"][None]
+
+        def request_db():
+            """각 HTTP 요청에서 독립 세션을 열고 raw SQL도 테스트 스키마로 보낸다."""
+            with Session(engine) as session:
+                session.execute(
+                    text("SELECT set_config('search_path', :schema, true)"),
+                    {"schema": schema},
+                )
+                yield session
+
+        monkeypatch.setitem(app.dependency_overrides, get_db, request_db)
+        monkeypatch.setitem(
+            app.dependency_overrides, get_current_user_id, lambda: data["user"]
+        )
         server = uvicorn.Server(
             uvicorn.Config(app, log_level="error", access_log=False)
         )
@@ -774,4 +811,3 @@ def test_dart_adapter_over_http_to_postgres(db, data):
             finally:
                 server.should_exit = True
                 thread.join(timeout=10)
-                app.dependency_overrides.clear()
