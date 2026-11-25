@@ -3,7 +3,6 @@ from uuid import UUID
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
-from app.db.models.day_note import DayNote
 from app.db.models.income_record import IncomeRecord
 from app.db.models.income_source import IncomeSource
 from app.db.models.ledger import Ledger
@@ -53,11 +52,10 @@ def delete_ledger_transactions(db: Session, ledger_ids: list[UUID]) -> None:
     db.execute(delete(TransactionItem).where(TransactionItem.transaction_id.in_(transaction_ids)))
     db.execute(delete(Transaction).where(Transaction.ledger_id.in_(ledger_ids)))
 
-def delete_ledger_income_and_notes(db: Session, ledger_ids: list[UUID]) -> None:
-    """소유 가계부의 수입 기록과 날짜 메모를 삭제한다."""
+def delete_ledger_income(db: Session, ledger_ids: list[UUID]) -> None:
+    """소유 가계부의 실제 수입과 예정 수입을 삭제한다."""
     db.execute(delete(IncomeRecord).where(IncomeRecord.ledger_id.in_(ledger_ids)))
     db.execute(delete(IncomeSource).where(IncomeSource.ledger_id.in_(ledger_ids)))
-    db.execute(delete(DayNote).where(DayNote.ledger_id.in_(ledger_ids)))
 
 def delete_user_data(db: Session, user_id: UUID, ledger_ids: list[UUID]) -> None:
     """사용자의 앱 데이터를 삭제하고 프로필에 삭제 진행 상태를 기록한다."""

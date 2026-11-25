@@ -80,7 +80,7 @@ def delete_user_app_data(db: Session, user_id: UUID) -> None:
         user_repo.mark_user_deletion_requested(db, user_id=user_id)
         ledger_ids = user_repo.list_owned_ledger_ids(db, user_id=user_id)
         user_repo.delete_ledger_transactions(db, ledger_ids=ledger_ids)
-        user_repo.delete_ledger_income_and_notes(db, ledger_ids=ledger_ids)
+        user_repo.delete_ledger_income(db, ledger_ids=ledger_ids)
         user_repo.delete_user_data(db, user_id=user_id, ledger_ids=ledger_ids)
         db.commit()
     except Exception:
