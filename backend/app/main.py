@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.income.router import router as income_router
 from app.ledgers.router import router as ledgers_router
 from app.payment_methods.router import router as payment_methods_router
+from app.receipts.router import router as receipts_router
 from app.transactions.router import router as transaction_router
 from app.users.router import router as users_router
 
@@ -37,6 +38,8 @@ app.include_router(transaction_router)
 # 가계부 멤버의 수입 기록 API를 연결한다.
 app.include_router(income_router)
 app.include_router(calendar_router)
+# 영수증 파싱 API를 연결한다
+app.include_router(receipts_router)
 
 @app.get("/health/live")
 async def health_live() -> dict[str, str]:
