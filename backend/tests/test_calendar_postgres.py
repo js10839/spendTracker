@@ -625,6 +625,89 @@ def test_api_uses_real_authorization_and_raw_sql_response(db, data):
             app.dependency_overrides.clear()
 
 
+@pytest.fixture
+def wallet_client(db, data, monkeypatch):
+    """순차 HTTP 요청마다 별도 세션을 열고 테스트의 외부 트랜잭션은 유지한다."""
+
+    def request_db():
+        """서비스가 커밋한 변경을 다음 요청에서 다시 읽을 수 있게 한다."""
+        with Session(bind=db, join_transaction_mode="create_savepoint") as session:
+            yield session
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, request_db)
+    monkeypatch.setitem(
+        app.dependency_overrides, get_current_user_id, lambda: data["user"]
+    )
+    with TestClient(app) as client:
+        yield client
+
+
+def test_updated_card_color_in_wallet_and_calendar(db, data, wallet_client):
+    """카드 색상 변경 후 지갑과 달력의 거래 도트·마감 카드가 같은 색상을 반환한다."""
+    transaction(db, data, "2026-11-12", method=data["card"])
+    card_id = str(data["card"])
+    color = "#ab12CD"
+    wallet_path = "/users/me/payment-methods"
+    response = wallet_client.patch(
+        f"{wallet_path}/{card_id}/color", json={"color": color}
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": card_id,
+        "name": "Chase",
+        "type": "credit",
+        "closing_day": 12,
+        "color": color,
+    }
+
+    wallet = wallet_client.get(wallet_path)
+    assert wallet.status_code == 200
+    assert (
+        next(method for method in wallet.json() if method["id"] == card_id)
+        == response.json()
+    )
+    calendar = wallet_client.get(
+        f"/ledgers/{data['ledger']}/calendar", params={"anchor_date": "2026-11-12"}
+    )
+    assert calendar.status_code == 200
+    closing_day = next(
+        day for day in calendar.json()["days"] if day["date"] == "2026-11-12"
+    )
+    assert (
+        next(
+            dot["color"]
+            for dot in closing_day["dots"]
+            if dot["payment_method_id"] == card_id
+        )
+        == color
+    )
+    assert (
+        next(
+            card["color"]
+            for card in closing_day["closing_cards"]
+            if card["id"] == card_id
+        )
+        == color
+    )
+
+
+def test_patch_color_hides_foreign_and_missing_methods(db, data, wallet_client):
+    """타인의 카드와 없는 카드는 같은 404를 반환하고 타인의 저장값을 보존한다."""
+    for method_id in (data["foreign"], uuid4()):
+        response = wallet_client.patch(
+            f"/users/me/payment-methods/{method_id}/color", json={"color": "#FF55CC"}
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Payment method not found"
+    assert (
+        db.scalar(
+            text("SELECT color FROM payment_methods WHERE id = :id"),
+            {"id": data["foreign"]},
+        )
+        == "#000000"
+    )
+
+
 def test_calendar_requires_authentication():
     with TestClient(app) as client:
         assert (

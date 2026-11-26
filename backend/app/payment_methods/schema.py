@@ -1,6 +1,6 @@
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PaymentMethodCreate(BaseModel):
@@ -20,3 +20,8 @@ class PaymentMethodCreate(BaseModel):
         if self.type == "cash-like" and self.name.strip().casefold() == "cash":
             raise ValueError("Cash is already built in")
         return self
+
+class PaymentMethodColorUpdate(BaseModel):
+    """내 지갑의 결제수단 색상 수정 요청을 검증한다."""
+    model_config = ConfigDict(extra="forbid")
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
