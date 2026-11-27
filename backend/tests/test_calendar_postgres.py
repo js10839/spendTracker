@@ -1,21 +1,14 @@
-"""Real PostgreSQL coverage with retained fixtures in test1 and test1_auth.
-
-Set CALENDAR_TEST_DB_URL, or explicitly opt into the configured database with
-CALENDAR_TEST_USE_CONFIGURED_DB=1. App/auth data outside these schemas is untouched.
-Each test reuses a versioned dataset with stable IDs; inserts ignore duplicates.
-Only the shared holiday cache is reset before each test for deterministic results.
-"""
+"""실제 PostgreSQL에서 실행별 스키마와 테스트별 트랜잭션으로 달력을 검증한다."""
 
 import os
 from datetime import UTC, date, datetime
-from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, insert, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.auth.dependencies import get_current_user_id
 from app.calendar import repository, service
@@ -25,7 +18,6 @@ from app.db.base import Base
 from app.db.models import (
     BankCalendarYear,
     Category,
-    DayNote,
     IncomeRecord,
     IncomeSource,
     Ledger,
@@ -50,111 +42,50 @@ def calendar_engine():
             "Set CALENDAR_TEST_DB_URL to run PostgreSQL calendar integration tests"
         )
     engine = create_engine(url, connect_args={"connect_timeout": 10})
-    schema = "test1"
-    auth_schema = "test1_auth"
+    schema = f"calendar_test_{uuid4().hex}"
+    auth_schema = f"{schema}_auth"
     with engine.begin() as conn:
-        conn.execute(CreateSchema(schema, if_not_exists=True))
-        conn.execute(CreateSchema(auth_schema, if_not_exists=True))
+        conn.execute(CreateSchema(schema))
+        conn.execute(CreateSchema(auth_schema))
     isolated = engine.execution_options(
         schema_translate_map={None: schema, "auth": auth_schema}
     )
     try:
         Base.metadata.create_all(isolated)
-        with isolated.begin() as conn:
-            conn.execute(
-                text("SELECT set_config('search_path', :schema, true)"),
-                {"schema": schema},
-            )
-            # Match migration bddcfc4a0a05 for retained schemas; create_all
-            # creates missing tables but does not add columns to existing ones.
-            conn.execute(
-                text(
-                    "ALTER TABLE test1.users ADD COLUMN IF NOT EXISTS "
-                    "onboarding_completed boolean NOT NULL DEFAULT false"
-                )
-            )
-            conn.execute(
-                text("""
-                CREATE TABLE IF NOT EXISTS calendar_test_cases (
-                    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                    test_name text NOT NULL,
-                    fixture_ids jsonb NOT NULL,
-                    created_at timestamptz NOT NULL DEFAULT now()
-                )
-            """)
-            )
-            conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_calendar_test_cases_name "
-                    "ON calendar_test_cases (test_name)"
-                )
-            )
         yield isolated
     finally:
-        engine.dispose()  # Keep schemas and rows for inspection in Supabase.
+        # 이번 실행에서 만든 두 스키마만 정리한다.
+        with engine.begin() as conn:
+            conn.execute(DropSchema(schema, cascade=True))
+            conn.execute(DropSchema(auth_schema, cascade=True))
+        engine.dispose()
 
 
 @pytest.fixture
-def db(calendar_engine, monkeypatch, request):
+def db(calendar_engine, monkeypatch):
     # Bankday is deterministic here; API cache failure is tested separately.
     monkeypatch.setattr(service, "fetch_bank_holidays", lambda year: set())
     with calendar_engine.connect() as conn:
         transaction = conn.begin()
         # Raw SQL does not honor SQLAlchemy's schema_translate_map. Keep its
-        # unqualified table names inside the same persistent test schema as ORM setup.
+        # unqualified table names inside the same isolated test schema as ORM setup.
         schema = calendar_engine.get_execution_options()["schema_translate_map"][None]
         conn.execute(
             text("SELECT set_config('search_path', :schema, true)"), {"schema": schema}
         )
         assert conn.scalar(text("SELECT current_schema()")) == schema
-        # Holiday-provider tests need a known initial cache, independent of prior
-        # runs. Financial fixtures remain intact and are scoped to per-test ledgers.
-        conn.execute(text("DELETE FROM bank_calendar_years"))
-        conn.info["calendar_test_name"] = request.node.nodeid
-        conn.info["calendar_seed_index"] = 0
         try:
             yield conn
         finally:
-            try:
-                transaction.commit()
-            finally:
-                conn.info.pop("calendar_test_name", None)
-                conn.info.pop("calendar_seed_index", None)
+            transaction.rollback()
 
 
 @pytest.fixture
 def data(db):
-    # One indexed lookup skips base data creation on subsequent runs. The
-    # version separates reusable datasets from earlier randomly generated ones.
-    existing = db.scalar(
-        text(
-            "SELECT fixture_ids FROM calendar_test_cases "
-            "WHERE test_name = :name AND fixture_ids ->> '_version' = '1' "
-            "ORDER BY id DESC LIMIT 1"
-        ),
-        {"name": db.info["calendar_test_name"]},
+    # 각 테스트에서 독립적인 사용자·가계부·결제수단을 생성한다.
+    user, other, ledger, other_ledger, card, second, cash, foreign, category = (
+        uuid4() for _ in range(9)
     )
-    if existing is not None:
-        return {
-            key: UUID(value) for key, value in existing.items() if key != "_version"
-        }
-    user, other, ledger, other_ledger, card, second, cash, foreign, category = [
-        uuid5(
-            NAMESPACE_URL,
-            f"spendTracker/calendar/v1/{db.info['calendar_test_name']}/{role}",
-        )
-        for role in (
-            "user",
-            "other",
-            "ledger",
-            "other_ledger",
-            "card",
-            "second",
-            "cash",
-            "foreign",
-            "category",
-        )
-    ]
     db.execute(insert(auth_users), [{"id": user}, {"id": other}])
     db.execute(insert(User.__table__), [{"id": user}, {"id": other}])
     db.execute(
@@ -205,13 +136,8 @@ def data(db):
             },
         ],
     )
-    category = db.scalar(
-        pg_insert(Category.__table__)
-        .values(id=category, name="Food")
-        .on_conflict_do_update(index_elements=["name"], set_={"name": "Food"})
-        .returning(Category.id)
-    )
-    fixture_ids = {
+    db.execute(insert(Category.__table__), {"id": category, "name": "Food"})
+    return {
         "user": user,
         "other": other,
         "ledger": ledger,
@@ -222,37 +148,12 @@ def data(db):
         "foreign": foreign,
         "category": category,
     }
-    import json
-
-    db.execute(
-        text(
-            "INSERT INTO calendar_test_cases (test_name, fixture_ids) "
-            "VALUES (:name, CAST(:ids AS jsonb))"
-        ),
-        {
-            "name": db.info["calendar_test_name"],
-            "ids": json.dumps(
-                {
-                    "_version": "1",
-                    **{key: str(value) for key, value in fixture_ids.items()},
-                }
-            ),
-        },
-    )
-    return fixture_ids
 
 
 def seed_insert(db, table, values):
-    """Reuse deterministic sample rows without SELECTs for individual inserts."""
-    index = db.info["calendar_seed_index"]
-    db.info["calendar_seed_index"] = index + 1
-    identifier = uuid5(
-        NAMESPACE_URL,
-        f"spendTracker/calendar/v1/{db.info['calendar_test_name']}/{table.name}/{index}",
-    )
-    db.execute(
-        pg_insert(table).values(id=identifier, **values).on_conflict_do_nothing()
-    )
+    """시나리오의 행을 추가하고 다른 테스트 데이터에서 참조할 ID를 반환한다."""
+    identifier = uuid4()
+    db.execute(insert(table), {"id": identifier, **values})
     return identifier
 
 
@@ -384,20 +285,11 @@ def test_full_day_items_dots_totals_and_empty_days(db, data):
     assert result.days[0].spending_cents == 0
 
 
-def test_card_filter_keeps_notes_but_hides_other_closings_and_general_income(db, data):
+def test_card_filter_hides_other_closings_and_general_income(db, data):
     transaction(db, data, "2026-10-13")
     transaction(db, data, "2026-11-12")
     transaction(db, data, "2026-11-13")
     transaction(db, data, "2026-11-06", method=data["second"])
-    seed_insert(
-        db,
-        DayNote.__table__,
-        {
-            "ledger_id": data["ledger"],
-            "note_date": date(2026, 10, 31),
-            "content": "Pay bills",
-        },
-    )
     seed_insert(
         db,
         IncomeRecord.__table__,
@@ -418,7 +310,6 @@ def test_card_filter_keeps_notes_but_hides_other_closings_and_general_income(db,
     )
     assert sum(len(day.transactions) for day in result.days) == 2
     day = next(day for day in result.days if day.date == date(2026, 10, 31))
-    assert day.note.content == "Pay bills"
     assert day.income == []
     assert day.received_income_cents == 0
     assert day.closing_cards == []
@@ -535,8 +426,86 @@ def test_income_filter_matches_type_card_and_status(db, data, monkeypatch, selec
         assert day.received_income_cents == 1500
 
 
-@pytest.mark.parametrize("kind", ["cash", "foreign", "missing"])
-def test_invalid_selected_card_is_404(db, data, kind):
+@pytest.mark.parametrize("selected", [None, "card", "cash"])
+def test_calendar_unqualified_tables_with_recursive_ctes(db, data, selected):
+    """스키마 없는 테이블 이름을 쓰는 실제 요청에서도 달력을 조회한다."""
+    transaction(db, data, "2026-11-06", amount=200, method=data["cash"])
+    transaction(db, data, "2026-11-06", amount=300, method=data["card"])
+    schema_map = db.get_execution_options()["schema_translate_map"]
+    db.execute(
+        text("SELECT set_config('search_path', :schema, true)"),
+        {"schema": schema_map[None]},
+    )
+    db.execution_options(schema_translate_map=None)
+
+    with Session(bind=db, join_transaction_mode="create_savepoint") as session:
+        app.dependency_overrides[get_db] = lambda: session
+        app.dependency_overrides[get_current_user_id] = lambda: data["user"]
+        try:
+            with TestClient(app) as client:
+                params = {"anchor_date": "2026-11-06"}
+                if selected:
+                    params["payment_method_id"] = str(data[selected])
+                response = client.get(
+                    f"/ledgers/{data['ledger']}/calendar", params=params
+                )
+                assert response.status_code == 200
+                body = response.json()
+                assert body["mode"] == (selected or "all")
+                day = next(day for day in body["days"] if day["date"] == "2026-11-06")
+                assert (
+                    day["spending_cents"]
+                    == {None: 500, "card": 300, "cash": 200}[selected]
+                )
+                assert len(day["transactions"]) == (2 if selected is None else 1)
+        finally:
+            app.dependency_overrides.clear()
+
+
+def test_cash_calendar_filters_transactions_and_hides_income(db, data):
+    """Cash는 월별 거래만 보여주고 모든 수입과 마감일을 숨긴다."""
+    transaction(db, data, "2026-11-06", amount=200, method=data["cash"])
+    transaction(db, data, "2026-11-06", amount=300, method=data["card"])
+    transaction(db, data, "2026-10-31", method=data["cash"])
+    transaction(db, data, "2026-11-06", method=data["cash"], deleted=True)
+    transaction(
+        db, data, "2026-11-06", method=data["cash"], ledger=data["other_ledger"]
+    )
+    for income_type, method in [("paycheck", None), ("cashback", data["cash"])]:
+        plan(db, data, "2026-11-06", income_type=income_type, payment_method_id=method)
+        seed_insert(
+            db,
+            IncomeRecord.__table__,
+            {
+                "ledger_id": data["ledger"],
+                "income_type": income_type,
+                "payment_method_id": method,
+                "amount_cents": 100,
+                "received_at": date(2026, 11, 6),
+            },
+        )
+
+    result = read_calendar(
+        db, data["ledger"], data["user"], date(2026, 11, 6), data["cash"]
+    )
+    assert result.mode == "cash"
+    assert result.payment_method_id == data["cash"]
+    assert (result.start_date, result.end_date) == (
+        date(2026, 11, 1),
+        date(2026, 11, 30),
+    )
+    assert len(result.days) == 30
+    day = result.days[5]
+    assert [item.payment_method_id for item in day.transactions] == [data["cash"]]
+    assert day.spending_cents == 200
+    assert all(
+        not day.income and day.received_income_cents == 0 and not day.closing_cards
+        for day in result.days
+    )
+
+
+@pytest.mark.parametrize("kind", ["foreign", "missing"])
+def test_invalid_selected_payment_method_is_404(db, data, kind):
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as error:
@@ -621,8 +590,7 @@ def test_monthly_reference_day_survives_february_and_year_shift(db, data, monkey
 
 
 def test_api_uses_real_authorization_and_raw_sql_response(db, data):
-    # Keep route commits inside savepoints; the fixture commits the outer
-    # transaction afterward so the dataset remains available for inspection.
+    # 서비스가 커밋해도 테스트 종료 시 외부 트랜잭션에서 모두 롤백한다.
     with Session(bind=db, join_transaction_mode="create_savepoint") as session:
         app.dependency_overrides[get_db] = lambda: session
         app.dependency_overrides[get_current_user_id] = lambda: data["user"]
@@ -632,6 +600,16 @@ def test_api_uses_real_authorization_and_raw_sql_response(db, data):
                 response = client.get(path, params={"anchor_date": "2026-11-06"})
                 assert response.status_code == 200
                 assert len(response.json()["days"]) == 30
+                cash_response = client.get(
+                    path,
+                    params={
+                        "anchor_date": "2026-11-06",
+                        "payment_method_id": str(data["cash"]),
+                    },
+                )
+                assert cash_response.status_code == 200
+                assert cash_response.json()["mode"] == "cash"
+                assert cash_response.json()["payment_method_id"] == str(data["cash"])
                 assert client.get(path).status_code == 422
                 assert (
                     client.get(path, params={"anchor_date": "bad"}).status_code == 422
@@ -645,6 +623,167 @@ def test_api_uses_real_authorization_and_raw_sql_response(db, data):
                 )
         finally:
             app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def wallet_client(db, data, monkeypatch):
+    """순차 HTTP 요청마다 별도 세션을 열고 테스트의 외부 트랜잭션은 유지한다."""
+
+    def request_db():
+        """서비스가 커밋한 변경을 다음 요청에서 다시 읽을 수 있게 한다."""
+        with Session(bind=db, join_transaction_mode="create_savepoint") as session:
+            yield session
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, request_db)
+    monkeypatch.setitem(
+        app.dependency_overrides, get_current_user_id, lambda: data["user"]
+    )
+    with TestClient(app) as client:
+        yield client
+
+
+def test_updated_card_color_in_wallet_and_calendar(db, data, wallet_client):
+    """카드 색상 변경 후 지갑과 달력의 거래 도트·마감 카드가 같은 색상을 반환한다."""
+    transaction(db, data, "2026-11-12", method=data["card"])
+    card_id = str(data["card"])
+    color = "#ab12CD"
+    wallet_path = "/users/me/payment-methods"
+    response = wallet_client.patch(
+        f"{wallet_path}/{card_id}", json={"color": color}
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": card_id,
+        "name": "Chase",
+        "type": "credit",
+        "closing_day": 12,
+        "color": color,
+    }
+
+    wallet = wallet_client.get(wallet_path)
+    assert wallet.status_code == 200
+    assert (
+        next(method for method in wallet.json() if method["id"] == card_id)
+        == response.json()
+    )
+    calendar = wallet_client.get(
+        f"/ledgers/{data['ledger']}/calendar", params={"anchor_date": "2026-11-12"}
+    )
+    assert calendar.status_code == 200
+    closing_day = next(
+        day for day in calendar.json()["days"] if day["date"] == "2026-11-12"
+    )
+    assert (
+        next(
+            dot["color"]
+            for dot in closing_day["dots"]
+            if dot["payment_method_id"] == card_id
+        )
+        == color
+    )
+    assert (
+        next(
+            card["color"]
+            for card in closing_day["closing_cards"]
+            if card["id"] == card_id
+        )
+        == color
+    )
+
+
+def test_patch_card_details_changes_calendar_cycle(data, wallet_client):
+    """같은 기준일로 재조회하면 수정한 마감일로 사이클과 마감 표시가 이동한다."""
+    card_id = str(data["card"])
+    path = f"/users/me/payment-methods/{card_id}"
+    calendar_path = f"/ledgers/{data['ledger']}/calendar"
+    params = {"anchor_date": "2026-11-15", "payment_method_id": card_id}
+
+    before = wallet_client.get(calendar_path, params=params)
+    assert before.status_code == 200
+    assert (before.json()["start_date"], before.json()["end_date"]) == (
+        "2026-11-13",
+        "2026-12-12",
+    )
+
+    renamed = wallet_client.patch(path, json={"name": "  Daily card  "})
+    assert renamed.status_code == 200
+    assert renamed.json() == {
+        "id": card_id,
+        "name": "Daily card",
+        "type": "credit",
+        "closing_day": 12,
+        "color": "#3366FF",
+    }
+    changes = {"name": "Main card", "closing_day": 20, "color": "#AACCEE"}
+    updated = wallet_client.patch(path, json=changes)
+    assert updated.status_code == 200
+    assert updated.json() == {**renamed.json(), **changes}
+
+    after = wallet_client.get(calendar_path, params=params)
+    assert after.status_code == 200
+    calendar = after.json()
+    assert (calendar["start_date"], calendar["end_date"]) == (
+        "2026-10-21",
+        "2026-11-20",
+    )
+    closings = [
+        (day["date"], card)
+        for day in calendar["days"]
+        for card in day["closing_cards"]
+        if card["id"] == card_id
+    ]
+    assert closings == [("2026-11-20", updated.json())]
+
+
+def test_patch_details_hides_foreign_and_missing_methods(db, data, wallet_client):
+    """소유하지 않은 결제수단은 404로 처리하고 이름과 마감일을 보존한다."""
+    for method_id in (data["foreign"], uuid4()):
+        response = wallet_client.patch(
+            f"/users/me/payment-methods/{method_id}",
+            json={"name": "Changed", "closing_day": 20, "color": "#AACCEE"},
+        )
+        assert response.status_code == 404
+    stored = db.execute(
+        text("SELECT name, closing_day, color FROM payment_methods WHERE id = :id"),
+        {"id": data["foreign"]},
+    ).one()
+    assert tuple(stored) == ("Foreign", 8, "#000000")
+
+
+@pytest.mark.parametrize(
+    ("key", "payload"),
+    [
+        ("card", {"name": "Changed", "closing_day": None, "color": "#AACCEE"}),
+        ("card", {"name": "Changed", "closing_day": 20, "color": "invalid"}),
+        ("cash", {"closing_day": 12}),
+        ("cash", {"name": "Renamed cash"}),
+    ],
+)
+def test_invalid_wallet_details_preserve_wallet(data, wallet_client, key, payload):
+    """종류별 마감일이나 기본 Cash 이름 규칙을 위반하면 부분 변경도 저장하지 않는다."""
+    path = "/users/me/payment-methods"
+    before = wallet_client.get(path)
+    assert before.status_code == 200
+    assert wallet_client.patch(f"{path}/{data[key]}", json=payload).status_code == 422
+    after = wallet_client.get(path)
+    assert after.status_code == 200
+    assert after.json() == before.json()
+
+
+def test_cash_like_details_accept_null_and_reserve_cash_name(wallet_client):
+    """직접 추가한 현금성 수단은 마감일 없이 개명하되 기본 Cash 이름을 쓸 수 없다."""
+    path = "/users/me/payment-methods"
+    created = wallet_client.post(
+        path, json={"name": "Debit", "type": "cash-like", "color": "#123456"}
+    )
+    assert created.status_code == 201
+    method_path = f"{path}/{created.json()['id']}"
+    renamed = wallet_client.patch(
+        method_path, json={"name": "Checking", "closing_day": None}
+    )
+    assert renamed.status_code == 200
+    assert renamed.json() == {**created.json(), "name": "Checking", "closing_day": None}
+    assert wallet_client.patch(method_path, json={"name": " cAsH "}).status_code == 422
 
 
 def test_calendar_requires_authentication():

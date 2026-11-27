@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.category import Category
@@ -54,6 +54,11 @@ def find_ledger_transaction(db: Session, ledger_id: UUID, transaction_id: UUID) 
     """가계부에 속한 삭제되지 않은 결제를 입력 방식과 무관하게 조회한다."""
     statement = select(Transaction).where(Transaction.id==transaction_id, Transaction.ledger_id==ledger_id, Transaction.deleted_at.is_(None))
     return db.execute(statement=statement).scalar_one_or_none()
+
+def update_transaction_memo(db: Session, ledger_id: UUID, transaction_id: UUID, memo: str | None):
+    """가계부의 활성 거래 메모만 변경하고 결과를 반환한다."""
+    statement = update(Transaction).where(Transaction.id == transaction_id, Transaction.ledger_id == ledger_id, Transaction.deleted_at.is_(None)).values(memo=memo).returning(Transaction.id, Transaction.memo)
+    return db.execute(statement).one_or_none()
 
 def mark_transaction_deleted(db: Session, transaction: Transaction, deleted_at: datetime) -> None:
     """결제 삭제 시각만 기록하고 품목은 복구를 위해 보관한다."""

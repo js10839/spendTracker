@@ -14,6 +14,7 @@ void main() {
       ledgerId: 'personal',
       dataSource: source,
       clock: () => DateTime(2026, 10, 20),
+      prefetchAdjacent: false,
     );
   });
   tearDown(() => controller.dispose());
@@ -70,7 +71,7 @@ void main() {
       expect(controller.state.selectedDate, DateTime.utc(2026, 11, 1));
       source.response = CalendarPeriod.fromJson(calendarJson());
       await controller.previousPeriod();
-      expect(source.requests.last.anchorDate, DateTime.utc(2026, 10, 31));
+      expect(source.requests.last.anchorDate, DateTime.utc(2026, 11, 1));
       expect(controller.state.selectedDate, DateTime.utc(2026, 10, 20));
     },
   );
@@ -148,62 +149,10 @@ void main() {
     final next = controller.nextPeriod();
     await controller.nextPeriod();
     expect(source.requests.length, 2);
-    expect(controller.state.days, isEmpty);
+    expect(controller.state.days, isNotEmpty);
     gate.complete(source.response);
     await next;
   });
-
-  test(
-    'note save captures selected date, reloads once, and supports clearing',
-    () async {
-      await controller.refresh();
-      controller.selectDate(DateTime(2026, 10, 6));
-      expect(await controller.saveSelectedNote('Remember'), isTrue);
-      expect(source.writes.last.date, DateTime.utc(2026, 10, 6));
-      expect(source.writes.last.content, 'Remember');
-      expect(source.requests.length, 2);
-      expect(await controller.saveSelectedNote(''), isTrue);
-      expect(source.writes.last.content, '');
-    },
-  );
-
-  test('failed note save retains loaded data and does not reload', () async {
-    await controller.refresh();
-    source.saveError = StateError('write failed');
-    expect(await controller.saveSelectedNote('draft'), isFalse);
-    expect(controller.state.noteError, isNotNull);
-    expect(controller.state.days.length, 31);
-    expect(source.requests.length, 1);
-  });
-
-  test('successful save remains successful when reload fails', () async {
-    await controller.refresh();
-    source.loader = (_) => Future.error(StateError('read failed'));
-    expect(await controller.saveSelectedNote('saved'), isTrue);
-    expect(controller.state.noteError, isNull);
-    expect(controller.state.error, isNotNull);
-  });
-
-  test(
-    'save during navigation retains write date and reloads current anchor',
-    () async {
-      await controller.refresh();
-      source.saveGate = Completer<void>();
-      final save = controller.saveSelectedNote('draft');
-      await expectLater(
-        controller.saveSelectedNote('duplicate'),
-        throwsStateError,
-      );
-      source.response = CalendarPeriod.fromJson(
-        calendarJson(start: '2026-11-01', end: '2026-11-30'),
-      );
-      await controller.jumpToDate(DateTime(2026, 11, 6));
-      source.saveGate!.complete();
-      expect(await save, isTrue);
-      expect(source.writes.single.date, DateTime.utc(2026, 10, 20));
-      expect(source.requests.last.anchorDate, DateTime.utc(2026, 11, 6));
-    },
-  );
 
   test(
     'stream emits loading and success; disposal ignores pending work',

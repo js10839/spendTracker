@@ -36,16 +36,6 @@ Future<void> main() async {
       controller.state.window!.start == DateTime.utc(2026, 10, 13),
       'Wrong card cycle',
     );
-    check(
-      await controller.saveSelectedNote('Integration note'),
-      'Note save failed',
-    );
-    check(
-      controller.state.selectedDay!.note!.content == 'Integration note',
-      'Note missing on reload',
-    );
-    check(await controller.saveSelectedNote(''), 'Note clear failed');
-    check(controller.state.selectedDay!.note == null, 'Note not cleared');
     await controller.nextPeriod();
     check(
       controller.state.window!.start == DateTime.utc(2026, 11, 13),

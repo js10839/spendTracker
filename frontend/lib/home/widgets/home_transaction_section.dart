@@ -5,18 +5,19 @@ import '../../design_system/components.dart';
 import '../../design_system/tokens.dart';
 import '../../design_system/typography.dart';
 import '../home_format.dart';
-import '../home_preview_data.dart';
+import '../home_transaction_data.dart';
 
 /// 선택한 날짜의 요약과 거래별 품목 및 메모를 표시한다.
 class HomeTransactionSection extends StatelessWidget {
   const HomeTransactionSection({
     super.key,
     required this.selectedDate,
-    required this.card,
+    required this.transactions,
+    required this.isToday,
+    this.noteEditable = true,
     required this.view,
     required this.expanded,
     required this.expandedTransactions,
-    required this.notes,
     required this.merchantNotes,
     required this.onExpand,
     required this.onCollapse,
@@ -25,33 +26,19 @@ class HomeTransactionSection extends StatelessWidget {
     required this.onOpenNoteEditor,
   });
   final DateTime selectedDate;
-  final int card, view;
+  final int view;
+  final List<HomeTransactionData> transactions;
+  final bool isToday, noteEditable;
   final bool expanded;
   final Set<int> expandedTransactions;
-  final Map<DateTime, String> notes;
   final Map<(DateTime, String), String> merchantNotes;
   final VoidCallback onExpand, onCollapse, onCollapseAll;
   final ValueChanged<int> onToggleTransaction;
-  final ValueChanged<String?> onOpenNoteEditor;
+  final ValueChanged<HomeTransactionData> onOpenNoteEditor;
 
-  /// 선택 날짜의 거래를 All 또는 선택한 결제수단으로 좁힌다.
-  List<HomePreviewTransaction> get _selectedTransactions {
-    final transactions = HomePreviewData.transactionsFor(selectedDate);
-    return card == 0
-        ? transactions
-        : transactions
-              .where((transaction) => transaction.card == card)
-              .toList();
-  }
-
-  /// 날짜를 탭하면 필터에 맞는 지출 요약과 예시 거래를 펼쳐 보여준다.
+  /// 전달받은 거래로 날짜별 지출 요약과 상세 목록을 표시한다.
   @override
   Widget build(BuildContext context) {
-    final isToday =
-        selectedDate.year == 2026 &&
-        selectedDate.month == 8 &&
-        selectedDate.day == 24;
-    final transactions = _selectedTransactions;
     final totalCents = transactions.fold<int>(
       0,
       (sum, transaction) => sum + transaction.cents,
@@ -60,7 +47,7 @@ class HomeTransactionSection extends StatelessWidget {
       return _collapsedDaySummary(isToday, totalCents);
     }
     final methodCount = transactions
-        .map((transaction) => transaction.card)
+        .map((transaction) => transaction.method.id)
         .toSet()
         .length;
     final itemCount = transactions.fold<int>(
@@ -155,13 +142,7 @@ class HomeTransactionSection extends StatelessWidget {
                             ? transactions[index].cents
                             : 1,
                         child: ColoredBox(
-                          color: switch (transactions[index].card) {
-                            3 => AppPalette.neutral400,
-                            4 => AppTokens.textPrimary,
-                            _ =>
-                              HomePreviewData.cardColors[transactions[index]
-                                  .card],
-                          },
+                          color: transactions[index].method.color,
                         ),
                       ),
                     ],
@@ -178,7 +159,7 @@ class HomeTransactionSection extends StatelessWidget {
               color: AppTokens.borderSubtle,
             ),
             const SizedBox(height: 10),
-            _merchant(transaction, index, index == 0),
+            _merchant(transaction, index),
           ],
           if (expandedTransactions.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -211,61 +192,15 @@ class HomeTransactionSection extends StatelessWidget {
   /// 접힌 거래 카드는 보기 모드에 따라 카드 칩이나 간결한 금액 행을 표시한다.
   Widget _collapsedDaySummary(bool isToday, int totalCents) {
     final simple = view == 0;
-    final transactions = _selectedTransactions;
     final dateLabel = isToday
-        ? 'Today · Aug 24'
+        ? 'Today · ${homeMonths[selectedDate.month - 1]} ${selectedDate.day}'
         : '${homeMonths[selectedDate.month - 1]} ${selectedDate.day}';
     final amountLabel = formatHomeMoney(totalCents);
-    final cardIndices = transactions
-        .map((transaction) => transaction.card)
-        .toSet()
-        .toList();
+    final methods = <String, HomeTransactionMethod>{for (final transaction in transactions) transaction.method.id: transaction.method}.values.toList();
     final chips = <Widget>[
-      if (card == 0) ...[
-        for (final card in cardIndices.take(2))
-          AppChip(
-            label: HomePreviewData.cardNames[card],
-            size: AppChipSize.compact,
-            leadingColor: HomePreviewData.cardColors[card],
-          ),
-        if (cardIndices.length > 2)
-          AppChip(
-            label: '+${cardIndices.length - 2}',
-            size: AppChipSize.compact,
-          ),
-      ] else if (transactions.isNotEmpty)
-        AppChip(
-          label: HomePreviewData.cardNames[card],
-          size: AppChipSize.compact,
-          leadingColor: HomePreviewData.cardColors[card],
-        ),
+      for (final method in methods.take(2)) AppChip(label: method.name, size: AppChipSize.compact, leadingColor: method.color),
+      if (methods.length > 2) AppChip(label: '+${methods.length - 2}', size: AppChipSize.compact),
     ];
-    final editIcon = Semantics(
-      button: true,
-      label: 'Edit note',
-      child: GestureDetector(
-        onTap: () => onOpenNoteEditor(null),
-        child: Container(
-          key: const Key('home-day-edit-icon'),
-          width: simple ? 30 : 28,
-          height: simple ? 30 : 28,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color:
-                (notes[DateUtils.dateOnly(selectedDate)]?.trim().isNotEmpty ??
-                    false)
-                ? AppTokens.brandLime
-                : AppTokens.surface,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: SvgPicture.asset(
-            'assets/home/imgIconPencil.svg',
-            width: 14,
-            height: 14,
-          ),
-        ),
-      ),
-    );
     return InkWell(
       onTap: onExpand,
       borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -298,8 +233,6 @@ class HomeTransactionSection extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Text(amountLabel, style: AppTypography.heading3),
-                  const SizedBox(width: 10),
-                  editIcon,
                 ],
               );
             }
@@ -338,8 +271,7 @@ class HomeTransactionSection extends StatelessWidget {
                   ),
                 ),
                 if (chips.isNotEmpty) const SizedBox(width: 6),
-                if (chips.isEmpty) const Spacer(),
-                editIcon,
+
               ],
             );
           },
@@ -350,22 +282,12 @@ class HomeTransactionSection extends StatelessWidget {
 
   /// 가게 행을 누르면 품목을 펼치고, 메모가 있으면 접힌 상태에도 보여준다.
   Widget _merchant(
-    HomePreviewTransaction transaction,
+    HomeTransactionData transaction,
     int index,
-    bool showsDayNote,
   ) {
     final expanded = expandedTransactions.contains(index);
     final date = DateUtils.dateOnly(selectedDate);
-    final note = showsDayNote
-        ? notes[date]
-        : merchantNotes[(date, transaction.merchant)];
-    final methodAsset = const [
-      '',
-      'imgDayMethodChase.svg',
-      'imgDayMethodAmex.svg',
-      'imgDayMethodCash.svg',
-      'imgDayMethodDebit.svg',
-    ][transaction.card];
+    final note = merchantNotes[(date, transaction.id)] ?? transaction.memo;
     return Column(
       key: Key('home-merchant-group-$index'),
       children: [
@@ -376,10 +298,10 @@ class HomeTransactionSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
               children: [
-                SvgPicture.asset(
-                  'assets/home/$methodAsset',
-                  key: Key('home-merchant-icon-$index-${transaction.merchant}'),
-                ),
+                if (transaction.method.previewAsset != null)
+                  SvgPicture.asset('assets/home/${transaction.method.previewAsset}', key: Key('home-merchant-icon-$index-${transaction.merchant}'))
+                else
+                  Container(key: Key('home-merchant-icon-$index-${transaction.merchant}'), width: 32, height: 32, alignment: Alignment.center, decoration: const BoxDecoration(color: AppTokens.surface, shape: BoxShape.circle), child: Container(width: 10, height: 10, decoration: BoxDecoration(color: transaction.method.color, shape: BoxShape.circle))),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -390,7 +312,7 @@ class HomeTransactionSection extends StatelessWidget {
                         style: AppTypography.bodyMediumStrong,
                       ),
                       Text(
-                        '${HomePreviewData.cardNames[transaction.card]} · '
+                        '${transaction.method.name} · '
                         '${transaction.itemCount} item${transaction.itemCount == 1 ? '' : 's'}',
                         style: AppTypography.caption.copyWith(
                           color: AppTokens.textSecondary,
@@ -414,16 +336,16 @@ class HomeTransactionSection extends StatelessWidget {
           ),
         ),
         if (expanded)
-          for (final item in HomePreviewData.itemsFor(transaction)) _item(item),
-        if ((note?.trim().isNotEmpty ?? false) || expanded) ...[
+          for (final item in transaction.items) _item(item),
+        if ((note?.trim().isNotEmpty ?? false) || (expanded && noteEditable)) ...[
           const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.only(left: 44, top: 2),
             child: note?.trim().isNotEmpty ?? false
                 ? InkWell(
-                    onTap: () => onOpenNoteEditor(
-                      showsDayNote ? null : transaction.merchant,
-                    ),
+                    onTap: noteEditable ? () => onOpenNoteEditor(
+                      transaction,
+                    ) : null,
                     child: Container(
                       key: Key(
                         'home-merchant-note-$index-${transaction.merchant}',
@@ -457,7 +379,7 @@ class HomeTransactionSection extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: InkWell(
                       onTap: () => onOpenNoteEditor(
-                        showsDayNote ? null : transaction.merchant,
+                        transaction,
                       ),
                       child: Text(
                         '+ Add note',
@@ -474,15 +396,15 @@ class HomeTransactionSection extends StatelessWidget {
   }
 
   /// 품목명과 카테고리는 왼쪽에서 줄바꿈하고 금액은 오른쪽 20px 패딩에 맞춘다.
-  Widget _item(HomePreviewItem item) {
-    final badge = Container(
+  Widget _item(HomeTransactionItem item) {
+    final badge = item.category == null ? null : Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: AppTokens.surface,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        item.category,
+        item.category!,
         style: AppTypography.labelSmall.copyWith(color: AppPalette.neutral600),
       ),
     );
@@ -497,8 +419,7 @@ class HomeTransactionSection extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppCategoryIcon(category: item.category),
-          const SizedBox(width: AppSpacing.sm),
+          if (item.category != null) ...[AppCategoryIcon(category: item.category!), const SizedBox(width: AppSpacing.sm)],
           Expanded(
             child: Wrap(
               spacing: 6,
@@ -514,7 +435,7 @@ class HomeTransactionSection extends StatelessWidget {
                         : AppTokens.textPrimary,
                   ),
                 ),
-                badge,
+                ?badge,
               ],
             ),
           ),

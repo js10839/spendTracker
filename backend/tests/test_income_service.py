@@ -320,7 +320,7 @@ def test_income_calendar_combines_received_and_planned_dates(monkeypatch) -> Non
     source = IncomeSource(id=source_id, ledger_id=ledger_id, income_type="paycheck", from_name="Company", payment_method_id=None, expected_amount_cents=200000, memo=None, frequency="monthly", reference_date=date(2026, 10, 31), next_expected_date=date(2026, 10, 31), is_active=True)
     monkeypatch.setattr(repository, "list_income_records_in_range", Mock(return_value=[record]))
     monkeypatch.setattr(repository, "list_active_income_sources", Mock(return_value=[source]))
-    monkeypatch.setattr(service, "get_adjusted_paycheck_date", lambda db, day: date(2026, 10, 30) if day == date(2026, 10, 31) else day)
+    monkeypatch.setattr(service, "get_bank_holidays", Mock(return_value=set()))
 
     entries = service.list_income_calendar(db, ledger_id, date(2026, 10, 1), date(2026, 11, 30))
 

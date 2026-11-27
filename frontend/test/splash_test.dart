@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:spending_tracker/app_router.dart';
 import 'package:spending_tracker/design_system/tokens.dart';
 import 'package:spending_tracker/main.dart';
+import 'package:spending_tracker/home/home_page.dart';
 import 'package:spending_tracker/onboarding/onboarding_page.dart';
 import 'package:spending_tracker/splash/splash_page.dart';
 import 'package:spending_tracker/auth/auth_service.dart';
@@ -345,7 +346,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 20));
     users.pending!.complete(const UserBootstrapResult(userId: 'user', onboardingRequired: false));
     await tester.pumpAndSettle();
-    expect(find.text('Spent this month'), findsOneWidget);
+    expect(find.byType(HomePage), findsOneWidget);
     expect(users.calls, 1);
   });
 

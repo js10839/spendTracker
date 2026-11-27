@@ -50,11 +50,17 @@ def _read_calendar(
             status_code=422, detail="anchor_date year must be between 2 and 9997"
         )
     closing_day = None
+    mode = "all"
     if payment_method_id is not None:
-        card = repository.find_card(connection, user_id, payment_method_id)
-        if card is None:
-            raise HTTPException(status_code=404, detail="Credit card not found")
-        closing_day = card["closing_day"]
+        method = repository.find_payment_method(connection, user_id, payment_method_id)
+        if method is None:
+            raise HTTPException(status_code=404, detail="Payment method not found")
+        if method["type"] == "credit":
+            mode = "card"
+            closing_day = method["closing_day"]
+        else:
+            # 현금성 결제수단은 마감 주기 대신 일반 월을 사용한다.
+            mode = "cash"
     bounds = (
         connection.execute(repository.period_statement(anchor_date, closing_day))
         .mappings()
@@ -73,6 +79,7 @@ def _read_calendar(
                 bounds["start_date"],
                 bounds["end_date"],
                 payment_method_id,
+                include_income = mode!="cash"
             )
         )
         .mappings()
@@ -80,7 +87,7 @@ def _read_calendar(
     )
     return CalendarRead.model_validate(
         {
-            "mode": "all" if payment_method_id is None else "card",
+            "mode": mode,
             "payment_method_id": payment_method_id,
             **bounds,
             **result,

@@ -13,6 +13,8 @@ from app.transactions.schema import (
     ManualTransactionGroupCreate,
     TransactionGroupRead,
     TransactionGroupUpdate,
+    TransactionMemoRead,
+    TransactionMemoUpdate,
     TransactionSearchRead,
 )
 from app.transactions.service import (
@@ -20,6 +22,7 @@ from app.transactions.service import (
     list_ledger_transactions,
     search_ledger_transactions,
     soft_delete_transaction,
+    update_ledger_transaction_memo,
     update_transaction_group,
 )
 
@@ -44,6 +47,11 @@ def search_transactions(query: Annotated[str, Query(min_length=1)], start_date: 
 def put_transaction(transaction_id: UUID, data: TransactionGroupUpdate, ledger: Annotated[Ledger, Depends(get_user_ledger)], user_id: Annotated[UUID, Depends(get_current_user_id)], db: Annotated[Session, Depends(get_db)]) -> TransactionGroupRead:
     """가계부 접근 권한을 확인한 뒤 결제와 기존 품목을 수정한다."""
     return update_transaction_group(db, ledger_id=ledger.id, transaction_id=transaction_id, user_id=user_id, data=data)
+
+@router.patch("/{transaction_id}/memo", response_model=TransactionMemoRead)
+def patch_transaction_memo(transaction_id: UUID, data: TransactionMemoUpdate, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> TransactionMemoRead:
+    """접근 가능한 가계부의 거래 메모만 수정한다."""
+    return update_ledger_transaction_memo(db, ledger_id=ledger.id, transaction_id=transaction_id, memo=data.memo)
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_transaction(transaction_id: UUID, ledger: Annotated[Ledger, Depends(get_user_ledger)], db: Annotated[Session, Depends(get_db)]) -> None:

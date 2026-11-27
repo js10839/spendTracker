@@ -1,14 +1,12 @@
-import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 
-/// 인증된 FastAPI 요청과 공통 오류 처리를 담당한다.
-class ApiClient {
-  ApiClient({required this.baseUri, required this.accessToken, http.Client? client}) : _client = client ?? http.Client();
+import '../api/api_client.dart' as transport;
 
-  final Uri baseUri;
-  final String? Function() accessToken;
-  final http.Client _client;
+/// 기존 회원 API 인터페이스를 공통 HTTP 전송 계층에 연결한다.
+class ApiClient {
+  ApiClient({required Uri baseUri, required String? Function() accessToken, http.Client? client}) : shared = transport.ApiClient(baseUrl: baseUri, accessToken: accessToken, client: client);
+
+  final transport.ApiClient shared;
 
   /// 요청 시점의 세션 토큰으로 JSON POST 요청을 보낸다.
   Future<Map<String, dynamic>> post(String path, {Map<String, dynamic>? body}) => _request(path, isGet: false, body: body);
@@ -16,17 +14,18 @@ class ApiClient {
   /// 요청 시점의 세션 토큰으로 JSON GET 요청을 보낸다.
   Future<Map<String, dynamic>> get(String path) => _request(path, isGet: true);
 
-  /// 인증과 응답 검증을 모든 요청에 동일하게 적용한다.
+  /// 기존 호출자의 오류 계약과 객체 응답 형식을 유지한다.
   Future<Map<String, dynamic>> _request(String path, {required bool isGet, Map<String, dynamic>? body}) async {
-    final token = accessToken();
-    if (token == null || token.isEmpty) throw StateError('Authentication required');
-    final headers = {'Accept': 'application/json', 'Authorization': 'Bearer $token'};
-    if (body != null) headers['Content-Type'] = 'application/json';
-    final response = isGet ? await _client.get(baseUri.resolve(path), headers: headers) : await _client.post(baseUri.resolve(path), headers: headers, body: body == null ? null : jsonEncode(body));
-    if (response.statusCode < 200 || response.statusCode >= 300) throw ApiException(response.statusCode);
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map<String, dynamic>) throw const FormatException('Expected a JSON object');
-    return decoded;
+    try {
+      final parts = Uri.parse(path).pathSegments.where((part) => part.isNotEmpty).toList();
+      final result = isGet ? await shared.getJson(parts) : await shared.postJson(parts, body: body);
+      if (result is! Map<String, dynamic>) throw const FormatException('Expected a JSON object');
+      return result;
+    } on transport.ApiException catch (error) {
+      throw ApiException(error.statusCode);
+    } on transport.MissingAccessTokenException {
+      throw StateError('Authentication required');
+    }
   }
 }
 

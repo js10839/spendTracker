@@ -33,9 +33,9 @@ parameterized raw SQL. The frontend decodes the response and handles interaction
 `All` omits the card parameter. A selected card limits transactions to that card;
 only Cashback income linked to that card is included (planned and received).
 All mode includes Paycheck, Cashback and Other income, and every wallet card's
-closing events. Card mode shows only the selected card's closing events. Notes
-remain visible in either mode. Note writes
-still use `PUT /ledgers/{ledger_id}/day-notes/{date}`, followed by a calendar reload.
+closing events. Card mode shows only the selected card's closing events. Memos belong
+to individual transactions and are saved through
+`PATCH /ledgers/{ledger_id}/transactions/{transaction_id}/memo`.
 
 Construct the controller with an existing access token and ledger ID:
 
@@ -55,7 +55,7 @@ await calendar.refresh();
 // Observe calendar.changes, with calendar.state as the initial snapshot.
 // window is null until the first successful response.
 // Bind selectCard(id/null), previousPeriod(), nextPeriod(), jumpToDate(date),
-// goToToday(), selectDate(date), saveSelectedNote(content/''), and refresh().
+// goToToday(), selectDate(date), and refresh().
 // state.selectedDay contains the already-loaded details; day clicks do no I/O.
 // Later, on teardown:
 calendar.dispose();
@@ -81,8 +81,7 @@ those buttons while loading or in an error state; their actions are no-ops then.
 Card switching keeps the highlighted date. Previous/next highlights today if it
 belongs to the returned period, otherwise its first day. A rejected/removed card
 is an explicit error; the UI can offer retry or `selectCard(null)` to return to All.
-Stale responses cannot overwrite newer selections. Successful note writes remain
-successful if their subsequent reload fails (`state.error`, not `noteError`).
+Stale responses cannot overwrite newer selections.
 
 Only date parsing and Sunday-first grid padding remain local. Treat dates as
 year/month/day values; do not convert their UTC containers to another timezone.
