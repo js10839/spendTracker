@@ -205,3 +205,62 @@ def test_list_api_rejects_unauthenticated_requests(monkeypatch) -> None:
 
     assert response.status_code == 401
     get_payment_methods.assert_not_called()
+
+
+def test_patch_color_rejects_builtin_cash(monkeypatch) -> None:
+    """유효한 새 색상을 보내도 기본 Cash의 고정 색상은 유지한다."""
+    user_id = uuid4()
+    cash = PaymentMethod(
+        id=uuid4(), user_id=user_id, name="Cash", type="cash-like", color="#FCA05A"
+    )
+    db = Mock()
+    db.execute.return_value.scalar_one_or_none.return_value = cash
+    monkeypatch.setitem(app.dependency_overrides, get_active_user_id, lambda: user_id)
+    monkeypatch.setitem(app.dependency_overrides, get_db, lambda: db)
+
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/users/me/payment-methods/{cash.id}", json={"color": "#3366FF"}
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "The default Cash color cannot be changed"
+    assert cash.color == "#FCA05A"
+    db.flush.assert_not_called()
+    db.commit.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"name": None},
+        {"name": "  "},
+        {"closing_day": 0},
+        {"closing_day": 32},
+        {"closing_day": "12"},
+        {"color": None},
+        {"color": ""},
+        {"color": "3366FF"},
+        {"color": " #3366FF "},
+        {"type": "cash-like"},
+    ],
+)
+def test_patch_details_validates_payload(monkeypatch, payload) -> None:
+    """빈 요청과 잘못된 수정 필드는 결제수단을 조회하기 전에 거절한다."""
+    db = Mock()
+    monkeypatch.setitem(app.dependency_overrides, get_active_user_id, uuid4)
+    monkeypatch.setitem(app.dependency_overrides, get_db, lambda: db)
+    with TestClient(app) as client:
+        response = client.patch(f"/users/me/payment-methods/{uuid4()}", json=payload)
+    assert response.status_code == 422
+    db.execute.assert_not_called()
+
+
+def test_patch_details_requires_authentication() -> None:
+    """토큰 없이 결제수단 이름을 변경할 수 없다."""
+    with TestClient(app) as client:
+        response = client.patch(
+            f"/users/me/payment-methods/{uuid4()}", json={"name": "New name"}
+        )
+    assert response.status_code == 401

@@ -625,6 +625,167 @@ def test_api_uses_real_authorization_and_raw_sql_response(db, data):
             app.dependency_overrides.clear()
 
 
+@pytest.fixture
+def wallet_client(db, data, monkeypatch):
+    """순차 HTTP 요청마다 별도 세션을 열고 테스트의 외부 트랜잭션은 유지한다."""
+
+    def request_db():
+        """서비스가 커밋한 변경을 다음 요청에서 다시 읽을 수 있게 한다."""
+        with Session(bind=db, join_transaction_mode="create_savepoint") as session:
+            yield session
+
+    monkeypatch.setitem(app.dependency_overrides, get_db, request_db)
+    monkeypatch.setitem(
+        app.dependency_overrides, get_current_user_id, lambda: data["user"]
+    )
+    with TestClient(app) as client:
+        yield client
+
+
+def test_updated_card_color_in_wallet_and_calendar(db, data, wallet_client):
+    """카드 색상 변경 후 지갑과 달력의 거래 도트·마감 카드가 같은 색상을 반환한다."""
+    transaction(db, data, "2026-11-12", method=data["card"])
+    card_id = str(data["card"])
+    color = "#ab12CD"
+    wallet_path = "/users/me/payment-methods"
+    response = wallet_client.patch(
+        f"{wallet_path}/{card_id}", json={"color": color}
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": card_id,
+        "name": "Chase",
+        "type": "credit",
+        "closing_day": 12,
+        "color": color,
+    }
+
+    wallet = wallet_client.get(wallet_path)
+    assert wallet.status_code == 200
+    assert (
+        next(method for method in wallet.json() if method["id"] == card_id)
+        == response.json()
+    )
+    calendar = wallet_client.get(
+        f"/ledgers/{data['ledger']}/calendar", params={"anchor_date": "2026-11-12"}
+    )
+    assert calendar.status_code == 200
+    closing_day = next(
+        day for day in calendar.json()["days"] if day["date"] == "2026-11-12"
+    )
+    assert (
+        next(
+            dot["color"]
+            for dot in closing_day["dots"]
+            if dot["payment_method_id"] == card_id
+        )
+        == color
+    )
+    assert (
+        next(
+            card["color"]
+            for card in closing_day["closing_cards"]
+            if card["id"] == card_id
+        )
+        == color
+    )
+
+
+def test_patch_card_details_changes_calendar_cycle(data, wallet_client):
+    """같은 기준일로 재조회하면 수정한 마감일로 사이클과 마감 표시가 이동한다."""
+    card_id = str(data["card"])
+    path = f"/users/me/payment-methods/{card_id}"
+    calendar_path = f"/ledgers/{data['ledger']}/calendar"
+    params = {"anchor_date": "2026-11-15", "payment_method_id": card_id}
+
+    before = wallet_client.get(calendar_path, params=params)
+    assert before.status_code == 200
+    assert (before.json()["start_date"], before.json()["end_date"]) == (
+        "2026-11-13",
+        "2026-12-12",
+    )
+
+    renamed = wallet_client.patch(path, json={"name": "  Daily card  "})
+    assert renamed.status_code == 200
+    assert renamed.json() == {
+        "id": card_id,
+        "name": "Daily card",
+        "type": "credit",
+        "closing_day": 12,
+        "color": "#3366FF",
+    }
+    changes = {"name": "Main card", "closing_day": 20, "color": "#AACCEE"}
+    updated = wallet_client.patch(path, json=changes)
+    assert updated.status_code == 200
+    assert updated.json() == {**renamed.json(), **changes}
+
+    after = wallet_client.get(calendar_path, params=params)
+    assert after.status_code == 200
+    calendar = after.json()
+    assert (calendar["start_date"], calendar["end_date"]) == (
+        "2026-10-21",
+        "2026-11-20",
+    )
+    closings = [
+        (day["date"], card)
+        for day in calendar["days"]
+        for card in day["closing_cards"]
+        if card["id"] == card_id
+    ]
+    assert closings == [("2026-11-20", updated.json())]
+
+
+def test_patch_details_hides_foreign_and_missing_methods(db, data, wallet_client):
+    """소유하지 않은 결제수단은 404로 처리하고 이름과 마감일을 보존한다."""
+    for method_id in (data["foreign"], uuid4()):
+        response = wallet_client.patch(
+            f"/users/me/payment-methods/{method_id}",
+            json={"name": "Changed", "closing_day": 20, "color": "#AACCEE"},
+        )
+        assert response.status_code == 404
+    stored = db.execute(
+        text("SELECT name, closing_day, color FROM payment_methods WHERE id = :id"),
+        {"id": data["foreign"]},
+    ).one()
+    assert tuple(stored) == ("Foreign", 8, "#000000")
+
+
+@pytest.mark.parametrize(
+    ("key", "payload"),
+    [
+        ("card", {"name": "Changed", "closing_day": None, "color": "#AACCEE"}),
+        ("card", {"name": "Changed", "closing_day": 20, "color": "invalid"}),
+        ("cash", {"closing_day": 12}),
+        ("cash", {"name": "Renamed cash"}),
+    ],
+)
+def test_invalid_wallet_details_preserve_wallet(data, wallet_client, key, payload):
+    """종류별 마감일이나 기본 Cash 이름 규칙을 위반하면 부분 변경도 저장하지 않는다."""
+    path = "/users/me/payment-methods"
+    before = wallet_client.get(path)
+    assert before.status_code == 200
+    assert wallet_client.patch(f"{path}/{data[key]}", json=payload).status_code == 422
+    after = wallet_client.get(path)
+    assert after.status_code == 200
+    assert after.json() == before.json()
+
+
+def test_cash_like_details_accept_null_and_reserve_cash_name(wallet_client):
+    """직접 추가한 현금성 수단은 마감일 없이 개명하되 기본 Cash 이름을 쓸 수 없다."""
+    path = "/users/me/payment-methods"
+    created = wallet_client.post(
+        path, json={"name": "Debit", "type": "cash-like", "color": "#123456"}
+    )
+    assert created.status_code == 201
+    method_path = f"{path}/{created.json()['id']}"
+    renamed = wallet_client.patch(
+        method_path, json={"name": "Checking", "closing_day": None}
+    )
+    assert renamed.status_code == 200
+    assert renamed.json() == {**created.json(), "name": "Checking", "closing_day": None}
+    assert wallet_client.patch(method_path, json={"name": " cAsH "}).status_code == 422
+
+
 def test_calendar_requires_authentication():
     with TestClient(app) as client:
         assert (
