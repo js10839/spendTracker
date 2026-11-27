@@ -6,11 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_active_user_id
 from app.db.session import get_db
-from app.payment_methods.schema import PaymentMethodColorUpdate, PaymentMethodCreate
+from app.payment_methods.schema import (
+    PaymentMethodCreate,
+    PaymentMethodUpdate,
+)
 from app.payment_methods.service import (
     create_payment_method,
     get_payment_methods,
-    update_payment_method_color,
+    update_payment_method_details,
 )
 
 router = APIRouter(prefix="/users/me/payment-methods", tags=["payment-methods"])
@@ -28,8 +31,8 @@ def list_wallet_payment_methods(user_id: Annotated[UUID, Depends(get_active_user
     payment_methods = get_payment_methods(db, user_id)
     return [{"id": str(method.id), "name": method.name, "type": method.type, "closing_day": method.closing_day, "color": method.color} for method in payment_methods]
 
-@router.patch("/{payment_method_id}/color")
-def patch_payment_method_color(payment_method_id: UUID, data: PaymentMethodColorUpdate, user_id: Annotated[UUID, Depends(get_active_user_id)], db: Annotated[Session, Depends(get_db)]) -> dict[str, str | int | None]:
-    """인증된 사용자의 결제수단 색상을 수정하고 갱신된 지갑 항목을 반환한다."""
-    method = update_payment_method_color(db, user_id=user_id, payment_method_id=payment_method_id, color=data.color)
+@router.patch("/{payment_method_id}")
+def patch_payment_method_details(payment_method_id: UUID, data: PaymentMethodUpdate, user_id: Annotated[UUID, Depends(get_active_user_id)], db: Annotated[Session, Depends(get_db)]) -> dict[str, str | int | None]:
+    """인증된 사용자의 결제수단 이름·마감일·색상을 수정하고 갱신된 지갑 항목을 반환한다."""
+    method = update_payment_method_details(db, user_id=user_id, payment_method_id=payment_method_id, data=data)
     return {"id": str(method.id), "name": method.name, "type": method.type, "closing_day": method.closing_day, "color": method.color}

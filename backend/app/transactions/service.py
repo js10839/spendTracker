@@ -82,6 +82,7 @@ def update_transaction_group(db: Session, ledger_id: UUID, transaction_id: UUID,
     if repository.find_user_payment_method(db, payment_method_id=data.payment_method_id, user_id=user_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment method not found")
 
+    # TODO: 공유 가계부 도입 시 품목 조회 전에 거래 행을 잠가 동시 수정에서도 총액과 품목 합계를 일치시킨다.
     existing_items = repository.list_transaction_items(db, [transaction_id])
     existing_by_id = {item.id: item for item in existing_items}
     requested_ids = [item.id for item in data.items if item.id is not None]

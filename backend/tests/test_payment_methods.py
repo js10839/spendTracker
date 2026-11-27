@@ -220,7 +220,7 @@ def test_patch_color_rejects_builtin_cash(monkeypatch) -> None:
 
     with TestClient(app) as client:
         response = client.patch(
-            f"/users/me/payment-methods/{cash.id}/color", json={"color": "#3366FF"}
+            f"/users/me/payment-methods/{cash.id}", json={"color": "#3366FF"}
         )
 
     assert response.status_code == 422
@@ -234,33 +234,33 @@ def test_patch_color_rejects_builtin_cash(monkeypatch) -> None:
     "payload",
     [
         {},
+        {"name": None},
+        {"name": "  "},
+        {"closing_day": 0},
+        {"closing_day": 32},
+        {"closing_day": "12"},
         {"color": None},
         {"color": ""},
         {"color": "3366FF"},
-        {"color": "#3366FF", "name": "New"},
+        {"color": " #3366FF "},
+        {"type": "cash-like"},
     ],
 )
-def test_patch_color_rejects_invalid_payload(monkeypatch, payload) -> None:
-    """잘못된 색상과 색상 이외의 필드는 DB 수정 전에 거절한다."""
-    user_id = uuid4()
+def test_patch_details_validates_payload(monkeypatch, payload) -> None:
+    """빈 요청과 잘못된 수정 필드는 결제수단을 조회하기 전에 거절한다."""
     db = Mock()
-    monkeypatch.setitem(app.dependency_overrides, get_active_user_id, lambda: user_id)
+    monkeypatch.setitem(app.dependency_overrides, get_active_user_id, uuid4)
     monkeypatch.setitem(app.dependency_overrides, get_db, lambda: db)
-
     with TestClient(app) as client:
-        response = client.patch(
-            f"/users/me/payment-methods/{uuid4()}/color", json=payload
-        )
-
+        response = client.patch(f"/users/me/payment-methods/{uuid4()}", json=payload)
     assert response.status_code == 422
     db.execute.assert_not_called()
 
 
-def test_patch_color_requires_authentication() -> None:
-    """인증되지 않은 요청은 유효한 색상을 보내도 거절한다."""
+def test_patch_details_requires_authentication() -> None:
+    """토큰 없이 결제수단 이름을 변경할 수 없다."""
     with TestClient(app) as client:
         response = client.patch(
-            f"/users/me/payment-methods/{uuid4()}/color", json={"color": "#3366FF"}
+            f"/users/me/payment-methods/{uuid4()}", json={"name": "New name"}
         )
-
     assert response.status_code == 401

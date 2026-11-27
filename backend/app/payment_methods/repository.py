@@ -31,8 +31,14 @@ def list_payment_methods(db: Session, user_id: UUID) -> list[PaymentMethod]:
     statement = select(PaymentMethod).where(PaymentMethod.user_id==user_id).order_by(PaymentMethod.created_at, PaymentMethod.id)
     return list(db.execute(statement).scalars().all())
 
-def update_payment_method_color(db: Session, payment_method: PaymentMethod, color: str) -> PaymentMethod:
-    """서비스에서 수정 가능 여부를 확인한 결제수단의 색상을 변경한다."""
-    payment_method.color = color
+def update_payment_method_details(db: Session, payment_method: PaymentMethod, *, name: str | None = None, closing_day: int | None = None, update_closing_day: bool = False, color: str | None = None) -> PaymentMethod:
+    """요청에 포함된 결제수단 필드만 반영한다."""
+    if name is not None:
+        payment_method.name = name
+    if update_closing_day:
+        payment_method.closing_day = closing_day
+    if color is not None:
+        payment_method.color = color
+
     db.flush()
     return payment_method
