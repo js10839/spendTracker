@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'home/home_page.dart';
+import 'dashboard/dashboard_page.dart';
 import 'profile/profile_page.dart';
 import 'auth/login_email_page.dart';
 import 'auth/login_code_page.dart';
@@ -42,18 +43,30 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/',
       name: 'home',
-      redirect: (context, state) {
-        final auth = AuthService.instance;
-        final access = state.extra;
-        if (access is MemberHomeAccess && access.matches(auth)) {
-          return null;
-        }
-        if (access is GuestHomeAccess && auth.currentUserId == null) {
-          return null;
-        }
-        return '/splash';
-      },
-      builder: (context, state) => HomePage(isMember: AuthService.instance.currentUserId != null),
+      redirect: (context, state) => _homeRedirect(state.extra),
+      builder: (context, state) => HomePage(
+        isMember: state.extra is MemberHomeAccess,
+        onDashboard: () => context.push('/dashboard', extra: state.extra),
+      ),
+    ),
+    GoRoute(
+      path: '/dashboard',
+      name: 'dashboard',
+      redirect: (context, state) => _homeRedirect(state.extra),
+      builder: (context, state) => DashboardPage(
+        isMember: state.extra is MemberHomeAccess,
+        onHome: () {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/', extra: state.extra);
+          }
+        },
+        onProfile: () => context.pushReplacement(
+          '/profile',
+          extra: state.extra is MemberHomeAccess,
+        ),
+      ),
     ),
     // TODO: 로그아웃 및 앱 사용 중 세션 무효화 시 온보딩으로 이동한다.
     GoRoute(
@@ -146,3 +159,10 @@ final GoRouter appRouter = GoRouter(
     ),
   ],
 );
+
+String? _homeRedirect(Object? access) {
+  final auth = AuthService.instance;
+  if (access is MemberHomeAccess && access.matches(auth)) return null;
+  if (access is GuestHomeAccess && auth.currentUserId == null) return null;
+  return '/splash';
+}

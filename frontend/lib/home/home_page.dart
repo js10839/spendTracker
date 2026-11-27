@@ -24,9 +24,10 @@ import 'widgets/home_month_sheet.dart';
 import 'widgets/home_note_sheet.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, this.isMember = false});
+  const HomePage({super.key, this.isMember = false, this.onDashboard});
 
   final bool isMember;
+  final VoidCallback? onDashboard;
 
   @override
   /// 날짜와 카드별 보기 상태를 유지한다.
@@ -295,7 +296,13 @@ class _HomePageState extends State<HomePage> {
                         clipBehavior: Clip.none,
                         alignment: Alignment.topCenter,
                         children: [
-                          AppBottomNavigation(selectedIndex: 0, onSelected: (index) { if (index == 4) context.push('/profile', extra: widget.isMember); }),
+                          AppBottomNavigation(
+                            selectedIndex: 0,
+                            onSelected: (index) {
+                              if (index == 1) widget.onDashboard?.call();
+                              if (index == 4) context.push('/profile', extra: widget.isMember);
+                            },
+                          ),
                           if (_showAddTooltip &&
                               !_showSearch &&
                               keyboardInset == 0)

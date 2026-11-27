@@ -64,6 +64,7 @@ flutter:
         - asset: assets/fonts/Outfit-Variable.ttf
   assets:
     - assets/branding/
+    - assets/dashboard/
     - assets/icons/back.svg
     - assets/icons/card.svg
     - assets/icons/document.svg

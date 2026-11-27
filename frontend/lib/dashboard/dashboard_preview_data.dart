@@ -1,4 +1,5 @@
 import '../home/home_preview_data.dart';
+import 'dashboard_repository.dart';
 
 typedef DashboardPreviewTransaction = ({
   DateTime date,
@@ -95,3 +96,128 @@ abstract final class DashboardPreviewData {
     };
   }
 }
+
+/// Dashboard screen samples share the chart fixture and use the Figma preview date.
+DashboardSummary dashboardGuestSummary(DateTime month) {
+  final current = month.year == 2026 && month.month == 8;
+  final totalForMonth = month.year == 2026 ? _guestSpending[month.month] : null;
+  final totals = <int, int>{};
+  final categories = <String, int>{};
+  final days = <int, int>{};
+  if (totalForMonth != null) {
+    final lastDay = current
+        ? 24
+        : DateTime.utc(month.year, month.month + 1, 0).day;
+    final entries = DashboardPreviewData.transactions
+        .where((entry) => entry.date.day <= lastDay)
+        .toList();
+    final weight = entries.fold<int>(0, (value, entry) => value + entry.cents);
+    var cumulativeWeight = 0;
+    var allocated = 0;
+    // Scale the shared sample purchases to the preview total without losing cents.
+    for (final entry in entries) {
+      cumulativeWeight += entry.cents;
+      final next = cumulativeWeight * totalForMonth ~/ weight;
+      final amount = next - allocated;
+      allocated = next;
+      totals.update(
+        entry.card,
+        (value) => value + amount,
+        ifAbsent: () => amount,
+      );
+      days.update(
+        entry.date.day,
+        (value) => value + amount,
+        ifAbsent: () => amount,
+      );
+      final name = switch (entry.merchant) {
+        'Shell' || 'Metro fare' => 'Transport',
+        'Sweetgreen' ||
+        'Blue Bottle Coffee' ||
+        'Neighborhood restaurant' => 'Dining',
+        'Trader Joe’s' || 'Costco' || 'Local bakery' => 'Food',
+        'Target' => 'Living',
+        _ => 'Other',
+      };
+      categories.update(
+        name,
+        (value) => value + amount,
+        ifAbsent: () => amount,
+      );
+    }
+  }
+  final total = totals.values.fold<int>(0, (sum, cents) => sum + cents);
+  final sortedMethods = totals.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  final sortedCategories = categories.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  return DashboardSummary(
+    monthlySpendingCents: total,
+    statements: [
+      DashboardStatement(
+        name: HomePreviewData.cardNames[1],
+        color: HomePreviewData.cardColors[1],
+        totalCents: 48230,
+        start: DateTime.utc(2026, 8, 6),
+        end: DateTime.utc(2026, 9, 5),
+        spentThrough: DateTime.utc(2026, 8, 24),
+      ),
+      DashboardStatement(
+        name: HomePreviewData.cardNames[2],
+        color: HomePreviewData.cardColors[2],
+        totalCents: 9620,
+        start: DateTime.utc(2026, 8, 16),
+        end: DateTime.utc(2026, 9, 15),
+        spentThrough: DateTime.utc(2026, 8, 24),
+      ),
+    ],
+    daily: [
+      for (
+        var day = 1;
+        day <= DateTime.utc(month.year, month.month + 1, 0).day;
+        day++
+      )
+        (
+          date: DateTime.utc(month.year, month.month, day),
+          cents: days[day] ?? 0,
+        ),
+    ],
+    yearly: [
+      for (var number = 1; number <= 12; number++)
+        (
+          date: DateTime.utc(month.year, number),
+          cents: month.year == 2026 ? _guestSpending[number] ?? 0 : 0,
+        ),
+    ],
+    paymentMethods: [
+      for (final entry in sortedMethods)
+        (
+          name: HomePreviewData.cardNames[entry.key],
+          cents: entry.value,
+          color: HomePreviewData.cardColors[entry.key],
+        ),
+    ],
+    categories: [
+      for (final (index, entry) in sortedCategories.indexed)
+        (
+          name: entry.key,
+          cents: entry.value,
+          color: dashboardCategoryColors[index],
+        ),
+    ],
+  );
+}
+
+const _guestSpending = {
+  3: 174220,
+  4: 196000,
+  5: 210000,
+  6: 185000,
+  7: 242200,
+  8: 81245,
+};
+
+Map<DateTime, int> dashboardGuestIncome() => {
+  for (var month = 3; month <= 7; month++) DateTime.utc(2026, month): 240000,
+  DateTime.utc(2026, 8): 76745,
+};
