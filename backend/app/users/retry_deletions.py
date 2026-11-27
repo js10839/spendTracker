@@ -3,14 +3,14 @@ import asyncio
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db.session import SessionLocal
+from app.db.session import engine
 from app.users import repository
 from app.users.service import delete_account
 
 
 async def main() -> int:
     """남아 있는 계정 삭제 요청을 재시도하고 실패 건수를 반환한다."""
-    with SessionLocal() as db:
+    with engine.connect() as db:
         user_ids = repository.list_pending_deletion_user_ids(db)
 
     failed = 0

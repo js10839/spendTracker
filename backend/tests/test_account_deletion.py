@@ -9,24 +9,26 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.auth import admin
 from app.auth.admin import AuthAdminUnavailable
 from app.auth.dependencies import get_current_user_id
-from app.db.base import Base
-from app.db.models.category import Category
-from app.db.models.income_record import IncomeRecord
-from app.db.models.income_source import IncomeSource
-from app.db.models.ledger import Ledger
-from app.db.models.ledger_member import LedgerMember
-from app.db.models.payment_method import PaymentMethod
-from app.db.models.transaction import Transaction
-from app.db.models.transaction_item import TransactionItem
-from app.db.models.user import User
 from app.db.session import get_db
+from app.db.tables import (
+    categories,
+    income_records,
+    income_sources,
+    ledger_members,
+    ledgers,
+    metadata,
+    payment_methods,
+    transaction_items,
+    transactions,
+    users,
+)
 from app.main import app
 from app.users import repository, retry_deletions, router, service
 
@@ -39,91 +41,91 @@ def db(monkeypatch):
     with engine.begin() as connection:
         connection.exec_driver_sql("ATTACH DATABASE ':memory:' AS auth")
         connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-        Base.metadata.create_all(connection)
-    with Session(engine, expire_on_commit=False) as session:
+        metadata.create_all(connection)
+    with engine.connect() as session:
         yield session
     engine.dispose()
 
 
-def test_delete_app_data_keeps_other_user_and_records_pending_state(db: Session) -> None:
+def test_delete_app_data_keeps_other_user_and_records_pending_state(db: Connection) -> None:
     """삭제한 사용자의 데이터만 지우고 다른 사용자와 공통 카테고리를 보존한다."""
     user_id, other_id, ledger_id, other_ledger_id, method_id, transaction_id, category_id, source_id = (uuid4() for _ in range(8))
-    db.add_all([User(id=user_id, nickname="Owner", plan="free"), User(id=other_id, nickname="Other", plan="free"), Category(id=category_id, name="Food")])
-    db.flush()
-    db.add_all([Ledger(id=ledger_id, owner_user_id=user_id, name="Personal"), Ledger(id=other_ledger_id, owner_user_id=other_id, name="Other"), PaymentMethod(id=method_id, user_id=user_id, name="Cash", type="cash-like", color="#FCA05A")])
-    db.flush()
-    db.add_all([LedgerMember(ledger_id=ledger_id, user_id=user_id, role="owner"), LedgerMember(ledger_id=other_ledger_id, user_id=other_id, role="owner"), Transaction(id=transaction_id, ledger_id=ledger_id, payment_method_id=method_id, transacted_at=date(2026, 10, 1), total_cents=100, tax_cents=0, tip_cents=0, source="manual", deleted_at=datetime.now(UTC)), IncomeSource(id=source_id, ledger_id=ledger_id, expected_amount_cents=100, frequency="once", reference_date=date(2026, 10, 1), next_expected_date=date(2026, 10, 1))])
-    db.flush()
-    db.add_all([TransactionItem(transaction_id=transaction_id, category_id=category_id, name="Coffee", amount_cents=100), IncomeRecord(ledger_id=ledger_id, income_source_id=source_id, amount_cents=100, income_type="other", received_at=date(2026, 10, 1))])
+    db.execute(users.insert().values(id=user_id, nickname='Owner', plan='free'))
+    db.execute(users.insert().values(id=other_id, nickname='Other', plan='free'))
+    db.execute(categories.insert().values(id=category_id, name='Food'))
+    db.execute(ledgers.insert().values(id=ledger_id, owner_user_id=user_id, name='Personal'))
+    db.execute(ledgers.insert().values(id=other_ledger_id, owner_user_id=other_id, name='Other'))
+    db.execute(payment_methods.insert().values(id=method_id, user_id=user_id, name='Cash', type='cash-like', color='#FCA05A'))
+    db.execute(ledger_members.insert().values(ledger_id=ledger_id, user_id=user_id, role='owner'))
+    db.execute(ledger_members.insert().values(ledger_id=other_ledger_id, user_id=other_id, role='owner'))
+    db.execute(transactions.insert().values(id=transaction_id, ledger_id=ledger_id, payment_method_id=method_id, transacted_at=date(2026, 10, 1), total_cents=100, tax_cents=0, tip_cents=0, source='manual', deleted_at=datetime.now(UTC)))
+    db.execute(income_sources.insert().values(id=source_id, ledger_id=ledger_id, expected_amount_cents=100, frequency='once', reference_date=date(2026, 10, 1), next_expected_date=date(2026, 10, 1)))
+    db.execute(transaction_items.insert().values(transaction_id=transaction_id, category_id=category_id, name='Coffee', amount_cents=100))
+    db.execute(income_records.insert().values(ledger_id=ledger_id, income_source_id=source_id, amount_cents=100, income_type='other', received_at=date(2026, 10, 1)))
     db.commit()
 
     service.delete_user_app_data(db, user_id)
-    db.expire_all()
 
-    user = db.get(User, user_id)
+    user = db.execute(select(users).where(users.c.id == user_id)).one_or_none()
     assert user is not None and user.nickname is None and user.deletion_requested_at is not None
-    assert db.get(Ledger, ledger_id) is None
-    assert db.get(PaymentMethod, method_id) is None
-    assert db.get(Transaction, transaction_id) is None
-    assert db.scalars(select(TransactionItem)).all() == []
-    assert db.scalars(select(IncomeRecord)).all() == []
-    assert db.scalars(select(IncomeSource)).all() == []
-    assert db.get(User, other_id) is not None
-    assert db.get(Ledger, other_ledger_id) is not None
-    assert db.get(LedgerMember, (other_ledger_id, other_id)) is not None
-    assert db.get(Category, category_id) is not None
+    assert db.execute(select(ledgers).where(ledgers.c.id == ledger_id)).one_or_none() is None
+    assert db.execute(select(payment_methods).where(payment_methods.c.id == method_id)).one_or_none() is None
+    assert db.execute(select(transactions).where(transactions.c.id == transaction_id)).one_or_none() is None
+    assert db.execute(select(transaction_items)).all() == []
+    assert db.execute(select(income_records)).all() == []
+    assert db.execute(select(income_sources)).all() == []
+    assert db.execute(select(users).where(users.c.id == other_id)).one_or_none() is not None
+    assert db.execute(select(ledgers).where(ledgers.c.id == other_ledger_id)).one_or_none() is not None
+    assert db.execute(select(ledger_members).where(ledger_members.c.ledger_id == other_ledger_id, ledger_members.c.user_id == other_id)).one_or_none() is not None
+    assert db.execute(select(categories).where(categories.c.id == category_id)).one_or_none() is not None
 
 
-def test_delete_app_data_rolls_back_on_failure(db: Session, monkeypatch) -> None:
+def test_delete_app_data_rolls_back_on_failure(db: Connection, monkeypatch) -> None:
     """중간 오류가 나면 삭제 상태와 기존 앱 데이터를 함께 되돌린다."""
     user_id, ledger_id = uuid4(), uuid4()
-    db.add(User(id=user_id, nickname="Owner", plan="free"))
-    db.flush()
-    db.add(Ledger(id=ledger_id, owner_user_id=user_id, name="Personal"))
+    db.execute(users.insert().values(id=user_id, nickname='Owner', plan='free'))
+    db.execute(ledgers.insert().values(id=ledger_id, owner_user_id=user_id, name='Personal'))
     db.commit()
     monkeypatch.setattr(repository, "delete_ledger_income", Mock(side_effect=RuntimeError("DB error")))
 
     with pytest.raises(RuntimeError, match="DB error"):
         service.delete_user_app_data(db, user_id)
 
-    db.expire_all()
-    assert db.get(User, user_id).deletion_requested_at is None
-    assert db.get(User, user_id).nickname == "Owner"
-    assert db.get(Ledger, ledger_id) is not None
+    assert db.execute(select(users).where(users.c.id == user_id)).one_or_none().deletion_requested_at is None
+    assert db.execute(select(users).where(users.c.id == user_id)).one_or_none().nickname == "Owner"
+    assert db.execute(select(ledgers).where(ledgers.c.id == ledger_id)).one_or_none() is not None
 
 
-def test_delete_before_bootstrap_creates_only_pending_profile(db: Session) -> None:
+def test_delete_before_bootstrap_creates_only_pending_profile(db: Connection) -> None:
     """초기화 전 계정도 가계부 생성 없이 삭제 진행 상태를 남긴다."""
     user_id = uuid4()
     service.delete_user_app_data(db, user_id)
-    db.expire_all()
-    assert db.get(User, user_id).deletion_requested_at is not None
-    assert db.scalars(select(Ledger)).all() == []
-    assert db.scalars(select(PaymentMethod)).all() == []
+    assert db.execute(select(users).where(users.c.id == user_id)).one_or_none().deletion_requested_at is not None
+    assert db.execute(select(ledgers)).all() == []
+    assert db.execute(select(payment_methods)).all() == []
 
 
-def test_owned_ledger_with_another_member_is_not_deleted(db: Session) -> None:
+def test_owned_ledger_with_another_member_is_not_deleted(db: Connection) -> None:
     """다른 멤버가 있는 가계부는 정책 결정 전 삭제하지 않고 롤백한다."""
     user_id, other_id, ledger_id = uuid4(), uuid4(), uuid4()
-    db.add_all([User(id=user_id, plan="free"), User(id=other_id, plan="free")])
-    db.flush()
-    db.add(Ledger(id=ledger_id, owner_user_id=user_id, name="Shared"))
-    db.flush()
-    db.add_all([LedgerMember(ledger_id=ledger_id, user_id=user_id, role="owner"), LedgerMember(ledger_id=ledger_id, user_id=other_id, role="member")])
+    db.execute(users.insert().values(id=user_id, plan='free'))
+    db.execute(users.insert().values(id=other_id, plan='free'))
+    db.execute(ledgers.insert().values(id=ledger_id, owner_user_id=user_id, name='Shared'))
+    db.execute(ledger_members.insert().values(ledger_id=ledger_id, user_id=user_id, role='owner'))
+    db.execute(ledger_members.insert().values(ledger_id=ledger_id, user_id=other_id, role='member'))
     db.commit()
     with pytest.raises(IntegrityError):
         service.delete_user_app_data(db, user_id)
-    db.expire_all()
-    assert db.get(Ledger, ledger_id) is not None
-    assert db.get(LedgerMember, (ledger_id, user_id)) is not None
-    assert db.get(User, user_id).deletion_requested_at is None
+    assert db.execute(select(ledgers).where(ledgers.c.id == ledger_id)).one_or_none() is not None
+    assert db.execute(select(ledger_members).where(ledger_members.c.ledger_id == ledger_id, ledger_members.c.user_id == user_id)).one_or_none() is not None
+    assert db.execute(select(users).where(users.c.id == user_id)).one_or_none().deletion_requested_at is None
 
 
 @pytest.mark.parametrize("method,path,payload", [("get", "/users/me", None), ("post", "/users/me/bootstrap", None), ("get", "/ledgers", None), ("get", "/categories", None), ("post", "/users/me/payment-methods", {"name": "Visa", "type": "credit", "closing_day": 15, "color": "#123456"})])
-def test_pending_account_cannot_use_regular_apis(db: Session, method: str, path: str, payload: dict | None) -> None:
+def test_pending_account_cannot_use_regular_apis(db: Connection, method: str, path: str, payload: dict | None) -> None:
     """삭제 진행 중인 사용자는 일반 조회와 쓰기 API를 사용할 수 없다."""
     user_id = uuid4()
-    db.add(User(id=user_id, plan="free", deletion_requested_at=datetime.now(UTC)))
+    db.execute(users.insert().values(id=user_id, plan='free', deletion_requested_at=datetime.now(UTC)))
     db.commit()
     app.dependency_overrides[get_current_user_id] = lambda: user_id
     app.dependency_overrides[get_db] = lambda: db
@@ -135,10 +137,10 @@ def test_pending_account_cannot_use_regular_apis(db: Session, method: str, path:
     assert response.status_code == 409
 
 
-def test_pending_user_can_retry_account_deletion(db: Session, monkeypatch) -> None:
+def test_pending_user_can_retry_account_deletion(db: Connection, monkeypatch) -> None:
     """삭제 진행 중에도 계정 삭제 API는 다시 호출할 수 있다."""
     user_id = uuid4()
-    db.add(User(id=user_id, plan="free", deletion_requested_at=datetime.now(UTC)))
+    db.execute(users.insert().values(id=user_id, plan='free', deletion_requested_at=datetime.now(UTC)))
     db.commit()
     delete_account = AsyncMock()
     monkeypatch.setattr(router, "delete_account", delete_account)
@@ -165,7 +167,7 @@ async def test_auth_failure_reports_retry_without_claiming_success(monkeypatch) 
     with pytest.raises(HTTPException) as raised:
         await service.delete_account(user_id)
     assert raised.value.status_code == 503
-    delete_data.assert_awaited_once_with(service.delete_user_app_data_in_session, user_id)
+    delete_data.assert_awaited_once_with(service.delete_user_app_data_on_connection, user_id)
 
 
 @pytest.mark.asyncio
@@ -247,7 +249,7 @@ async def test_retry_command_continues_after_failed_account(monkeypatch) -> None
     db = Mock()
     session_context = MagicMock()
     session_context.__enter__.return_value = db
-    monkeypatch.setattr(retry_deletions, "SessionLocal", lambda: session_context)
+    monkeypatch.setattr(retry_deletions.engine, "connect", lambda: session_context)
     monkeypatch.setattr(repository, "list_pending_deletion_user_ids", Mock(return_value=[first_id, second_id]))
     delete_account = AsyncMock(side_effect=[HTTPException(status_code=503), None])
     monkeypatch.setattr(retry_deletions, "delete_account", delete_account)
@@ -259,10 +261,10 @@ async def test_retry_command_continues_after_failed_account(monkeypatch) -> None
 def test_writes_use_postgresql_shared_lock(monkeypatch) -> None:
     """일반 쓰기는 공유 잠금, 계정 삭제는 배타 잠금으로 순서를 보장한다."""
     db = Mock()
-    db.scalars.return_value.one_or_none.return_value = None
+    db.execute.return_value.one_or_none.return_value = None
     repository.lock_user_by_id(db, uuid4(), shared=True)
-    shared = str(db.scalars.call_args.args[0].compile(dialect=postgresql.dialect()))
+    shared = str(db.execute.call_args.args[0].compile(dialect=postgresql.dialect()))
     repository.lock_user_by_id(db, uuid4())
-    exclusive = str(db.scalars.call_args.args[0].compile(dialect=postgresql.dialect()))
+    exclusive = str(db.execute.call_args.args[0].compile(dialect=postgresql.dialect()))
     assert "FOR SHARE" in shared
     assert "FOR UPDATE" in exclusive

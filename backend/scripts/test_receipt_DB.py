@@ -12,11 +12,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from openai import OpenAI, OpenAIError
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.session import SessionLocal
+from app.db.session import engine
 from app.receipts.parser import prepare_image
 from app.receipts.prompts import SYSTEM_PROMPT
 from app.receipts.schemas import ReceiptData
@@ -27,7 +27,7 @@ from app.receipts.validator import validate_receipt
 def parse_receipt(
     image_path: Path,
     *,
-    db: Session,
+    db: Connection,
     client: OpenAI | None = None,
     model: str | None = None,
 ) -> ReceiptData:
@@ -71,7 +71,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        with SessionLocal() as db:
+        with engine.connect() as db:
             receipt = parse_receipt(args.image, db=db)
         report = validate_receipt(receipt)
         result = {

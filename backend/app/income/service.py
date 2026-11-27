@@ -5,10 +5,8 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.engine import Connection, Row
 
-from app.db.models.income_record import IncomeRecord
-from app.db.models.income_source import IncomeSource
 from app.income import calendar_repository, repository
 from app.income.payday_calendar import resolve_paycheck_date
 from app.income.schema import (
@@ -33,7 +31,7 @@ def calculate_next_expected_date(reference_date: date, frequency: Literal["biwee
     day = min(anchor_day if anchor_day is not None else reference_date.day, monthrange(year=year, month=month)[1])
     return date(year=year, month=month, day=day)
 
-def confirm_income_plan(db: Session, ledger_id: UUID, source_id: UUID, data: IncomePlanConfirm) -> IncomeRecord:
+def confirm_income_plan(db: Connection, ledger_id: UUID, source_id: UUID, data: IncomePlanConfirm) -> Row:
     """예정일 한 회차를 실제 수입으로 기록하고 다음 예정 상태를 갱신한다."""
     try:
         source = repository.find_active_income_source(db, ledger_id=ledger_id, source_id=source_id)
@@ -57,7 +55,7 @@ def confirm_income_plan(db: Session, ledger_id: UUID, source_id: UUID, data: Inc
         db.rollback()
         raise
 
-def create_income_record(db: Session, ledger_id: UUID, user_id: UUID, data:IncomeRecordCreate) -> IncomeRecord:
+def create_income_record(db: Connection, ledger_id: UUID, user_id: UUID, data:IncomeRecordCreate) -> Row:
     """유형별 입력과 결제수단 소유권을 확인하고 수입을 저장한다."""
     payment_method_id = None
     if isinstance(data.applied_to, UUID):
@@ -79,7 +77,7 @@ def create_income_record(db: Session, ledger_id: UUID, user_id: UUID, data:Incom
         db.rollback()
         raise
 
-def create_income_plan(db: Session, ledger_id: UUID, user_id: UUID, data: IncomePlanCreate) -> IncomeSource:
+def create_income_plan(db: Connection, ledger_id: UUID, user_id: UUID, data: IncomePlanCreate) -> Row:
     """결제수단 소유권을 확인하고 실제 입금과 분리된 예정 수입을 저장한다."""
     payment_method_id = None
     if data.applied_to is not None:
@@ -96,15 +94,15 @@ def create_income_plan(db: Session, ledger_id: UUID, user_id: UUID, data: Income
         db.rollback()
         raise
 
-def list_ledger_income_sources(db: Session, ledger_id: UUID) -> list[IncomeSource]:
+def list_ledger_income_sources(db: Connection, ledger_id: UUID) -> list[Row]:
     """가계부의 활성 예정 수입 규칙을 조회한다."""
     return repository.list_active_income_sources(db, ledger_id=ledger_id)
 
-def list_ledger_income_records(db: Session, ledger_id: UUID) -> list[IncomeRecord]:
+def list_ledger_income_records(db: Connection, ledger_id: UUID) -> list[Row]:
     """가계부에 실제로 입금된 수입 기록을 조회한다."""
     return repository.list_income_records(db, ledger_id=ledger_id)
 
-def update_ledger_income_record(db: Session, ledger_id: UUID, user_id: UUID, record_id: UUID, data: IncomeRecordUpdate) -> IncomeRecord:
+def update_ledger_income_record(db: Connection, ledger_id: UUID, user_id: UUID, record_id: UUID, data: IncomeRecordUpdate) -> Row:
     """기존 수입 유형과 예정 규칙을 유지하며 실제 입금 내용을 수정한다."""
     try:
         record = repository.find_income_record(db, ledger_id=ledger_id, record_id=record_id)
@@ -132,7 +130,7 @@ def update_ledger_income_record(db: Session, ledger_id: UUID, user_id: UUID, rec
         db.rollback()
         raise
 
-def update_ledger_income_plan(db: Session, ledger_id: UUID, user_id: UUID, source_id: UUID, data: IncomePlanUpdate) -> IncomeSource:
+def update_ledger_income_plan(db: Connection, ledger_id: UUID, user_id: UUID, source_id: UUID, data: IncomePlanUpdate) -> Row:
     """활성 예정 수입의 앞으로 적용할 금액과 일정을 수정한다."""
     try:
         source = repository.find_active_income_source(db, ledger_id=ledger_id, source_id=source_id)
@@ -164,7 +162,7 @@ def update_ledger_income_plan(db: Session, ledger_id: UUID, user_id: UUID, sourc
         db.rollback()
         raise
 
-def soft_delete_income_record(db: Session, ledger_id: UUID, record_id: UUID) -> None:
+def soft_delete_income_record(db: Connection, ledger_id: UUID, record_id: UUID) -> None:
     """실제 수입을 숨기고 30일 복구를 위해 삭제 시각을 남긴다."""
     record = repository.find_income_record(db, ledger_id=ledger_id, record_id=record_id)
     if record is None:
@@ -177,7 +175,7 @@ def soft_delete_income_record(db: Session, ledger_id: UUID, record_id: UUID) -> 
         db.rollback()
         raise
 
-def soft_delete_income_plan(db: Session, ledger_id: UUID, source_id: UUID) -> None:
+def soft_delete_income_plan(db: Connection, ledger_id: UUID, source_id: UUID) -> None:
     """예정 수입을 숨기고 이미 확정된 실제 기록은 유지한다."""
     source = repository.find_active_income_source(db, ledger_id=ledger_id, source_id=source_id)
     if source is None:
@@ -190,7 +188,7 @@ def soft_delete_income_plan(db: Session, ledger_id: UUID, source_id: UUID) -> No
         db.rollback()
         raise
 
-def restore_deleted_income_plan_for_admin(db: Session, ledger_id: UUID, source_id: UUID) -> None:
+def restore_deleted_income_plan_for_admin(db: Connection, ledger_id: UUID, source_id: UUID) -> None:
     """관리자 운영 절차에서 삭제 후 30일 이내인 예정 수입을 복구한다."""
     cutoff = datetime.now(UTC) - timedelta(days=30)
     source = repository.find_restorable_income_source(db, ledger_id=ledger_id, source_id=source_id, cutoff=cutoff)
@@ -204,7 +202,7 @@ def restore_deleted_income_plan_for_admin(db: Session, ledger_id: UUID, source_i
         db.rollback()
         raise
 
-def restore_deleted_income_record_for_admin(db: Session, ledger_id: UUID, record_id: UUID) -> None:
+def restore_deleted_income_record_for_admin(db: Connection, ledger_id: UUID, record_id: UUID) -> None:
     """관리자 운영 절차에서 30일 이내의 실제 수입을 중복 없이 복구한다."""
     cutoff = datetime.now(UTC) - timedelta(days=30)
     record = repository.find_restorable_income_record(db, ledger_id=ledger_id, record_id=record_id, cutoff=cutoff)
@@ -225,7 +223,7 @@ def restore_deleted_income_record_for_admin(db: Session, ledger_id: UUID, record
         db.rollback()
         raise
 
-def undo_income_confirmation(db: Session, ledger_id: UUID, record_id: UUID) -> IncomeSource:
+def undo_income_confirmation(db: Connection, ledger_id: UUID, record_id: UUID) -> Row:
     """방금 확정한 수입 기록을 숨기고 해당 예정 회차를 다시 연다."""
     try:
         record = repository.find_income_record(db, ledger_id=ledger_id, record_id=record_id)
@@ -246,14 +244,14 @@ def undo_income_confirmation(db: Session, ledger_id: UUID, record_id: UUID) -> I
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Income plan has changed since confirmation")
 
         repository.mark_income_record_deleted(db, record=record, deleted_at=datetime.now(UTC))
-        repository.update_income_source_state(db, source=source, next_expected_date=record.expected_date, is_active=True)
+        source = repository.update_income_source_state(db, source=source, next_expected_date=record.expected_date, is_active=True)
         db.commit()
         return source
     except Exception:
         db.rollback()
         raise
 
-def purge_expired_income(db: Session, batch_size: int = 1000, pause_seconds: float = 0.1) -> tuple[int, int]:
+def purge_expired_income(db: Connection, batch_size: int = 1000, pause_seconds: float = 0.1) -> tuple[int, int]:
     """30일이 지난 실제 수입과 예정 규칙을 순서대로 묶음 정리한다."""
     cutoff = datetime.now(UTC) - timedelta(days=30)
     records_deleted = 0
@@ -287,7 +285,7 @@ def purge_expired_income(db: Session, batch_size: int = 1000, pause_seconds: flo
 
     return records_deleted, sources_deleted
 
-def get_bank_holidays(db: Session, year: int) -> set[date] | None:
+def get_bank_holidays(db: Connection, year: int) -> set[date] | None:
     """연간 휴일을 DB에서 읽고 당해 연도 데이터가 30일 넘었으면 갱신한다."""
     now = datetime.now(UTC)
     cached = calendar_repository.find_calendar_year(db, year)
@@ -309,7 +307,7 @@ def get_bank_holidays(db: Session, year: int) -> set[date] | None:
         raise
     return holidays
 
-def build_income_plan_read(db: Session, source: IncomeSource) -> IncomePlanRead:
+def build_income_plan_read(db: Connection, source: Row) -> IncomePlanRead:
     """기준일은 유지하고 Paycheck의 표시 날짜만 은행 달력으로 조정한다."""
     result = IncomePlanRead.model_validate(source)
     if source.income_type == "paycheck":
@@ -318,7 +316,7 @@ def build_income_plan_read(db: Session, source: IncomeSource) -> IncomePlanRead:
         result.adjusted_expected_date = source.next_expected_date
     return result
 
-def list_income_calendar(db: Session, ledger_id: UUID, start_date: date, end_date: date) -> list[IncomeCalendarEntryRead]:
+def list_income_calendar(db: Connection, ledger_id: UUID, start_date: date, end_date: date) -> list[IncomeCalendarEntryRead]:
     """기간 내 실제 입금과 앞으로의 예정 회차를 달력 항목으로 합친다."""
     if start_date > end_date:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="start_date must be on or before end_date")
@@ -354,7 +352,7 @@ def list_income_calendar(db: Session, ledger_id: UUID, start_date: date, end_dat
             return load_holidays(year)
         return holidays_by_year[year]
 
-    planned: list[tuple[IncomeSource, date, date | None]] = []
+    planned: list[tuple[Row, date, date | None]] = []
     for source in repository.list_active_income_sources(db, ledger_id):
         expected_date = source.next_expected_date
         while True:

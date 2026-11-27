@@ -7,17 +7,17 @@ from typing import Literal
 
 from pydantic import Field, create_model
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.engine import Connection
 
-from app.db.models.category import Category
+from app.db.tables import categories
 
 from .schemas import ReceiptData as BaseReceiptData
 from .schemas import ReceiptItem as BaseReceiptItem
 
 
-def load_receipt_schema(db: Session) -> type[BaseReceiptData]:
+def load_receipt_schema(db: Connection) -> type[BaseReceiptData]:
     """호출할 때마다 최신 name 목록을 읽는다. description은 조회하지 않는다."""
-    names = tuple(db.scalars(select(Category.name).order_by(Category.name)).all())
+    names = tuple(db.scalars(select(categories.c.name).order_by(categories.c.name)).all())
     if not names:
         raise ValueError("No receipt categories found in the database")
     if any(not name.strip() for name in names):

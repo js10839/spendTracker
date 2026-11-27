@@ -1,19 +1,16 @@
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, select
 from sqlalchemy.pool import StaticPool
 
 from app.auth.dependencies import get_active_user_id, get_current_user_id
-from app.db.base import Base
-from app.db.models.ledger import Ledger
-from app.db.models.transaction import Transaction
-from app.db.models.transaction_item import TransactionItem
 from app.db.session import get_db
+from app.db.tables import metadata, transaction_items, transactions
 from app.ledgers import repository as ledgers_repository
 from app.ledgers.dependencies import get_user_ledger
 from app.main import app
@@ -23,19 +20,16 @@ from app.transactions import router as transactions_router
 def test_memo_patch_changes_only_memo_and_respects_ledger():
     """메모 변경·삭제가 다른 거래 필드와 품목을 바꾸지 않는지 확인한다."""
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine, tables=[Transaction.__table__, TransactionItem.__table__])
+    metadata.create_all(engine, tables=[transactions, transaction_items])
     ledger_id, other_ledger_id, card_id, category_id = (uuid4() for _ in range(4))
-    with Session(engine) as db:
-        transaction = Transaction(id=uuid4(), ledger_id=ledger_id, payment_method_id=card_id, merchant="Cafe", transacted_at=date(2026, 11, 13), memo="old", source="receipt_parse", total_cents=1200, tax_cents=100, tip_cents=100)
-        other = Transaction(id=uuid4(), ledger_id=other_ledger_id, payment_method_id=card_id, transacted_at=date(2026, 11, 13), total_cents=100)
-        deleted = Transaction(id=uuid4(), ledger_id=ledger_id, payment_method_id=card_id, transacted_at=date(2026, 11, 13), total_cents=100, deleted_at=datetime.now(UTC))
-        db.add_all([transaction, other, deleted])
-        db.flush()
-        item = TransactionItem(transaction_id=transaction.id, category_id=category_id, name="Coffee", amount_cents=1000)
-        db.add(item)
+    with engine.connect() as db:
+        transaction = db.execute(transactions.insert().values(id=uuid4(), ledger_id=ledger_id, payment_method_id=card_id, merchant='Cafe', transacted_at=date(2026, 11, 13), memo='old', source='receipt_parse', total_cents=1200, tax_cents=100, tip_cents=100).returning(transactions)).one()
+        other = db.execute(transactions.insert().values(id=uuid4(), ledger_id=other_ledger_id, payment_method_id=card_id, transacted_at=date(2026, 11, 13), total_cents=100).returning(transactions)).one()
+        deleted = db.execute(transactions.insert().values(id=uuid4(), ledger_id=ledger_id, payment_method_id=card_id, transacted_at=date(2026, 11, 13), total_cents=100, deleted_at=datetime.now(UTC)).returning(transactions)).one()
+        item = db.execute(transaction_items.insert().values(transaction_id=transaction.id, category_id=category_id, name='Coffee', amount_cents=1000).returning(transaction_items)).one()
         db.commit()
         item_id = item.id
-        app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=uuid4())
+        app.dependency_overrides[get_user_ledger] = lambda: SimpleNamespace(id=ledger_id, name="Personal", owner_user_id=uuid4())
         app.dependency_overrides[get_db] = lambda: db
         try:
             with TestClient(app) as client:
@@ -53,9 +47,8 @@ def test_memo_patch_changes_only_memo_and_respects_ledger():
                     assert client.patch(f"/ledgers/{ledger_id}/transactions/{transaction_id}/memo", json={"memo": "x"}).status_code == 404
         finally:
             app.dependency_overrides.clear()
-        db.expire_all()
-        saved = db.get(Transaction, transaction.id)
-        saved_item = db.get(TransactionItem, item_id)
+        saved = db.execute(select(transactions).where(transactions.c.id == transaction.id)).one_or_none()
+        saved_item = db.execute(select(transaction_items).where(transaction_items.c.id == item_id)).one_or_none()
         assert (saved.payment_method_id, saved.merchant, saved.transacted_at, saved.source, saved.total_cents, saved.tax_cents, saved.tip_cents) == (card_id, "Cafe", date(2026, 11, 13), "receipt_parse", 1200, 100, 100)
         assert (saved_item.transaction_id, saved_item.name, saved_item.category_id, saved_item.amount_cents) == (transaction.id, "Coffee", category_id, 1000)
     engine.dispose()

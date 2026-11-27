@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -5,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.dependencies import get_active_user_id, get_current_user_id
-from app.db.models.user import User
 from app.db.session import get_db
 from app.main import app
 from app.users import router as users_router
@@ -16,7 +16,7 @@ def test_bootstrap_api_uses_authenticated_user_id(monkeypatch, completed: bool, 
     """인증된 사용자 ID로 Service를 호출하고 프로필 ID를 반환한다."""
     user_id = uuid4()
     db = Mock()
-    bootstrap_user = Mock(return_value=User(id=user_id, onboarding_completed=completed))
+    bootstrap_user = Mock(return_value=SimpleNamespace(id=user_id, onboarding_completed=completed))
     monkeypatch.setattr(users_router, "bootstrap_user", bootstrap_user)
     app.dependency_overrides[get_current_user_id] = lambda: user_id
     app.dependency_overrides[get_active_user_id] = lambda: user_id

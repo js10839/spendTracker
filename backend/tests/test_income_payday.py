@@ -1,18 +1,15 @@
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, select
 
 from app.auth.dependencies import get_current_user_id
-from app.db.base import Base
-from app.db.models.bank_calendar_year import BankCalendarYear
-from app.db.models.income_source import IncomeSource
-from app.db.models.ledger import Ledger
 from app.db.session import get_db
+from app.db.tables import bank_calendar_years, metadata
 from app.income import router as income_router
 from app.income import service
 from app.income.payday_calendar import adjust_paycheck_date
@@ -43,32 +40,32 @@ def test_paycheck_adjustment_uses_preceding_business_day() -> None:
 def test_calendar_cache_reuses_year_and_refreshes_after_30_days(monkeypatch: pytest.MonkeyPatch) -> None:
     """같은 연도는 DB 캐시를 공유하고 30일 후 새 목록을 저장한다."""
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[BankCalendarYear.__table__])
+    metadata.create_all(engine, tables=[bank_calendar_years])
     fetch = Mock(side_effect=[{date(2026, 1, 1)}, {date(2026, 1, 1), date(2026, 7, 3)}])
     monkeypatch.setattr(service, "fetch_bank_holidays", fetch)
 
-    with Session(engine) as db:
+    with engine.connect() as db:
         assert service.get_bank_holidays(db, 2026) == {date(2026, 1, 1)}
         assert service.get_bank_holidays(db, 2026) == {date(2026, 1, 1)}
         assert fetch.call_count == 1
-        row = db.get(BankCalendarYear, 2026)
-        row.fetched_at = datetime.now(UTC) - timedelta(days=31)
+        row = db.execute(select(bank_calendar_years).where(bank_calendar_years.c.year == 2026)).one_or_none()
+        db.execute(bank_calendar_years.update().where(bank_calendar_years.c.year == row.year).values(fetched_at=datetime.now(UTC) - timedelta(days=31)))
         db.commit()
         assert service.get_bank_holidays(db, 2026) == {date(2026, 1, 1), date(2026, 7, 3)}
         assert fetch.call_count == 2
-        assert db.get(BankCalendarYear, 2026).holidays == ["2026-01-01", "2026-07-03"]
+        assert db.execute(select(bank_calendar_years).where(bank_calendar_years.c.year == 2026)).one_or_none().holidays == ["2026-01-01", "2026-07-03"]
     engine.dispose()
 
 
 def test_calendar_cache_uses_saved_holidays_when_bankday_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """외부 API 오류 때는 마지막 목록을 사용하고 캐시가 없으면 조정일을 비운다."""
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[BankCalendarYear.__table__])
+    metadata.create_all(engine, tables=[bank_calendar_years])
     monkeypatch.setattr(service, "fetch_bank_holidays", Mock(side_effect=bankday.BankdayUnavailable("Bankday unavailable")))
 
-    with Session(engine) as db:
+    with engine.connect() as db:
         assert service.get_bank_holidays(db, 2026) is None
-        db.add(BankCalendarYear(year=2026, holidays=["2026-07-03"], fetched_at=datetime.now(UTC) - timedelta(days=31)))
+        db.execute(bank_calendar_years.insert().values(year=2026, holidays=['2026-07-03'], fetched_at=datetime.now(UTC) - timedelta(days=31)))
         db.commit()
         assert service.get_bank_holidays(db, 2026) == {date(2026, 7, 3)}
     engine.dispose()
@@ -76,7 +73,7 @@ def test_calendar_cache_uses_saved_holidays_when_bankday_fails(monkeypatch: pyte
 
 def test_paycheck_adjustment_checks_previous_year_at_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
     """1월 초 휴일이 전년도 12월로 넘어가면 이전 연도 달력도 확인한다."""
-    source = IncomeSource(id=uuid4(), ledger_id=uuid4(), income_type="paycheck", from_name="Company", payment_method_id=None, expected_amount_cents=1000, memo=None, frequency="once", reference_date=date(2027, 1, 1), next_expected_date=date(2027, 1, 1), is_active=True)
+    source = SimpleNamespace(id=uuid4(), ledger_id=uuid4(), income_type="paycheck", from_name="Company", payment_method_id=None, expected_amount_cents=1000, memo=None, frequency="once", reference_date=date(2027, 1, 1), next_expected_date=date(2027, 1, 1), is_active=True)
     holidays = Mock(side_effect=lambda db, year: {date(2027, 1, 1)} if year == 2027 else {date(2026, 12, 31)})
     monkeypatch.setattr(service, "get_bank_holidays", holidays)
 
@@ -89,7 +86,7 @@ def test_paycheck_adjustment_checks_previous_year_at_boundary(monkeypatch: pytes
 @pytest.mark.parametrize("income_type", ["paycheck", "other"])
 def test_income_plan_read_keeps_base_date_and_only_adjusts_paycheck(monkeypatch: pytest.MonkeyPatch, income_type: str) -> None:
     """반복 기준일은 유지하고 급여에만 은행 영업일 조정을 적용한다."""
-    source = IncomeSource(id=uuid4(), ledger_id=uuid4(), income_type=income_type, from_name="Company" if income_type == "paycheck" else None, payment_method_id=None, expected_amount_cents=1000, memo=None, frequency="once", reference_date=date(2026, 7, 4), next_expected_date=date(2026, 7, 4), is_active=True)
+    source = SimpleNamespace(id=uuid4(), ledger_id=uuid4(), income_type=income_type, from_name="Company" if income_type == "paycheck" else None, payment_method_id=None, expected_amount_cents=1000, memo=None, frequency="once", reference_date=date(2026, 7, 4), next_expected_date=date(2026, 7, 4), is_active=True)
     holidays = Mock(return_value={date(2026, 7, 3)})
     monkeypatch.setattr(service, "get_bank_holidays", holidays)
 
@@ -104,11 +101,11 @@ def test_income_plan_read_keeps_base_date_and_only_adjusts_paycheck(monkeypatch:
 def test_income_plan_list_returns_adjusted_date_in_api(monkeypatch: pytest.MonkeyPatch) -> None:
     """예정 수입 조회 응답에 기준일과 조정된 표시일을 모두 전달한다."""
     user_id, ledger_id = uuid4(), uuid4()
-    source = IncomeSource(id=uuid4(), ledger_id=ledger_id, income_type="paycheck", from_name="Company", payment_method_id=None, expected_amount_cents=1000, memo=None, frequency="once", reference_date=date(2026, 7, 4), next_expected_date=date(2026, 7, 4), is_active=True)
+    source = SimpleNamespace(id=uuid4(), ledger_id=ledger_id, income_type="paycheck", from_name="Company", payment_method_id=None, expected_amount_cents=1000, memo=None, frequency="once", reference_date=date(2026, 7, 4), next_expected_date=date(2026, 7, 4), is_active=True)
     monkeypatch.setattr(income_router, "list_ledger_income_sources", Mock(return_value=[source]))
     monkeypatch.setattr(service, "get_bank_holidays", Mock(return_value=set()))
     app.dependency_overrides[get_current_user_id] = lambda: user_id
-    app.dependency_overrides[get_user_ledger] = lambda: Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
+    app.dependency_overrides[get_user_ledger] = lambda: SimpleNamespace(id=ledger_id, name="Personal", owner_user_id=user_id)
     app.dependency_overrides[get_db] = lambda: Mock()
 
     try:
@@ -136,7 +133,7 @@ def test_income_calendar_resolves_failed_paychecks_before_filtering(monkeypatch,
     db = Mock()
     ledger_id = uuid4()
     payday = date(2026, 11, 1)
-    plans = [IncomeSource(id=uuid4(), ledger_id=ledger_id, income_type="paycheck", expected_amount_cents=1000, frequency="once", reference_date=payday, next_expected_date=payday) for _ in range(2)]
+    plans = [SimpleNamespace(memo=None, from_name=None, payment_method_id=None, id=uuid4(), ledger_id=ledger_id, income_type="paycheck", expected_amount_cents=1000, frequency="once", reference_date=payday, next_expected_date=payday) for _ in range(2)]
     monkeypatch.setattr(service.repository, "list_income_records_in_range", Mock(return_value=[]))
     monkeypatch.setattr(service.repository, "list_active_income_sources", Mock(return_value=plans))
     holidays = Mock(side_effect=lookups)
@@ -154,7 +151,7 @@ def test_income_calendar_recovers_first_recurring_payday_across_new_year(monkeyp
     db = Mock()
     ledger_id = uuid4()
     first = date(2027, 1, 1)
-    plan = IncomeSource(id=uuid4(), ledger_id=ledger_id, income_type="paycheck", expected_amount_cents=1000, frequency="biweekly", reference_date=first, next_expected_date=first)
+    plan = SimpleNamespace(memo=None, from_name=None, payment_method_id=None, id=uuid4(), ledger_id=ledger_id, income_type="paycheck", expected_amount_cents=1000, frequency="biweekly", reference_date=first, next_expected_date=first)
     monkeypatch.setattr(service.repository, "list_income_records_in_range", Mock(return_value=[]))
     monkeypatch.setattr(service.repository, "list_active_income_sources", Mock(return_value=[plan]))
     holidays = Mock(side_effect=[None, {first}, {date(2026, 12, 31)}])

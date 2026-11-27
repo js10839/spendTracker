@@ -3,14 +3,12 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, select
 from sqlalchemy.pool import StaticPool
 
 from app.auth.dependencies import get_current_user_id
-from app.db.base import Base
-from app.db.models.user import User, auth_users
 from app.db.session import get_db
+from app.db.tables import auth_users, metadata, users
 from app.main import app
 from app.users import repository, router, service
 
@@ -22,11 +20,11 @@ def onboarding_client(monkeypatch):
     with engine.begin() as connection:
         connection.exec_driver_sql("ATTACH DATABASE ':memory:' AS auth")
         connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-        Base.metadata.create_all(connection)
+        metadata.create_all(connection)
     user_id = uuid4()
-    with Session(engine, expire_on_commit=False) as db:
+    with engine.connect() as db:
         db.execute(auth_users.insert().values(id=user_id))
-        db.add(User(id=user_id, onboarding_completed=False))
+        db.execute(users.insert().values(id=user_id, onboarding_completed=False))
         db.commit()
         monkeypatch.setattr(repository, "lock_bootstrap", lambda db, user_id: None)
         app.dependency_overrides[get_current_user_id] = lambda: user_id
@@ -47,8 +45,7 @@ def test_complete_onboarding_saves_name_and_status(onboarding_client, monkeypatc
     response = client.post("/users/me/onboarding/complete", json={"nickname": nickname})
     assert response.status_code == 200
     assert response.json()["nickname"] == expected
-    db.expire_all()
-    assert db.get(User, user_id).onboarding_completed is True
+    assert db.execute(select(users).where(users.c.id == user_id)).one_or_none().onboarding_completed is True
 
 
 def test_completed_onboarding_does_not_replace_name(onboarding_client, monkeypatch):
@@ -58,20 +55,17 @@ def test_completed_onboarding_does_not_replace_name(onboarding_client, monkeypat
     assert client.post("/users/me/onboarding/complete", json={"nickname": ""}).status_code == 200
     response = client.post("/users/me/onboarding/complete", json={"nickname": "Different"})
     assert response.json()["nickname"] == "Calm Otter"
-    db.expire_all()
-    assert db.get(User, user_id).nickname == "Calm Otter"
+    assert db.execute(select(users).where(users.c.id == user_id)).one_or_none().nickname == "Calm Otter"
 
 
 def test_deletion_pending_cannot_complete_onboarding(onboarding_client):
     """삭제 진행 중인 계정은 가입 정보를 완료하지 못한다."""
     client, db, user_id = onboarding_client
-    user = db.get(User, user_id)
-    user.deletion_requested_at = datetime.now(UTC)
+    db.execute(users.update().where(users.c.id == user_id).values(deletion_requested_at=datetime.now(UTC)))
     db.commit()
     response = client.post("/users/me/onboarding/complete", json={"nickname": "Colin"})
     assert response.status_code == 409
-    db.expire_all()
-    assert db.get(User, user_id).onboarding_completed is False
+    assert db.execute(select(users).where(users.c.id == user_id)).one_or_none().onboarding_completed is False
 
 
 def test_onboarding_requires_token():
@@ -89,8 +83,7 @@ def test_nickname_suggestion_does_not_change_profile(onboarding_client, monkeypa
     assert response.status_code == 200
     assert response.json() == {"nickname": "Calm Otter"}
     assert response.headers["cache-control"] == "no-store"
-    db.expire_all()
-    user = db.get(User, user_id)
+    user = db.execute(select(users).where(users.c.id == user_id)).one_or_none()
     assert user.nickname is None
     assert user.onboarding_completed is False
 
@@ -105,7 +98,7 @@ def test_nickname_suggestion_requires_authentication():
 def test_deletion_pending_cannot_get_nickname_suggestion(onboarding_client):
     """삭제 진행 중인 사용자는 후보 조회도 사용할 수 없다."""
     client, db, user_id = onboarding_client
-    db.get(User, user_id).deletion_requested_at = datetime.now(UTC)
+    db.execute(users.update().where(users.c.id == user_id).values(deletion_requested_at=datetime.now(UTC)))
     db.commit()
     response = client.get("/users/me/nickname-suggestion")
     assert response.status_code == 409

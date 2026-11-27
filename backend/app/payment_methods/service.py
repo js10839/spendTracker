@@ -1,14 +1,13 @@
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.engine import Connection, Row
 
-from app.db.models.payment_method import PaymentMethod
 from app.payment_methods import repository
 from app.payment_methods.schema import PaymentMethodCreate, PaymentMethodUpdate
 
 
-def create_payment_method(db: Session, user_id: UUID, data: PaymentMethodCreate) -> PaymentMethod:
+def create_payment_method(db: Connection, user_id: UUID, data: PaymentMethodCreate) -> Row:
     """검증된 결제수단을 저장하고 트랜잭션을 확정한다."""
     try:
         payment_method = repository.add_payment_method(db, user_id=user_id, name=data.name, method_type=data.type, closing_day=data.closing_day, color=data.color)
@@ -18,11 +17,11 @@ def create_payment_method(db: Session, user_id: UUID, data: PaymentMethodCreate)
         db.rollback()
         raise
 
-def get_payment_methods(db: Session, user_id: UUID) -> list[PaymentMethod]:
+def get_payment_methods(db: Connection, user_id: UUID) -> list[Row]:
     """사용자의 지갑 목록을 조회한다."""
     return repository.list_payment_methods(db, user_id)
 
-def update_payment_method_details(db: Session, user_id: UUID, payment_method_id: UUID, data: PaymentMethodUpdate) -> PaymentMethod:
+def update_payment_method_details(db: Connection, user_id: UUID, payment_method_id: UUID, data: PaymentMethodUpdate) -> Row:
     """본인 결제수단의 이름·마감일·색상을 검증한 뒤 한 번에 저장한다."""
     try:
         method = repository.find_user_payment_method(db, payment_method_id=payment_method_id, user_id=user_id)
