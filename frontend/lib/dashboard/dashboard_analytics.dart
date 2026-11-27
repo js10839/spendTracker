@@ -17,18 +17,24 @@ class DashboardAnalytics extends StatelessWidget {
     required this.summary,
     required this.cashFlow,
     required this.onRetryCashFlow,
+    required this.rolling,
   });
 
   final DashboardSummary summary;
   final Future<List<DashboardCashMonth>?> cashFlow;
   final VoidCallback onRetryCashFlow;
+  final bool rolling;
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     spacing: AppSpacing.md,
     children: [
-      _SpendingCard(daily: summary.daily, yearly: summary.yearly),
+      _SpendingCard(
+        daily: summary.daily,
+        yearly: summary.yearly,
+        rolling: rolling,
+      ),
       _BreakdownCard(title: 'By card', rows: summary.paymentMethods),
       _BreakdownCard(title: 'Category breakdown', rows: summary.categories),
       Text('Income vs spending', style: AppTypography.bodyMediumStrong),
@@ -89,10 +95,15 @@ class _DashboardCard extends StatelessWidget {
 }
 
 class _SpendingCard extends StatefulWidget {
-  const _SpendingCard({required this.daily, required this.yearly});
+  const _SpendingCard({
+    required this.daily,
+    required this.yearly,
+    required this.rolling,
+  });
 
   final List<DashboardBucket> daily;
   final List<DashboardBucket> yearly;
+  final bool rolling;
 
   @override
   State<_SpendingCard> createState() => _SpendingCardState();
@@ -135,28 +146,31 @@ class _SpendingCardState extends State<_SpendingCard> {
             runSpacing: AppSpacing.sm,
             children: [
               Text('Spending', style: AppTypography.heading3),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppSegmentedControl(
-                    labels: const ['Day', 'Week', 'Month'],
-                    selectedIndex: _range,
-                    onChanged: (index) => setState(() {
-                      _range = index;
-                      _selected = null;
-                    }),
-                  ),
-                  _DetailsButton(
-                    title: 'Spending',
-                    rows: [
-                      for (final bucket in buckets)
-                        (
-                          name: _dateLabel(bucket.date, _range),
-                          amount: bucket.cents,
-                        ),
-                    ],
-                  ),
-                ],
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppSegmentedControl(
+                      labels: const ['Day', 'Week', 'Month'],
+                      selectedIndex: _range,
+                      onChanged: (index) => setState(() {
+                        _range = index;
+                        _selected = null;
+                      }),
+                    ),
+                    _DetailsButton(
+                      title: 'Spending',
+                      rows: [
+                        for (final bucket in buckets)
+                          (
+                            name: _dateLabel(bucket.date, _range),
+                            amount: bucket.cents,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -169,6 +183,7 @@ class _SpendingCardState extends State<_SpendingCard> {
             _SpendingChart(
               buckets: buckets,
               range: _range,
+              rolling: widget.rolling,
               selected: _selected,
               onSelected: (index) =>
                   setState(() => _selected = _selected == index ? null : index),
@@ -183,12 +198,14 @@ class _SpendingChart extends StatelessWidget {
   const _SpendingChart({
     required this.buckets,
     required this.range,
+    required this.rolling,
     required this.selected,
     required this.onSelected,
   });
 
   final List<DashboardBucket> buckets;
   final int range;
+  final bool rolling;
   final int? selected;
   final ValueChanged<int> onSelected;
 
@@ -298,6 +315,8 @@ class _SpendingChart extends StatelessWidget {
                             child: Text(
                               range == 2
                                   ? homeMonths[bucket.date.month - 1]
+                                  : rolling
+                                  ? '${bucket.date.month}/${bucket.date.day}'
                                   : '${bucket.date.day}',
                               style: _caption,
                             ),
@@ -361,6 +380,7 @@ class _SpendingChart extends StatelessWidget {
     if (index == 0 || index == count - 1) return true;
     if (range == 2) return index.isEven;
     if (range == 1) return true;
+    if (rolling) return index % 7 == 0 && index < count - 3;
     return date.day % 5 == 0 && index < count - 2;
   }
 }
@@ -399,7 +419,9 @@ class _BreakdownCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: AppTypography.bodyMediumStrong),
+              Flexible(
+                child: Text(title, style: AppTypography.bodyMediumStrong),
+              ),
               if (rows.isNotEmpty)
                 _DetailsButton(
                   title: title,
@@ -410,7 +432,7 @@ class _BreakdownCard extends StatelessWidget {
             ],
           ),
           if (rows.isEmpty)
-            Text('No spending for this month', style: _caption)
+            Text('No spending for this period', style: _caption)
           else
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,

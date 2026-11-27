@@ -47,6 +47,7 @@ class DashboardStatement {
 class DashboardSummary {
   const DashboardSummary({
     required this.monthlySpendingCents,
+    required this.rollingSpendingCents,
     required this.statements,
     required this.daily,
     required this.yearly,
@@ -55,6 +56,7 @@ class DashboardSummary {
   });
 
   final int monthlySpendingCents;
+  final int rollingSpendingCents;
   final List<DashboardStatement> statements;
   final List<DashboardBucket> daily;
   final List<DashboardBucket> yearly;
@@ -64,6 +66,9 @@ class DashboardSummary {
 
 typedef DashboardAmount = ({String name, int cents, Color color});
 typedef DashboardBucket = ({DateTime date, int cents});
+
+DateTime dashboardRollingStart(DateTime today) =>
+    calendarDate(today).subtract(const Duration(days: 29));
 
 const dashboardCategoryColors = [
   AppPalette.accentGreen,
@@ -89,37 +94,109 @@ class DashboardRepository {
 
   Future<DashboardSummary> load(DateTime today, {DateTime? month}) async {
     final ledgerId = await _ledgerId();
-    final result = await api.getJson(
-      ['ledgers', ledgerId, 'dashboard'],
-      queryParameters: {
-        'as_of': calendarDateKey(today),
-        if (month != null) ...{
-          'month': calendarDateKey(month),
-          'year': '${month.year}',
-        },
+    return _summary(await _fetch(ledgerId, today, month: month));
+  }
+
+  Future<Map<String, dynamic>> _fetch(
+    String ledgerId,
+    DateTime today, {
+    DateTime? month,
+    DateTime? categoryStart,
+  }) async => await api.getJson(
+    ['ledgers', ledgerId, 'dashboard'],
+    queryParameters: {
+      'as_of': calendarDateKey(today),
+      if (month != null) ...{
+        'month': calendarDateKey(month),
+        'year': '${month.year}',
       },
-    ) as Map<String, dynamic>;
+      if (categoryStart != null) ...{
+        'category_start': calendarDateKey(categoryStart),
+        'category_end': calendarDateKey(today),
+      },
+    },
+  ) as Map<String, dynamic>;
+
+  Future<DashboardSummary> loadPast30Days(DateTime today) async {
+    final end = calendarDate(today);
+    final start = dashboardRollingStart(end);
+    final current = DateTime.utc(end.year, end.month);
+    final ledgerId = await _ledgerId();
+    // Daily API buckets are calendar months. A 30-day span can touch three.
+    final responses = await Future.wait([
+      for (
+        var month = DateTime.utc(start.year, start.month);
+        !month.isAfter(current);
+        month = DateTime.utc(month.year, month.month + 1)
+      )
+        _fetch(
+          ledgerId,
+          end,
+          month: month,
+          categoryStart: month == current ? start : null,
+        ),
+    ]);
+    final result = responses.last;
+    final days = <Map<String, dynamic>>[];
+    final methods = <String, DashboardAmount>{};
+    for (final response in responses) {
+      for (final value
+          in response['monthly_spending']['buckets'] as List<dynamic>) {
+        final bucket = value as Map<String, dynamic>;
+        final date = parseCalendarDate(bucket['date'] as String);
+        if (date.isBefore(start) || date.isAfter(end)) continue;
+        days.add(bucket);
+        for (final method in bucket['payment_methods'] as List<dynamic>) {
+          final id = method['payment_method_id'] as String;
+          methods[id] = (
+            name: method['name'] as String,
+            color: _parseColor(method['color'] as String),
+            cents: (methods[id]?.cents ?? 0) + (method['total_cents'] as int),
+          );
+        }
+      }
+    }
+    final breakdown = methods.values.where((entry) => entry.cents != 0).toList()
+      ..sort((a, b) {
+        final amount = b.cents.compareTo(a.cents);
+        return amount == 0 ? a.name.compareTo(b.name) : amount;
+      });
+    return _summary(
+      result,
+      daily: _buckets({'buckets': days}),
+      paymentMethods: breakdown,
+    );
+  }
+
+  DashboardSummary _summary(
+    Map<String, dynamic> result, {
+    List<DashboardBucket>? daily,
+    List<DashboardAmount>? paymentMethods,
+  }) {
     final monthly = result['payment_method_breakdown'] as Map<String, dynamic>;
     final statements = result['card_statements'] as List<dynamic>;
     final categories =
         result['category_breakdown']['categories'] as List<dynamic>;
     return DashboardSummary(
       monthlySpendingCents: monthly['total_cents'] as int,
+      rollingSpendingCents: result['spending_30_days']['total_cents'] as int,
       statements: List.unmodifiable(
         statements.map(
           (item) => DashboardStatement.fromJson(item as Map<String, dynamic>),
         ),
       ),
-      daily: _buckets(result['monthly_spending']),
+      daily: daily ?? _buckets(result['monthly_spending']),
       yearly: _buckets(result['yearly_spending']),
-      paymentMethods: [
-        for (final method in monthly['payment_methods'] as List<dynamic>)
-          (
-            name: method['name'] as String,
-            cents: method['total_cents'] as int,
-            color: _parseColor(method['color'] as String),
-          ),
-      ],
+      paymentMethods:
+          paymentMethods ??
+          [
+            for (final method in monthly['payment_methods'] as List<dynamic>)
+              (
+                name: method['name'] as String,
+                cents: method['total_cents'] as int,
+                color: _parseColor(method['color'] as String),
+              ),
+          ],
       categories: [
         for (final (index, category) in categories.indexed)
           (

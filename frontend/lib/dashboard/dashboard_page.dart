@@ -15,6 +15,7 @@ import '../onboarding/onboarding_card_color.dart';
 import '../onboarding/widgets/onboarding_custom_card_sheet.dart';
 import 'dashboard_analytics.dart';
 import 'dashboard_preview_data.dart';
+import 'dashboard_period_switch.dart';
 import 'dashboard_repository.dart';
 import 'dashboard_statement_card.dart';
 
@@ -38,12 +39,13 @@ class _DashboardPageState extends State<DashboardPage> {
   final _carousel = PageController(viewportFraction: .895);
   late Future<DashboardSummary> _summary;
   late Future<DashboardSummary> _period;
+  Future<DashboardSummary>? _rollingPeriod;
+  bool _showRolling = false;
   late Future<Map<DateTime, int>?> _income;
   late Future<List<DashboardCashMonth>?> _cashFlow;
   late DateTime _month;
-  DateTime get _today => widget.isMember
-      ? calendarDate(DateTime.now())
-      : DateTime.utc(2026, 8, 24);
+  DateTime get _today =>
+      widget.isMember ? calendarDate(DateTime.now()) : dashboardGuestToday;
   DateTime get _currentMonth => DateTime.utc(_today.year, _today.month);
   var _cardIndex = 0;
   var _addingCard = false;
@@ -66,6 +68,22 @@ class _DashboardPageState extends State<DashboardPage> {
     final repository = DashboardRepository.instance;
     if (repository == null) throw StateError('Dashboard API is not configured');
     return repository.load(_today, month: month);
+  }
+
+  Future<DashboardSummary> _loadRolling() async {
+    if (!widget.isMember) {
+      return dashboardGuestSummary(_currentMonth, rolling: true);
+    }
+    final repository = DashboardRepository.instance;
+    if (repository == null) throw StateError('Dashboard API is not configured');
+    return repository.loadPast30Days(_today);
+  }
+
+  void _togglePeriod() {
+    setState(() {
+      _showRolling = !_showRolling;
+      if (_showRolling) _rollingPeriod ??= _loadRolling();
+    });
   }
 
   Future<Map<DateTime, int>?> _loadIncome() async {
@@ -113,6 +131,7 @@ class _DashboardPageState extends State<DashboardPage> {
   void _refreshData() {
     _summary = _load(_currentMonth);
     _period = _month == _currentMonth ? _summary : _load(_month);
+    _rollingPeriod = _showRolling ? _loadRolling() : null;
     _income = _loadIncome();
     _cashFlow = _loadCashFlow(_month, _period, _income);
   }
@@ -316,9 +335,21 @@ class _DashboardPageState extends State<DashboardPage> {
                   child: Column(
                     spacing: AppSpacing.md,
                     children: [
-                      _monthControls(),
+                      DashboardPeriodSwitch(
+                        rolling: _showRolling,
+                        today: _today,
+                        month: _month,
+                        onToggle: _togglePeriod,
+                        onPickMonth: _pickMonth,
+                        onPreviousMonth: () => _selectMonth(
+                          DateTime.utc(_month.year, _month.month - 1),
+                        ),
+                        onNextMonth: () => _selectMonth(
+                          DateTime.utc(_month.year, _month.month + 1),
+                        ),
+                      ),
                       FutureBuilder<DashboardSummary>(
-                        future: _period,
+                        future: _showRolling ? _rollingPeriod : _period,
                         builder: (context, snapshot) {
                           if (snapshot.connectionState !=
                               ConnectionState.done) {
@@ -332,7 +363,9 @@ class _DashboardPageState extends State<DashboardPage> {
                             return Column(
                               children: [
                                 Text(
-                                  'Couldn’t load this month.',
+                                  _showRolling
+                                      ? 'Couldn’t load the past 30 days.'
+                                      : 'Couldn’t load this month.',
                                   style: AppTypography.bodyMedium,
                                 ),
                                 TextButton(
@@ -343,7 +376,8 @@ class _DashboardPageState extends State<DashboardPage> {
                             );
                           }
                           return DashboardAnalytics(
-                            key: ValueKey(_month),
+                            key: ValueKey((_month, _showRolling)),
+                            rolling: _showRolling,
                             summary: data,
                             cashFlow: _cashFlow,
                             onRetryCashFlow: () => setState(() {
@@ -385,62 +419,6 @@ class _DashboardPageState extends State<DashboardPage> {
     ),
   );
 
-  Widget _monthControls() => Row(
-    children: [
-      Material(
-        color: AppTokens.surface,
-        shape: const CircleBorder(),
-        child: IconButton(
-          tooltip: 'Back to this month',
-          onPressed: () => _selectMonth(_currentMonth),
-          icon: SvgPicture.asset('assets/dashboard/month_clock.svg'),
-        ),
-      ),
-      const SizedBox(width: AppSpacing.sm),
-      Expanded(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppTokens.brandPurple,
-            borderRadius: BorderRadius.circular(AppRadius.full),
-            boxShadow: [AppShadows.headerControl],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(AppRadius.full),
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: 'Previous month',
-                  onPressed: () =>
-                      _selectMonth(DateTime.utc(_month.year, _month.month - 1)),
-                  icon: SvgPicture.asset('assets/dashboard/month_previous.svg'),
-                ),
-                Expanded(
-                  child: TextButton(
-                    onPressed: _pickMonth,
-                    child: Text(
-                      '${homeMonths[_month.month - 1]} ${_month.year}',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: AppTokens.textInverse,
-                      ),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Next month',
-                  onPressed: () =>
-                      _selectMonth(DateTime.utc(_month.year, _month.month + 1)),
-                  icon: SvgPicture.asset('assets/dashboard/month_next.svg'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ],
-  );
-
   Widget _header(BuildContext context, DashboardSummary summary) {
     final statements = summary.statements;
     final itemCount = statements.length + 1;
@@ -456,14 +434,18 @@ class _DashboardPageState extends State<DashboardPage> {
               children: [
                 Expanded(
                   child: Text(
-                    'Spent this month',
+                    _showRolling ? 'Past 30 days' : 'Spent this month',
                     style: AppTypography.bodyMedium.copyWith(
                       color: AppTokens.textInverse.withValues(alpha: .7),
                     ),
                   ),
                 ),
                 Text(
-                  formatHomeMoney(summary.monthlySpendingCents),
+                  formatHomeMoney(
+                    _showRolling
+                        ? summary.rollingSpendingCents
+                        : summary.monthlySpendingCents,
+                  ),
                   style: AppTypography.displayAmount.copyWith(
                     color: AppTokens.textInverse,
                     fontSize: 20,

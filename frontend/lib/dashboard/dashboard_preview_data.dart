@@ -97,54 +97,78 @@ abstract final class DashboardPreviewData {
   }
 }
 
-/// Dashboard screen samples share the chart fixture and use the Figma preview date.
-DashboardSummary dashboardGuestSummary(DateTime month) {
-  final current = month.year == 2026 && month.month == 8;
-  final totalForMonth = month.year == 2026 ? _guestSpending[month.month] : null;
+final dashboardGuestToday = DateTime.utc(2026, 8, 24);
+
+Iterable<DashboardPreviewTransaction> _guestPurchases(DateTime month) sync* {
+  final total = month.year == 2026 ? _guestSpending[month.month] : null;
+  if (total == null) return;
+
+  final lastDay = month.month == 8
+      ? 24
+      : DateTime.utc(month.year, month.month + 1, 0).day;
+  final entries = DashboardPreviewData.transactions
+      .where((entry) => entry.date.day <= lastDay)
+      .toList();
+  final weight = entries.fold<int>(0, (sum, entry) => sum + entry.cents);
+  var cumulativeWeight = 0;
+  var allocated = 0;
+  // Scale the shared sample purchases without losing cents.
+  for (final entry in entries) {
+    cumulativeWeight += entry.cents;
+    final next = cumulativeWeight * total ~/ weight;
+    yield (
+      date: DateTime.utc(month.year, month.month, entry.date.day),
+      card: entry.card,
+      merchant: entry.merchant,
+      cents: next - allocated,
+    );
+    allocated = next;
+  }
+}
+
+final _guestRollingStart = dashboardRollingStart(dashboardGuestToday);
+final _guestRollingPurchases = [
+  ..._guestPurchases(DateTime.utc(2026, 7))
+      .where((entry) => !entry.date.isBefore(_guestRollingStart)),
+  ..._guestPurchases(DateTime.utc(2026, 8)),
+];
+
+DashboardSummary dashboardGuestSummary(DateTime month, {bool rolling = false}) {
+  final start = rolling
+      ? _guestRollingStart
+      : DateTime.utc(month.year, month.month);
+  final end = rolling
+      ? dashboardGuestToday
+      : DateTime.utc(month.year, month.month + 1, 0);
   final totals = <int, int>{};
   final categories = <String, int>{};
-  final days = <int, int>{};
-  if (totalForMonth != null) {
-    final lastDay = current
-        ? 24
-        : DateTime.utc(month.year, month.month + 1, 0).day;
-    final entries = DashboardPreviewData.transactions
-        .where((entry) => entry.date.day <= lastDay)
-        .toList();
-    final weight = entries.fold<int>(0, (value, entry) => value + entry.cents);
-    var cumulativeWeight = 0;
-    var allocated = 0;
-    // Scale the shared sample purchases to the preview total without losing cents.
-    for (final entry in entries) {
-      cumulativeWeight += entry.cents;
-      final next = cumulativeWeight * totalForMonth ~/ weight;
-      final amount = next - allocated;
-      allocated = next;
-      totals.update(
-        entry.card,
-        (value) => value + amount,
-        ifAbsent: () => amount,
-      );
-      days.update(
-        entry.date.day,
-        (value) => value + amount,
-        ifAbsent: () => amount,
-      );
-      final name = switch (entry.merchant) {
-        'Shell' || 'Metro fare' => 'Transport',
-        'Sweetgreen' ||
-        'Blue Bottle Coffee' ||
-        'Neighborhood restaurant' => 'Dining',
-        'Trader Joe’s' || 'Costco' || 'Local bakery' => 'Food',
-        'Target' => 'Living',
-        _ => 'Other',
-      };
-      categories.update(
-        name,
-        (value) => value + amount,
-        ifAbsent: () => amount,
-      );
-    }
+  final days = <DateTime, int>{};
+  for (final entry
+      in rolling ? _guestRollingPurchases : _guestPurchases(month)) {
+    totals.update(
+      entry.card,
+      (value) => value + entry.cents,
+      ifAbsent: () => entry.cents,
+    );
+    days.update(
+      entry.date,
+      (value) => value + entry.cents,
+      ifAbsent: () => entry.cents,
+    );
+    final name = switch (entry.merchant) {
+      'Shell' || 'Metro fare' => 'Transport',
+      'Sweetgreen' ||
+      'Blue Bottle Coffee' ||
+      'Neighborhood restaurant' => 'Dining',
+      'Trader Joe’s' || 'Costco' || 'Local bakery' => 'Food',
+      'Target' => 'Living',
+      _ => 'Other',
+    };
+    categories.update(
+      name,
+      (value) => value + entry.cents,
+      ifAbsent: () => entry.cents,
+    );
   }
   final total = totals.values.fold<int>(0, (sum, cents) => sum + cents);
   final sortedMethods = totals.entries.toList()
@@ -152,7 +176,11 @@ DashboardSummary dashboardGuestSummary(DateTime month) {
   final sortedCategories = categories.entries.toList()
     ..sort((a, b) => b.value.compareTo(a.value));
   return DashboardSummary(
-    monthlySpendingCents: total,
+    monthlySpendingCents: rolling ? _guestSpending[8]! : total,
+    rollingSpendingCents: _guestRollingPurchases.fold(
+      0,
+      (sum, entry) => sum + entry.cents,
+    ),
     statements: [
       DashboardStatement(
         name: HomePreviewData.cardNames[1],
@@ -173,14 +201,11 @@ DashboardSummary dashboardGuestSummary(DateTime month) {
     ],
     daily: [
       for (
-        var day = 1;
-        day <= DateTime.utc(month.year, month.month + 1, 0).day;
-        day++
+        var day = start;
+        !day.isAfter(end);
+        day = day.add(const Duration(days: 1))
       )
-        (
-          date: DateTime.utc(month.year, month.month, day),
-          cents: days[day] ?? 0,
-        ),
+        (date: day, cents: days[day] ?? 0),
     ],
     yearly: [
       for (var number = 1; number <= 12; number++)

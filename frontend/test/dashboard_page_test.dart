@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -93,7 +95,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Jul 2026'), findsOneWidget);
     expect(find.text(r'$812.45'), findsOneWidget);
-    await tester.tap(find.byTooltip('Back to this month'));
+    await tester.tap(find.byTooltip('Next month'));
     await tester.pumpAndSettle();
     expect(find.text('Aug 2026'), findsOneWidget);
 
@@ -107,6 +109,117 @@ void main() {
     expect(find.text(r'+$657.80'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Period pills resize and restore the applied month', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DashboardPage(isMember: false, onHome: () {}, onProfile: () {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Previous month'));
+    await tester.pumpAndSettle();
+    expect(find.text('Jul 2026'), findsOneWidget);
+    final rollingPill = find.byKey(const Key('dashboard-rolling-pill'));
+    final monthPill = find.byKey(const Key('dashboard-month-pill'));
+    final collapsed = tester.getSize(rollingPill).width;
+    final expanded = tester.getSize(monthPill).width;
+
+    await tester.tap(find.byTooltip('Show past 30 days'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 170));
+    expect(
+      tester.getSize(rollingPill).width,
+      inExclusiveRange(collapsed, expanded),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(rollingPill).width, closeTo(expanded, .1));
+    expect(
+      find.text('Past 30 days (Jul 26 – Aug 24)', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.text('7/26'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Show calendar month'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(rollingPill).width, closeTo(collapsed, .1));
+    expect(find.text('Jul 2026'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test(
+    'Rolling periods combine three calendar months and keep signed totals',
+    () async {
+      final requests = <String>[];
+      final api = ApiClient(
+        baseUrl: Uri.parse('https://example.com'),
+        accessToken: () => 'test-token',
+        client: MockClient((request) async {
+          if (request.url.path == '/ledgers') {
+            return http.Response('[{"id":"personal","name":"Personal"}]', 200);
+          }
+          final query = request.url.queryParameters;
+          final month = query['month']!;
+          requests.add(month);
+          if (month == '2026-03-01') {
+            expect(query['category_start'], '2026-01-31');
+            expect(query['category_end'], '2026-03-01');
+          }
+          Map<String, Object> day(String date, int amount) => {
+            'date': date,
+            'total_cents': amount,
+            'payment_methods': [
+              {
+                'payment_method_id': 'card',
+                'name': 'Card',
+                'color': '#5AD4FC',
+                'total_cents': amount,
+              },
+            ],
+          };
+          final buckets = switch (month) {
+            '2026-01-01' => [day('2026-01-30', 9900), day('2026-01-31', 1000)],
+            '2026-02-01' => [day('2026-02-01', -300)],
+            _ => [day('2026-03-01', 100), day('2026-03-02', 0)],
+          };
+          return http.Response(
+            jsonEncode({
+              'spending_30_days': {'total_cents': 800},
+              'payment_method_breakdown': {'total_cents': 100},
+              'monthly_spending': {'buckets': buckets},
+              'yearly_spending': {'buckets': []},
+              'category_breakdown': {
+                'categories': [
+                  {'name': 'Refund', 'amount_cents': -300},
+                ],
+              },
+              'card_statements': [],
+            }),
+            200,
+          );
+        }),
+      );
+      addTearDown(api.close);
+
+      final period = await DashboardRepository(api)
+          .loadPast30Days(DateTime(2026, 3, 1));
+      expect(
+        requests,
+        unorderedEquals(['2026-01-01', '2026-02-01', '2026-03-01']),
+      );
+      expect(period.daily.map((day) => day.cents), [1000, -300, 100]);
+      expect(period.paymentMethods.single.cents, 800);
+      expect(period.rollingSpendingCents, 800);
+      expect(period.categories.single.cents, -300);
+    },
+  );
 
   test(
     'Dashboard uses the month breakdown total and card cycle dates',
