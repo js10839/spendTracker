@@ -1,12 +1,13 @@
+from types import SimpleNamespace
 from typing import Annotated
 from unittest.mock import Mock
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.engine import Row
 
 from app.auth.dependencies import get_active_user_id, get_current_user_id
-from app.db.models.ledger import Ledger
 from app.db.session import get_db
 from app.ledgers import repository
 from app.ledgers.dependencies import get_user_ledger
@@ -15,7 +16,7 @@ from app.ledgers.dependencies import get_user_ledger
 def test_member_can_access_ledger(monkeypatch) -> None:
     user_id = uuid4()
     ledger_id = uuid4()
-    ledger = Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
+    ledger = SimpleNamespace(id=ledger_id, name="Personal", owner_user_id=user_id)
     db = Mock()
     monkeypatch.setattr(repository, "find_member_ledger", lambda *_args: ledger)
     test_app = FastAPI()
@@ -25,7 +26,7 @@ def test_member_can_access_ledger(monkeypatch) -> None:
 
     @test_app.get("/ledgers/{ledger_id}/probe")
     def probe(
-        authorized_ledger: Annotated[Ledger, Depends(get_user_ledger)],
+        authorized_ledger: Annotated[Row, Depends(get_user_ledger)],
     ) -> dict[str, str]:
         return {"id": str(authorized_ledger.id)}
 
@@ -47,7 +48,7 @@ def test_nonmember_gets_not_found(monkeypatch) -> None:
 
     @test_app.get("/ledgers/{ledger_id}/probe")
     def probe(
-        authorized_ledger: Annotated[Ledger, Depends(get_user_ledger)],
+        authorized_ledger: Annotated[Row, Depends(get_user_ledger)],
     ) -> dict[str, str]:
         return {"id": str(authorized_ledger.id)}
 
@@ -60,7 +61,7 @@ def test_membership_query_filters_both_ids() -> None:
     user_id = uuid4()
     ledger_id = uuid4()
     db = Mock()
-    db.execute.return_value.scalar_one_or_none.return_value = None
+    db.execute.return_value.one_or_none.return_value = None
 
     assert repository.find_member_ledger(db, ledger_id, user_id) is None
 

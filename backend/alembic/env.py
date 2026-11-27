@@ -4,8 +4,7 @@ from sqlalchemy import create_engine, pool
 
 from alembic import context
 from app.core.config import settings
-from app.db import models  # noqa: F401 - 모델을 Base.metadata에 등록
-from app.db.base import Base
+from app.db.tables import metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -16,11 +15,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = Base.metadata
+target_metadata = metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

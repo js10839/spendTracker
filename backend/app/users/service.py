@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy.orm import Session
+from sqlalchemy.engine import Connection, Row
 
 from app.auth.admin import (
     AuthAdminUnavailable,
@@ -11,15 +11,14 @@ from app.auth.admin import (
     delete_auth_user,
     ensure_auth_admin_configured,
 )
-from app.db.models.user import User
-from app.db.session import SessionLocal
+from app.db.session import engine
 from app.ledgers import repository as ledger_repo
 from app.payment_methods import repository as payment_method_repo
 from app.users import repository as user_repo
 from app.users.nickname_words import ADJECTIVES, ANIMALS
 
 
-def bootstrap_user(db: Session, user_id: UUID, ledger_name: str) -> User:
+def bootstrap_user(db: Connection, user_id: UUID, ledger_name: str) -> Row:
     """프로필·가계부·멤버십과 기본 Cash를 한 트랜잭션으로 초기화한다."""
     try:
         # 같은 사용자의 다른 bootstrap이 끝난 뒤 현재 DB 상태를 확인한다.
@@ -49,26 +48,26 @@ def bootstrap_user(db: Session, user_id: UUID, ledger_name: str) -> User:
         db.rollback()
         raise
 
-def get_user_profile(db: Session, user_id: UUID) -> User:
+def get_user_profile(db: Connection, user_id: UUID) -> Row:
     """인증된 사용자의 앱 프로필을 조회한다."""
     user = user_repo.find_user_by_id(db, user_id=user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
     return user
 
-def update_user_profile(db: Session, user_id: UUID, nickname: str) -> User:
+def update_user_profile(db: Connection, user_id: UUID, nickname: str) -> Row:
     """인증된 사용자의 표시 이름을 수정하고 저장한다."""
     # TODO: 공유 가계부 도입 시 표시 이름 중복 허용을 제거할지 검토한다.
     try:
         user = get_user_profile(db, user_id=user_id)
-        user_repo.update_user_nickname(db, user=user, nickname=nickname)
+        user = user_repo.update_user_nickname(db, user=user, nickname=nickname)
         db.commit()
         return user
     except Exception:
         db.rollback()
         raise
 
-def delete_user_app_data(db: Session, user_id: UUID) -> None:
+def delete_user_app_data(db: Connection, user_id: UUID) -> None:
     """사용자가 소유한 앱 데이터를 한 트랜잭션에서 삭제한다."""
     try:
         # Bootstrap과 계정 삭제가 같은 사용자 데이터를 동시에 초기화·삭제하지 않게 한다.
@@ -87,9 +86,9 @@ def delete_user_app_data(db: Session, user_id: UUID) -> None:
         db.rollback()
         raise
 
-def delete_user_app_data_in_session(user_id: UUID) -> None:
-    """별도 Session에서 사용자의 앱 데이터 삭제를 실행한다."""
-    with SessionLocal() as db:
+def delete_user_app_data_on_connection(user_id: UUID) -> None:
+    """별도 연결에서 사용자의 앱 데이터 삭제를 실행한다."""
+    with engine.connect() as db:
         delete_user_app_data(db, user_id=user_id)
 
 async def delete_account(user_id: UUID) -> None:
@@ -100,12 +99,12 @@ async def delete_account(user_id: UUID) -> None:
         # 이전 요청에서 Auth 삭제가 완료됐다면 다시 앱 데이터를 만들지 않는다.
         if not await auth_user_exists(user_id):
             return
-        await run_in_threadpool(delete_user_app_data_in_session, user_id)
+        await run_in_threadpool(delete_user_app_data_on_connection, user_id)
         await delete_auth_user(user_id)
     except AuthAdminUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Account deletion could not be completed; retry later") from exc
 
-def ensure_user_not_deleting(db: Session, user_id: UUID, for_write: bool = False) -> None:
+def ensure_user_not_deleting(db: Connection, user_id: UUID, for_write: bool = False) -> None:
     """계정 삭제가 진행 중이면 일반 API 사용을 막는다."""
     user = user_repo.lock_user_by_id(db, user_id=user_id, shared=True) if for_write else user_repo.find_user_by_id(db, user_id=user_id)
 
@@ -116,7 +115,7 @@ def generate_random_nickname() -> str:
     """형용사와 동물을 조합해 표시 이름을 만든다."""
     return f"{choice(ADJECTIVES)} {choice(ANIMALS)}"
 
-def complete_user_onboarding(db: Session, user_id: UUID, nickname: str) -> User:
+def complete_user_onboarding(db: Connection, user_id: UUID, nickname: str) -> Row:
     """표시 이름을 정하고 가입 정보 입력을 완료한다."""
     try:
         # Bootstrap·계정 삭제와 같은 순서로 잠근다.
@@ -134,7 +133,7 @@ def complete_user_onboarding(db: Session, user_id: UUID, nickname: str) -> User:
             return user
 
         final_nickname = nickname.strip() or generate_random_nickname()
-        user_repo.complete_onboarding(db=db, user=user, nickname=final_nickname)
+        user = user_repo.complete_onboarding(db=db, user=user, nickname=final_nickname)
         db.commit()
         return user
     except Exception:

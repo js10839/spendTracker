@@ -17,7 +17,7 @@ def test_calendar_read_commits_after_success(monkeypatch):
     anchor_date = date(2026, 11, 11)
 
     assert service.read_calendar(db, ledger_id, user_id, anchor_date) is result
-    read.assert_called_once_with(db.connection.return_value, ledger_id=ledger_id, user_id=user_id, anchor_date=anchor_date, payment_method_id=None)
+    read.assert_called_once_with(db, ledger_id=ledger_id, user_id=user_id, anchor_date=anchor_date, payment_method_id=None)
     db.commit.assert_called_once_with()
     db.rollback.assert_not_called()
 

@@ -1,12 +1,11 @@
 from datetime import date
+from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.auth.dependencies import get_active_user_id, get_current_user_id
-from app.db.models.income_record import IncomeRecord
-from app.db.models.ledger import Ledger
 from app.db.session import get_db
 from app.income import router as income_router
 from app.ledgers import repository as ledgers_repository
@@ -17,8 +16,8 @@ from app.main import app
 def test_create_income_record_returns_created_paycheck(monkeypatch) -> None:
     """가계부 멤버의 Paycheck 요청을 Service에 전달하고 생성 결과를 반환한다."""
     user_id, ledger_id, record_id = uuid4(), uuid4(), uuid4()
-    ledger = Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
-    record = IncomeRecord(id=record_id, ledger_id=ledger_id, income_source_id=None, payment_method_id=None, income_type="paycheck", from_name="Company", amount_cents=250000, received_at=date(2026, 10, 23), memo=None)
+    ledger = SimpleNamespace(id=ledger_id, name="Personal", owner_user_id=user_id)
+    record = SimpleNamespace(id=record_id, ledger_id=ledger_id, income_source_id=None, payment_method_id=None, income_type="paycheck", from_name="Company", amount_cents=250000, received_at=date(2026, 10, 23), memo=None)
     create_record = Mock(return_value=record)
     db = Mock()
     monkeypatch.setattr(income_router, "create_income_record", create_record)
@@ -76,7 +75,7 @@ def test_create_income_record_requires_authentication(monkeypatch) -> None:
 def test_create_income_record_rejects_refund_type(monkeypatch) -> None:
     """Refund는 더 이상 수입 유형이 아니므로 Service 호출 전에 거부한다."""
     user_id, ledger_id = uuid4(), uuid4()
-    ledger = Ledger(id=ledger_id, name="Personal", owner_user_id=user_id)
+    ledger = SimpleNamespace(id=ledger_id, name="Personal", owner_user_id=user_id)
     create_record = Mock()
     monkeypatch.setattr(income_router, "create_income_record", create_record)
     app.dependency_overrides[get_current_user_id] = lambda: user_id

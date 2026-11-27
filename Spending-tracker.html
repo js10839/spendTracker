@@ -475,7 +475,7 @@ html{scroll-behavior:auto}
 <tr><td>모바일 결제</td><td>App Store / Google Play IAP · RevenueCat 검토</td><td>Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. 유료화 전 최종 확정</td></tr>
 <tr><td>이미지</td><td>임시 Storage 사용 여부 TBD</td><td>원본은 영구 보관하지 않음. 임시 저장 시 private bucket·삭제 시점 확정 필요</td></tr>
 <tr><td>확장 경로</td><td>Cloudflare R2</td><td>10GB + egress 무료, S3 호환 — 이미지만 분리 이전 용이</td></tr>
-<tr><td>ORM</td><td>SQLAlchemy + Alembic</td><td>Python 표준 조합</td></tr>
+<tr><td>SQL / Migration</td><td>SQLAlchemy Core + Alembic</td><td>Python 표준 조합</td></tr>
 <tr><td>파싱</td><td>Google Gemini Vision API</td><td>공통 Gemini client는 provider 연결만 담당하고 실제 영수증 prompt·검증 로직은 Receipt Service가 소유</td></tr>
 <tr><td>배포</td><td>Railway/Render + TestFlight / Google Play 테스트 트랙</td><td>백엔드는 저비용 호스팅으로 시작하고 모바일 앱은 App Store·Google Play 출시</td></tr>
 </table></div>

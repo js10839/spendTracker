@@ -3,10 +3,8 @@ from time import sleep
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.engine import Connection, Row
 
-from app.db.models.transaction import Transaction
-from app.db.models.transaction_item import TransactionItem
 from app.transactions import repository
 from app.transactions.schema import (
     ManualTransactionGroupCreate,
@@ -24,7 +22,7 @@ def normalize_item_amount(category_name: str, amount_cents: int) -> int:
     return -abs(amount_cents) if category_name == "Refund" else amount_cents
 
 
-def create_grouped_manual_transaction(db: Session, ledger_id: UUID, user_id: UUID, data: ManualTransactionGroupCreate) -> TransactionGroupRead:
+def create_grouped_manual_transaction(db: Connection, ledger_id: UUID, user_id: UUID, data: ManualTransactionGroupCreate) -> TransactionGroupRead:
     """결제수단과 품목을 검증하고 품목·Tax·Tip의 합계를 저장한다."""
     if not data.items:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Transactions require at least one item")
@@ -50,17 +48,17 @@ def create_grouped_manual_transaction(db: Session, ledger_id: UUID, user_id: UUI
         db.rollback()
         raise
 
-def build_transaction_group_read(transaction: Transaction, items: list[TransactionItem]) -> TransactionGroupRead:
+def build_transaction_group_read(transaction: Row, items: list[Row]) -> TransactionGroupRead:
     """저장된 최종 총액과 품목 내역을 응답으로 만든다."""
     return TransactionGroupRead(id=transaction.id, ledger_id=transaction.ledger_id, payment_method_id=transaction.payment_method_id, merchant=transaction.merchant, transacted_at=transaction.transacted_at, memo=transaction.memo, source=transaction.source, total_cents=transaction.total_cents, tax_cents=transaction.tax_cents, tip_cents=transaction.tip_cents, items=[TransactionItemRead.model_validate(item) for item in items])
 
-def list_ledger_transactions(db: Session, ledger_id: UUID, start_date:date, end_date: date, payment_method_id: UUID | None = None) -> list[TransactionGroupRead]:
+def list_ledger_transactions(db: Connection, ledger_id: UUID, start_date:date, end_date: date, payment_method_id: UUID | None = None) -> list[TransactionGroupRead]:
     """기간 내 결제와 품목을 조회해 계산된 총액이 포함된 목록을 만든다."""
     if start_date > end_date:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="start_date must be on or before end_date")
 
     transactions = repository.list_ledger_transactions(db, ledger_id=ledger_id, start_date=start_date, end_date=end_date, payment_method_id=payment_method_id)
-    items_by_transaction: dict[UUID, list[TransactionItem]] = {transaction.id: [] for transaction in transactions}
+    items_by_transaction: dict[UUID, list[Row]] = {transaction.id: [] for transaction in transactions}
 
     if transactions:
         items = repository.list_transaction_items(db, [transaction.id for transaction in transactions])
@@ -69,7 +67,7 @@ def list_ledger_transactions(db: Session, ledger_id: UUID, start_date:date, end_
 
     return [build_transaction_group_read(transaction=transaction, items=items_by_transaction[transaction.id]) for transaction in transactions]
 
-def update_transaction_group(db: Session, ledger_id: UUID, transaction_id: UUID, user_id: UUID, data: TransactionGroupUpdate) -> TransactionGroupRead:
+def update_transaction_group(db: Connection, ledger_id: UUID, transaction_id: UUID, user_id: UUID, data: TransactionGroupUpdate) -> TransactionGroupRead:
     """기존 품목 ID를 검증한 뒤 추가·수정·삭제를 한 번에 저장한다."""
     transaction = repository.find_ledger_transaction(db, ledger_id=ledger_id, transaction_id=transaction_id)
     if transaction is None:
@@ -106,9 +104,9 @@ def update_transaction_group(db: Session, ledger_id: UUID, transaction_id: UUID,
     item_creations = [(item.name, item.category_id, amount) for item, amount in normalized_items if item.id is None]
 
     try:
-        created_items = repository.apply_transaction_update(db, transaction=transaction, payment_method_id=data.payment_method_id, merchant=data.merchant, transacted_at=data.transacted_at, memo=data.memo, total_cents=sum(amount for _, amount in normalized_items) + data.tax_cents + data.tip_cents, tax_cents=data.tax_cents, tip_cents=data.tip_cents, item_updates=item_updates, item_creations=item_creations, item_deletions=items_to_delete)
+        transaction, updated_items, created_items = repository.apply_transaction_update(db, transaction=transaction, payment_method_id=data.payment_method_id, merchant=data.merchant, transacted_at=data.transacted_at, memo=data.memo, total_cents=sum(amount for _, amount in normalized_items) + data.tax_cents + data.tip_cents, tax_cents=data.tax_cents, tip_cents=data.tip_cents, item_updates=item_updates, item_creations=item_creations, item_deletions=items_to_delete)
         created_iter = iter(created_items)
-        response_items = [existing_by_id[item.id] if item.id is not None else next(created_iter) for item in data.items]
+        response_items = [updated_items[item.id] if item.id is not None else next(created_iter) for item in data.items]
         result = build_transaction_group_read(transaction=transaction, items=response_items)
         db.commit()
         return result
@@ -116,7 +114,7 @@ def update_transaction_group(db: Session, ledger_id: UUID, transaction_id: UUID,
         db.rollback()
         raise
 
-def update_ledger_transaction_memo(db: Session, ledger_id: UUID, transaction_id: UUID, memo: str | None) -> TransactionMemoRead:
+def update_ledger_transaction_memo(db: Connection, ledger_id: UUID, transaction_id: UUID, memo: str | None) -> TransactionMemoRead:
     """빈 메모를 지우고 가계부에 속한 활성 거래만 갱신한다."""
     try:
         normalized = None if memo is None or not memo.strip() else memo
@@ -130,7 +128,7 @@ def update_ledger_transaction_memo(db: Session, ledger_id: UUID, transaction_id:
         db.rollback()
         raise
 
-def soft_delete_transaction(db: Session, ledger_id: UUID, transaction_id: UUID) -> None:
+def soft_delete_transaction(db: Connection, ledger_id: UUID, transaction_id: UUID) -> None:
     """가계부의 활성 거래에 삭제 시각을 기록해 일반 조회에서 숨긴다."""
     transaction = repository.find_ledger_transaction(db, ledger_id=ledger_id, transaction_id=transaction_id)
     if transaction is None:
@@ -143,7 +141,7 @@ def soft_delete_transaction(db: Session, ledger_id: UUID, transaction_id: UUID) 
         db.rollback()
         raise
 
-def restore_deleted_transaction_for_admin(db: Session, ledger_id: UUID, transaction_id: UUID) -> None:
+def restore_deleted_transaction_for_admin(db: Connection, ledger_id: UUID, transaction_id: UUID) -> None:
     """관리자 운영 절차에서만 호출해 30일 이내 삭제 거래를 복구한다."""
     cutoff = datetime.now(UTC) - timedelta(days=30)
     transaction = repository.find_restorable_transaction(db, ledger_id=ledger_id, transaction_id=transaction_id, cutoff=cutoff)
@@ -157,7 +155,7 @@ def restore_deleted_transaction_for_admin(db: Session, ledger_id: UUID, transact
         db.rollback()
         raise
 
-def purge_expired_transactions(db: Session, batch_size: int = 1000, pause_seconds: float = 0.1) -> int:
+def purge_expired_transactions(db: Connection, batch_size: int = 1000, pause_seconds: float = 0.1) -> int:
     """30일이 지난 거래와 품목을 묶음별로 삭제하고 각각 commit한다."""
     cutoff = datetime.now(UTC) - timedelta(days=30)
     total_deleted = 0
@@ -175,7 +173,7 @@ def purge_expired_transactions(db: Session, batch_size: int = 1000, pause_second
             return total_deleted
         sleep(pause_seconds)
 
-def search_ledger_transactions(db: Session, ledger_id: UUID, start_date: date, end_date: date, query: str, payment_method_id: UUID | None = None) -> TransactionSearchRead:
+def search_ledger_transactions(db: Connection, ledger_id: UUID, start_date: date, end_date: date, query: str, payment_method_id: UUID | None = None) -> TransactionSearchRead:
     """일치한 품목을 한 번씩 집계하고 캘린더 표시용 날짜와 금액을 반환한다."""
     term = query.strip()
     if not term:
@@ -186,26 +184,26 @@ def search_ledger_transactions(db: Session, ledger_id: UUID, start_date: date, e
     rows = repository.search_transaction_items(db, ledger_id, start_date, end_date, term, payment_method_id)
     items = []
 
-    for item, transaction, category in rows:
+    for row in rows:
         matched_fields = [
             field
             for field, value in (
-                ("item", item.name),
-                ("store", transaction.merchant),
-                ("category", category.name),
+                ("item", row.name),
+                ("store", row.merchant),
+                ("category", row.category_name),
             )
             if value is not None and term.casefold() in value.casefold()
         ]
         items.append(
             TransactionSearchItemRead(
-                item_id=item.id,
-                transaction_id=transaction.id,
-                name=item.name,
-                amount_cents=item.amount_cents,
-                merchant=transaction.merchant,
-                category_id=category.id,
-                category_name=category.name,
-                transacted_at=transaction.transacted_at,
+                item_id=row.item_id,
+                transaction_id=row.transaction_id,
+                name=row.name,
+                amount_cents=row.amount_cents,
+                merchant=row.merchant,
+                category_id=row.category_id,
+                category_name=row.category_name,
+                transacted_at=row.transacted_at,
                 matched_fields=matched_fields,
             )
         )

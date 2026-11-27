@@ -4,7 +4,7 @@ Spending Tracker is a mobile spending tracker with a Flutter app for iOS and And
 
 ## Tech Specs
 
-* backend: Python + FastAPI + SQLAlchemy (Supabase PostgreSQL and Auth)
+* backend: Python + FastAPI + SQLAlchemy Core (Supabase PostgreSQL and Auth)
 * frontend: Flutter (iOS and Android)
 
 ## Main Features (Upcoming)

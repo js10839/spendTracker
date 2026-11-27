@@ -1,14 +1,11 @@
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
 
-from app.db.models.category import Category
-from app.db.models.payment_method import PaymentMethod
-from app.db.models.transaction import Transaction
-from app.db.models.transaction_item import TransactionItem
 from app.transactions import repository, service
 from app.transactions.schema import ManualTransactionGroupCreate, TransactionGroupUpdate
 
@@ -23,10 +20,10 @@ def _update_data(payment_method_id: UUID, item_id: UUID, category_id: UUID) -> T
     return TransactionGroupUpdate(payment_method_id=payment_method_id, merchant="New Cafe", transacted_at=date(2026, 10, 20), tax_cents=200, tip_cents=300, items=[{"id": item_id, "name": "New Sandwich", "category_id": category_id, "amount_cents": 2500}])
 
 
-def _saved_group(ledger_id: UUID, payment_method_id: UUID, category_id: UUID, source: str = "manual") -> tuple[Transaction, TransactionItem]:
+def _saved_group(ledger_id: UUID, payment_method_id: UUID, category_id: UUID, source: str = "manual") -> tuple[SimpleNamespace, SimpleNamespace]:
     """저장된 결제와 기존 품목을 같은 ID 관계로 만든다."""
-    transaction = Transaction(id=uuid4(), ledger_id=ledger_id, payment_method_id=payment_method_id, merchant="Cafe", transacted_at=date(2026, 10, 18), source=source, total_cents=1599, tax_cents=100, tip_cents=200)
-    item = TransactionItem(id=uuid4(), transaction_id=transaction.id, category_id=category_id, name="Sandwich", amount_cents=1299)
+    transaction = SimpleNamespace(memo=None, id=uuid4(), ledger_id=ledger_id, payment_method_id=payment_method_id, merchant="Cafe", transacted_at=date(2026, 10, 18), source=source, total_cents=1599, tax_cents=100, tip_cents=200)
+    item = SimpleNamespace(id=uuid4(), transaction_id=transaction.id, category_id=category_id, name="Sandwich", amount_cents=1299)
     return transaction, item
 
 
@@ -36,8 +33,8 @@ def test_create_grouped_transaction_commits_stored_total(monkeypatch) -> None:
     data = _create_data(payment_method_id, category_id)
     transaction, item = _saved_group(ledger_id, payment_method_id, category_id)
     db = Mock()
-    find_payment = Mock(return_value=PaymentMethod(id=payment_method_id, user_id=user_id))
-    find_category = Mock(return_value=Category(id=category_id, name="Food"))
+    find_payment = Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id, user_id=user_id))
+    find_category = Mock(return_value=SimpleNamespace(id=category_id, name="Food"))
     add_group = Mock(return_value=(transaction, [item]))
     monkeypatch.setattr(repository, "find_user_payment_method", find_payment)
     monkeypatch.setattr(repository, "find_global_category", find_category)
@@ -59,12 +56,12 @@ def test_create_refund_item_normalizes_amount_and_total(monkeypatch) -> None:
     """Refund 품목은 양수로 입력해도 음수로 저장하고 총액에서 차감한다."""
     ledger_id, user_id, payment_method_id, category_id = (uuid4() for _ in range(4))
     data = ManualTransactionGroupCreate(payment_method_id=payment_method_id, transacted_at=date(2026, 10, 25), items=[{"name": "Returned shirt", "category_id": category_id, "amount_cents": 1000}])
-    transaction = Transaction(id=uuid4(), ledger_id=ledger_id, payment_method_id=payment_method_id, transacted_at=data.transacted_at, source="manual", total_cents=-1000, tax_cents=0, tip_cents=0)
-    item = TransactionItem(id=uuid4(), transaction_id=transaction.id, name="Returned shirt", category_id=category_id, amount_cents=-1000)
+    transaction = SimpleNamespace(memo=None, merchant=None, id=uuid4(), ledger_id=ledger_id, payment_method_id=payment_method_id, transacted_at=data.transacted_at, source="manual", total_cents=-1000, tax_cents=0, tip_cents=0)
+    item = SimpleNamespace(id=uuid4(), transaction_id=transaction.id, name="Returned shirt", category_id=category_id, amount_cents=-1000)
     db = Mock()
     add_group = Mock(return_value=(transaction, [item]))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id, user_id=user_id)))
-    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=Category(id=category_id, name="Refund")))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id, user_id=user_id)))
+    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=SimpleNamespace(id=category_id, name="Refund")))
     monkeypatch.setattr(repository, "add_grouped_manual_transaction", add_group)
 
     result = service.create_grouped_manual_transaction(db, ledger_id, user_id, data)
@@ -78,12 +75,12 @@ def test_create_transaction_keeps_zero_and_negative_non_refund_items(monkeypatch
     """일반 카테고리의 0원·음수 품목을 유지해 총액에 반영한다."""
     ledger_id, user_id, payment_method_id, category_id = (uuid4() for _ in range(4))
     data = ManualTransactionGroupCreate(payment_method_id=payment_method_id, transacted_at=date(2026, 10, 25), items=[{"name": "Free item", "category_id": category_id, "amount_cents": 0}, {"name": "Discount", "category_id": category_id, "amount_cents": -250}])
-    transaction = Transaction(id=uuid4(), ledger_id=ledger_id, payment_method_id=payment_method_id, transacted_at=data.transacted_at, source="manual", total_cents=-250, tax_cents=0, tip_cents=0)
-    items = [TransactionItem(id=uuid4(), transaction_id=transaction.id, name=item.name, category_id=category_id, amount_cents=item.amount_cents) for item in data.items]
+    transaction = SimpleNamespace(memo=None, merchant=None, id=uuid4(), ledger_id=ledger_id, payment_method_id=payment_method_id, transacted_at=data.transacted_at, source="manual", total_cents=-250, tax_cents=0, tip_cents=0)
+    items = [SimpleNamespace(id=uuid4(), transaction_id=transaction.id, name=item.name, category_id=category_id, amount_cents=item.amount_cents) for item in data.items]
     db = Mock()
     add_group = Mock(return_value=(transaction, items))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id, user_id=user_id)))
-    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=Category(id=category_id, name="Food")))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id, user_id=user_id)))
+    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=SimpleNamespace(id=category_id, name="Food")))
     monkeypatch.setattr(repository, "add_grouped_manual_transaction", add_group)
 
     result = service.create_grouped_manual_transaction(db, ledger_id, user_id, data)
@@ -114,7 +111,7 @@ def test_create_grouped_transaction_rejects_unknown_category(monkeypatch) -> Non
     db = Mock()
     data = _create_data(uuid4(), uuid4())
     add_group = Mock()
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=data.payment_method_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=data.payment_method_id)))
     monkeypatch.setattr(repository, "find_global_category", Mock(return_value=None))
     monkeypatch.setattr(repository, "add_grouped_manual_transaction", add_group)
 
@@ -130,8 +127,8 @@ def test_create_grouped_transaction_rolls_back_on_write_failure(monkeypatch) -> 
     """결제·품목 저장에 실패하면 Service가 rollback한다."""
     db = Mock()
     data = _create_data(uuid4(), uuid4())
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=data.payment_method_id)))
-    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=Category(id=data.items[0].category_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=data.payment_method_id)))
+    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=SimpleNamespace(name="Food", id=data.items[0].category_id)))
     monkeypatch.setattr(repository, "add_grouped_manual_transaction", Mock(side_effect=RuntimeError("DB error")))
 
     with pytest.raises(RuntimeError, match="DB error"):
@@ -179,11 +176,11 @@ def test_update_transaction_keeps_existing_item_id_for_receipt_source(monkeypatc
     transaction, item = _saved_group(ledger_id, payment_method_id, category_id, source="receipt_parse")
     data = _update_data(payment_method_id, item.id, category_id)
     db = Mock()
-    apply_update = Mock(return_value=[])
+    apply_update = Mock(return_value=(transaction, {item.id: item}, []))
     monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id, user_id=user_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id, user_id=user_id)))
     monkeypatch.setattr(repository, "list_transaction_items", Mock(return_value=[item]))
-    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=Category(id=category_id)))
+    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=SimpleNamespace(name="Food", id=category_id)))
     monkeypatch.setattr(repository, "apply_transaction_update", apply_update)
 
     result = service.update_transaction_group(db, ledger_id, transaction.id, user_id, data)
@@ -203,11 +200,11 @@ def test_update_refund_item_recalculates_negative_total(monkeypatch) -> None:
     data = _update_data(payment_method_id, item.id, category_id)
     data.items[0].amount_cents = 1000
     db = Mock()
-    apply_update = Mock(return_value=[])
+    apply_update = Mock(return_value=(transaction, {item.id: item}, []))
     monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id, user_id=user_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id, user_id=user_id)))
     monkeypatch.setattr(repository, "list_transaction_items", Mock(return_value=[item]))
-    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=Category(id=category_id, name="Refund")))
+    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=SimpleNamespace(id=category_id, name="Refund")))
     monkeypatch.setattr(repository, "apply_transaction_update", apply_update)
 
     service.update_transaction_group(db, ledger_id, transaction.id, user_id, data)
@@ -229,7 +226,7 @@ def test_update_transaction_rejects_invalid_item_set(monkeypatch, requested_ids:
     db = Mock()
     apply_update = Mock()
     monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id)))
     monkeypatch.setattr(repository, "list_transaction_items", Mock(return_value=[item]))
     monkeypatch.setattr(repository, "apply_transaction_update", apply_update)
 
@@ -280,7 +277,7 @@ def test_update_transaction_rejects_unknown_category(monkeypatch) -> None:
     db = Mock()
     apply_update = Mock()
     monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id)))
     monkeypatch.setattr(repository, "list_transaction_items", Mock(return_value=[item]))
     monkeypatch.setattr(repository, "find_global_category", Mock(return_value=None))
     monkeypatch.setattr(repository, "apply_transaction_update", apply_update)
@@ -300,9 +297,9 @@ def test_update_transaction_rolls_back_on_write_failure(monkeypatch) -> None:
     data = _update_data(payment_method_id, item.id, category_id)
     db = Mock()
     monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id)))
     monkeypatch.setattr(repository, "list_transaction_items", Mock(return_value=[item]))
-    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=Category(id=category_id)))
+    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=SimpleNamespace(name="Food", id=category_id)))
     monkeypatch.setattr(repository, "apply_transaction_update", Mock(side_effect=RuntimeError("DB error")))
 
     with pytest.raises(RuntimeError, match="DB error"):
@@ -319,9 +316,9 @@ def test_update_transaction_rejects_removing_all_items(monkeypatch) -> None:
     data = _update_data(payment_method_id, item.id, category_id)
     data.items = []
     db = Mock()
-    apply_update = Mock(return_value=[])
+    apply_update = Mock(return_value=(transaction, {item.id: item}, []))
     monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id, user_id=user_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id, user_id=user_id)))
     monkeypatch.setattr(repository, "list_transaction_items", Mock(return_value=[item]))
     monkeypatch.setattr(repository, "apply_transaction_update", apply_update)
 
@@ -361,15 +358,15 @@ def test_update_transaction_adds_item_without_replacing_existing_id(monkeypatch)
     """새 품목만 새 ID를 받고 기존 품목 ID는 유지한다."""
     user_id, ledger_id, payment_method_id, category_id = (uuid4() for _ in range(4))
     transaction, item = _saved_group(ledger_id, payment_method_id, category_id)
-    created = TransactionItem(id=uuid4(), transaction_id=transaction.id, category_id=category_id, name="Apples", amount_cents=500)
+    created = SimpleNamespace(id=uuid4(), transaction_id=transaction.id, category_id=category_id, name="Apples", amount_cents=500)
     data = _update_data(payment_method_id, item.id, category_id)
     data.items.append(type(data.items[0]).model_validate({"name": "Apples", "category_id": category_id, "amount_cents": 500}))
     db = Mock()
-    apply_update = Mock(return_value=[created])
+    apply_update = Mock(return_value=(transaction, {item.id: item}, [created]))
     monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
-    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=PaymentMethod(id=payment_method_id, user_id=user_id)))
+    monkeypatch.setattr(repository, "find_user_payment_method", Mock(return_value=SimpleNamespace(closing_day=None, id=payment_method_id, user_id=user_id)))
     monkeypatch.setattr(repository, "list_transaction_items", Mock(return_value=[item]))
-    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=Category(id=category_id)))
+    monkeypatch.setattr(repository, "find_global_category", Mock(return_value=SimpleNamespace(name="Food", id=category_id)))
     monkeypatch.setattr(repository, "apply_transaction_update", apply_update)
 
     result = service.update_transaction_group(db, ledger_id, transaction.id, user_id, data)
@@ -383,7 +380,7 @@ def test_update_transaction_adds_item_without_replacing_existing_id(monkeypatch)
 def test_soft_delete_transaction_records_utc_time(monkeypatch) -> None:
     """거래 삭제는 품목을 지우지 않고 삭제 시각만 기록해 commit한다."""
     ledger_id = uuid4()
-    transaction = Transaction(id=uuid4(), ledger_id=ledger_id)
+    transaction = SimpleNamespace(memo=None, merchant=None, id=uuid4(), ledger_id=ledger_id)
     db = Mock()
     mark_deleted = Mock()
     monkeypatch.setattr(repository, "find_ledger_transaction", Mock(return_value=transaction))
@@ -399,7 +396,7 @@ def test_soft_delete_transaction_records_utc_time(monkeypatch) -> None:
 def test_restore_transaction_only_within_30_days(monkeypatch) -> None:
     """관리자 내부 복구는 30일 이내 삭제된 거래만 대상으로 한다."""
     ledger_id = uuid4()
-    transaction = Transaction(id=uuid4(), ledger_id=ledger_id, deleted_at=datetime.now(UTC) - timedelta(days=1))
+    transaction = SimpleNamespace(memo=None, merchant=None, id=uuid4(), ledger_id=ledger_id, deleted_at=datetime.now(UTC) - timedelta(days=1))
     db = Mock()
     find_restorable = Mock(return_value=transaction)
     restore = Mock()

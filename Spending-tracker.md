@@ -161,7 +161,7 @@
 | 모바일 결제 | App Store / Google Play IAP, RevenueCat 검토 | Pro 구독의 구매·복구·entitlement를 양 플랫폼에서 일관되게 관리. 유료화 전 최종 확정 |
 | 이미지 스토리지 | Supabase Storage (private bucket, 도입 검토) | 영수증 원본은 영구 보관하지 않는다. 파싱 중 임시 저장이 필요한지와 삭제 시점은 구현 전 확정 |
 | 스토리지 확장 경로 | Cloudflare R2 / S3 | Storage wrapper 뒤에 격리해 추후 교체 가능 |
-| ORM / Migration | SQLAlchemy + Alembic | Supabase 전용 DB API 대신 표준 PostgreSQL 접근. Migration을 코드로 관리 |
+| SQL / Migration | SQLAlchemy Core + Alembic | Supabase 전용 DB API 대신 표준 PostgreSQL 접근. Migration을 코드로 관리 |
 | 영수증 파싱 | Google Gemini Vision API | 영수증 이미지 → structured output. Gemini 연결은 공통 integration, 파싱 규칙은 Receipt Service가 소유 |
 | 배포 | Backend: Railway/Render, App: TestFlight + Google Play 테스트 트랙 | 모바일 앱은 스토어 배포 플로우 사용 |
 

@@ -1,3 +1,6 @@
+from contextlib import contextmanager
+from unittest.mock import patch
+
 """실제 PostgreSQL에서 실행별 스키마와 테스트별 트랜잭션으로 달력을 검증한다."""
 
 import os
@@ -7,28 +10,27 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, insert, text
-from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema, DropSchema
+from sqlalchemy.schema import CreateSchema
 
 from app.auth.dependencies import get_current_user_id
 from app.calendar import repository, service
 from app.calendar.service import _read_calendar as read_calendar
 from app.core.config import settings
-from app.db.base import Base
-from app.db.models import (
-    BankCalendarYear,
-    Category,
-    IncomeRecord,
-    IncomeSource,
-    Ledger,
-    LedgerMember,
-    PaymentMethod,
-    Transaction,
-    TransactionItem,
-    User,
-)
-from app.db.models.user import auth_users
 from app.db.session import get_db
+from app.db.tables import (
+    auth_users,
+    bank_calendar_years,
+    categories,
+    income_records,
+    income_sources,
+    ledger_members,
+    ledgers,
+    metadata,
+    payment_methods,
+    transaction_items,
+    transactions,
+    users,
+)
 from app.main import app
 
 
@@ -41,43 +43,78 @@ def calendar_engine():
         pytest.skip(
             "Set CALENDAR_TEST_DB_URL to run PostgreSQL calendar integration tests"
         )
-    engine = create_engine(url, connect_args={"connect_timeout": 10})
+    engine = create_engine(
+        url, connect_args={"connect_timeout": 10, "prepare_threshold": None}
+    )
     schema = f"calendar_test_{uuid4().hex}"
     auth_schema = f"{schema}_auth"
-    with engine.begin() as conn:
-        conn.execute(CreateSchema(schema))
-        conn.execute(CreateSchema(auth_schema))
-    isolated = engine.execution_options(
-        schema_translate_map={None: schema, "auth": auth_schema}
-    )
     try:
-        Base.metadata.create_all(isolated)
-        yield isolated
+        with engine.connect() as connection:
+            transaction = connection.begin()
+            try:
+                connection.execute(CreateSchema(schema))
+                connection.execute(CreateSchema(auth_schema))
+                connection.execution_options(
+                    schema_translate_map={None: schema, "auth": auth_schema}
+                )
+                metadata.create_all(connection)
+                yield connection
+            finally:
+                assert transaction.is_active
+                transaction.rollback()
+                remaining = connection.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_namespace WHERE nspname IN (:app, :auth)"
+                    ),
+                    {"app": schema, "auth": auth_schema},
+                )
+                assert remaining == 0
     finally:
-        # 이번 실행에서 만든 두 스키마만 정리한다.
-        with engine.begin() as conn:
-            conn.execute(DropSchema(schema, cascade=True))
-            conn.execute(DropSchema(auth_schema, cascade=True))
         engine.dispose()
 
 
 @pytest.fixture
 def db(calendar_engine, monkeypatch):
-    # Bankday is deterministic here; API cache failure is tested separately.
     monkeypatch.setattr(service, "fetch_bank_holidays", lambda year: set())
-    with calendar_engine.connect() as conn:
-        transaction = conn.begin()
-        # Raw SQL does not honor SQLAlchemy's schema_translate_map. Keep its
-        # unqualified table names inside the same isolated test schema as ORM setup.
-        schema = calendar_engine.get_execution_options()["schema_translate_map"][None]
-        conn.execute(
+    connection = calendar_engine
+    schema_map = connection.get_execution_options()["schema_translate_map"]
+    savepoint = connection.begin_nested()
+    try:
+        schema = schema_map[None]
+        # Raw SQL resolves unqualified table names through search_path.
+        connection.execute(
             text("SELECT set_config('search_path', :schema, true)"), {"schema": schema}
         )
-        assert conn.scalar(text("SELECT current_schema()")) == schema
+        assert connection.scalar(text("SELECT current_schema()")) == schema
+        yield connection
+    finally:
+        savepoint.rollback()
+        connection.execution_options(schema_translate_map=schema_map)
+
+
+@contextmanager
+def request_connection(connection):
+    """Keep request commits and rollbacks inside the test's savepoint."""
+    savepoint = connection.begin_nested()
+
+    def commit():
+        nonlocal savepoint
+        savepoint.commit()
+        savepoint = connection.begin_nested()
+
+    def rollback():
+        nonlocal savepoint
+        savepoint.rollback()
+        savepoint = connection.begin_nested()
+
+    with (
+        patch.object(connection, "commit", commit),
+        patch.object(connection, "rollback", rollback),
+    ):
         try:
-            yield conn
+            yield connection
         finally:
-            transaction.rollback()
+            savepoint.rollback()
 
 
 @pytest.fixture
@@ -87,20 +124,20 @@ def data(db):
         uuid4() for _ in range(9)
     )
     db.execute(insert(auth_users), [{"id": user}, {"id": other}])
-    db.execute(insert(User.__table__), [{"id": user}, {"id": other}])
+    db.execute(insert(users), [{"id": user}, {"id": other}])
     db.execute(
-        insert(Ledger.__table__),
+        insert(ledgers),
         [
             {"id": ledger, "owner_user_id": user, "name": "Mine"},
             {"id": other_ledger, "owner_user_id": other, "name": "Other"},
         ],
     )
     db.execute(
-        insert(LedgerMember.__table__),
+        insert(ledger_members),
         {"ledger_id": ledger, "user_id": user, "role": "owner"},
     )
     db.execute(
-        insert(PaymentMethod.__table__),
+        insert(payment_methods),
         [
             {
                 "id": card,
@@ -136,7 +173,7 @@ def data(db):
             },
         ],
     )
-    db.execute(insert(Category.__table__), {"id": category, "name": "Food"})
+    db.execute(insert(categories), {"id": category, "name": "Food"})
     return {
         "user": user,
         "other": other,
@@ -162,7 +199,7 @@ def transaction(
 ):
     identifier = seed_insert(
         db,
-        Transaction.__table__,
+        transactions,
         {
             "ledger_id": ledger or data["ledger"],
             "payment_method_id": method or data["card"],
@@ -178,7 +215,7 @@ def transaction(
     for index in range(item_count):
         seed_insert(
             db,
-            TransactionItem.__table__,
+            transaction_items,
             {
                 "transaction_id": identifier,
                 "name": f"Item {index}",
@@ -200,7 +237,7 @@ def plan(
 ):
     identifier = seed_insert(
         db,
-        IncomeSource.__table__,
+        income_sources,
         {
             "ledger_id": data["ledger"],
             "income_type": income_type,
@@ -292,7 +329,7 @@ def test_card_filter_hides_other_closings_and_general_income(db, data):
     transaction(db, data, "2026-11-06", method=data["second"])
     seed_insert(
         db,
-        IncomeRecord.__table__,
+        income_records,
         {
             "ledger_id": data["ledger"],
             "income_type": "other",
@@ -370,7 +407,7 @@ def test_income_filter_matches_type_card_and_status(db, data, monkeypatch, selec
         )
         seed_insert(
             db,
-            IncomeRecord.__table__,
+            income_records,
             {
                 "ledger_id": data["ledger"],
                 "income_type": income_type,
@@ -387,7 +424,7 @@ def test_income_filter_matches_type_card_and_status(db, data, monkeypatch, selec
     ]:
         seed_insert(
             db,
-            IncomeRecord.__table__,
+            income_records,
             {
                 "ledger_id": data["ledger"],
                 "income_type": "cashback",
@@ -438,8 +475,8 @@ def test_calendar_unqualified_tables_with_recursive_ctes(db, data, selected):
     )
     db.execution_options(schema_translate_map=None)
 
-    with Session(bind=db, join_transaction_mode="create_savepoint") as session:
-        app.dependency_overrides[get_db] = lambda: session
+    with request_connection(db) as connection:
+        app.dependency_overrides[get_db] = lambda: connection
         app.dependency_overrides[get_current_user_id] = lambda: data["user"]
         try:
             with TestClient(app) as client:
@@ -475,7 +512,7 @@ def test_cash_calendar_filters_transactions_and_hides_income(db, data):
         plan(db, data, "2026-11-06", income_type=income_type, payment_method_id=method)
         seed_insert(
             db,
-            IncomeRecord.__table__,
+            income_records,
             {
                 "ledger_id": data["ledger"],
                 "income_type": income_type,
@@ -539,7 +576,7 @@ def test_recurring_income_holiday_boundary_and_deleted_records(db, data, monkeyp
     for deleted in [None, datetime.now(UTC)]:
         seed_insert(
             db,
-            IncomeRecord.__table__,
+            income_records,
             {
                 "ledger_id": data["ledger"],
                 "income_type": "other",
@@ -591,8 +628,8 @@ def test_monthly_reference_day_survives_february_and_year_shift(db, data, monkey
 
 def test_api_uses_real_authorization_and_raw_sql_response(db, data):
     # 서비스가 커밋해도 테스트 종료 시 외부 트랜잭션에서 모두 롤백한다.
-    with Session(bind=db, join_transaction_mode="create_savepoint") as session:
-        app.dependency_overrides[get_db] = lambda: session
+    with request_connection(db) as connection:
+        app.dependency_overrides[get_db] = lambda: connection
         app.dependency_overrides[get_current_user_id] = lambda: data["user"]
         try:
             with TestClient(app) as client:
@@ -627,12 +664,12 @@ def test_api_uses_real_authorization_and_raw_sql_response(db, data):
 
 @pytest.fixture
 def wallet_client(db, data, monkeypatch):
-    """순차 HTTP 요청마다 별도 세션을 열고 테스트의 외부 트랜잭션은 유지한다."""
+    """순차 HTTP 요청마다 별도 SAVEPOINT를 열고 테스트의 외부 트랜잭션은 유지한다."""
 
     def request_db():
         """서비스가 커밋한 변경을 다음 요청에서 다시 읽을 수 있게 한다."""
-        with Session(bind=db, join_transaction_mode="create_savepoint") as session:
-            yield session
+        with request_connection(db) as connection:
+            yield connection
 
     monkeypatch.setitem(app.dependency_overrides, get_db, request_db)
     monkeypatch.setitem(
@@ -642,15 +679,96 @@ def wallet_client(db, data, monkeypatch):
         yield client
 
 
+def test_core_bootstrap_and_profile_round_trip(db, wallet_client, monkeypatch):
+    user_id = uuid4()
+    db.execute(insert(auth_users).values(id=user_id))
+    monkeypatch.setitem(app.dependency_overrides, get_current_user_id, lambda: user_id)
+
+    response = wallet_client.post("/users/me/bootstrap")
+    assert response.status_code == 200, response.text
+    assert response.json()["onboarding_required"] is True
+
+    completed = wallet_client.post(
+        "/users/me/onboarding/complete", json={"nickname": "Calm Otter"}
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["nickname"] == "Calm Otter"
+    assert wallet_client.get("/users/me").json() == completed.json()
+    assert len(wallet_client.get("/ledgers").json()) == 1
+    assert [
+        method["name"]
+        for method in wallet_client.get("/users/me/payment-methods").json()
+    ] == ["Cash"]
+
+
+def test_core_grouped_transaction_round_trip(data, wallet_client):
+    path = f"/ledgers/{data['ledger']}/transactions"
+    items = [
+        {"name": "Coffee", "category_id": str(data["category"]), "amount_cents": 300},
+        {"name": "Bagel", "category_id": str(data["category"]), "amount_cents": 200},
+    ]
+    payload = {
+        "payment_method_id": str(data["card"]),
+        "transacted_at": "2026-11-06",
+        "tax_cents": 10,
+        "tip_cents": 0,
+        "items": items,
+    }
+    created = wallet_client.post(path, json=payload)
+    assert created.status_code == 201, created.text
+    saved = created.json()
+    assert [item["name"] for item in saved["items"]] == ["Coffee", "Bagel"]
+    assert saved["total_cents"] == 510
+
+    first = saved["items"][0]
+    payload["items"] = [{**first, "amount_cents": 350}]
+    updated = wallet_client.put(f"{path}/{saved['id']}", json=payload)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["total_cents"] == 360
+    assert updated.json()["items"] == payload["items"]
+    assert wallet_client.get(
+        path, params={"start_date": "2026-11-01", "end_date": "2026-11-30"}
+    ).json() == [updated.json()]
+
+
+def test_core_income_confirmation_round_trip(data, wallet_client):
+    path = f"/ledgers/{data['ledger']}"
+    expected_date = "2026-11-06"
+    created = wallet_client.post(
+        f"{path}/income-plans",
+        json={
+            "income_type": "other",
+            "expected_amount_cents": 500,
+            "expected_date": expected_date,
+        },
+    )
+    assert created.status_code == 201, created.text
+    plan_id = created.json()["id"]
+
+    confirmed = wallet_client.post(
+        f"{path}/income-plans/{plan_id}/confirm",
+        json={"expected_date": expected_date, "received_at": expected_date},
+    )
+    assert confirmed.status_code == 201, confirmed.text
+    record_id = confirmed.json()["id"]
+    assert wallet_client.get(f"{path}/income-plans").json() == []
+
+    reopened = wallet_client.post(
+        f"{path}/income-records/{record_id}/undo-confirmation"
+    )
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["is_active"] is True
+    assert reopened.json()["next_expected_date"] == expected_date
+    assert wallet_client.get(f"{path}/income-records").json() == []
+
+
 def test_updated_card_color_in_wallet_and_calendar(db, data, wallet_client):
     """카드 색상 변경 후 지갑과 달력의 거래 도트·마감 카드가 같은 색상을 반환한다."""
     transaction(db, data, "2026-11-12", method=data["card"])
     card_id = str(data["card"])
     color = "#ab12CD"
     wallet_path = "/users/me/payment-methods"
-    response = wallet_client.patch(
-        f"{wallet_path}/{card_id}", json={"color": color}
-    )
+    response = wallet_client.patch(f"{wallet_path}/{card_id}", json={"color": color})
     assert response.status_code == 200
     assert response.json() == {
         "id": card_id,
@@ -819,7 +937,7 @@ def test_holiday_provider_failure_uses_original_date_or_stale_cache(
     result = read_calendar(db, data["ledger"], data["user"], date(2026, 11, 1))
     assert len(result.days[7].income) == 1
     db.execute(
-        insert(BankCalendarYear.__table__),
+        insert(bank_calendar_years),
         {
             "year": 2026,
             "holidays": ["2026-11-06"],
@@ -834,7 +952,7 @@ def test_confirmed_occurrence_is_received_without_duplicate_plan(db, data):
     source = plan(db, data, "2026-11-30", "monthly", reference="2026-10-31")
     seed_insert(
         db,
-        IncomeRecord.__table__,
+        income_records,
         {
             "ledger_id": data["ledger"],
             "income_source_id": source,
@@ -883,6 +1001,7 @@ def test_constant_query_count_and_explain(db, data):
 
 def test_dart_adapter_over_http_to_postgres(db, data):
     """Optional real transport test without requiring a Supabase Auth session."""
+    import asyncio
     import socket
     import subprocess
     import threading
@@ -897,42 +1016,48 @@ def test_dart_adapter_over_http_to_postgres(db, data):
             "Set CALENDAR_TEST_DART to a Dart executable for the cross-stack smoke test"
         )
     transaction(db, data, "2026-11-06", amount=130, item_count=1)
-    with Session(bind=db, join_transaction_mode="create_savepoint") as session:
-        app.dependency_overrides[get_db] = lambda: session
-        app.dependency_overrides[get_current_user_id] = lambda: data["user"]
-        server = uvicorn.Server(
-            uvicorn.Config(app, log_level="error", access_log=False)
+
+    # Prefetch issues concurrent HTTP requests against this shared test connection.
+    lock = asyncio.Lock()
+
+    async def request_db():
+        async with lock:
+            with request_connection(db) as connection:
+                yield connection
+
+    app.dependency_overrides[get_db] = request_db
+    app.dependency_overrides[get_current_user_id] = lambda: data["user"]
+    server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        thread = threading.Thread(
+            target=server.run, kwargs={"sockets": [listener]}, daemon=True
         )
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            port = listener.getsockname()[1]
-            thread = threading.Thread(
-                target=server.run, kwargs={"sockets": [listener]}, daemon=True
+        thread.start()
+        try:
+            for _ in range(500):
+                if server.started or not thread.is_alive():
+                    break
+                time.sleep(0.01)
+            assert server.started
+            result = subprocess.run(
+                [dart, "run", "test/support/calendar_http_smoke.dart"],
+                cwd=Path(__file__).resolve().parents[2] / "frontend",
+                env={
+                    **os.environ,
+                    "CALENDAR_SMOKE_URL": f"http://127.0.0.1:{port}",
+                    "CALENDAR_SMOKE_LEDGER": str(data["ledger"]),
+                    "CALENDAR_SMOKE_CARD": str(data["card"]),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
-            thread.start()
-            try:
-                for _ in range(500):
-                    if server.started or not thread.is_alive():
-                        break
-                    time.sleep(0.01)
-                assert server.started
-                result = subprocess.run(
-                    [dart, "run", "test/support/calendar_http_smoke.dart"],
-                    cwd=Path(__file__).resolve().parents[2] / "frontend",
-                    env={
-                        **os.environ,
-                        "CALENDAR_SMOKE_URL": f"http://127.0.0.1:{port}",
-                        "CALENDAR_SMOKE_LEDGER": str(data["ledger"]),
-                        "CALENDAR_SMOKE_CARD": str(data["card"]),
-                    },
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-                assert result.returncode == 0, result.stdout + result.stderr
-                print(result.stdout.strip())
-            finally:
-                server.should_exit = True
-                thread.join(timeout=10)
-                app.dependency_overrides.clear()
+            assert result.returncode == 0, result.stdout + result.stderr
+            print(result.stdout.strip())
+        finally:
+            server.should_exit = True
+            thread.join(timeout=10)
+            app.dependency_overrides.clear()
