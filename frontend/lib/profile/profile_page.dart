@@ -9,8 +9,9 @@ import '../design_system/typography.dart';
 
 /// 회원과 게스트의 프로필 및 설정 진입점을 표시한다.
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key, required this.isMember});
+  const ProfilePage({super.key, required this.isMember, this.onDashboard});
   final bool isMember;
+  final VoidCallback? onDashboard;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -82,7 +83,7 @@ class _ProfilePageState extends State<ProfilePage> {
         _ProfileNotice(icon: Icons.shield_outlined, title: widget.isMember ? 'AI receipt notice' : 'AI Receipt Processing', subtitle: widget.isMember ? 'What we send to AI' : 'See what data we share with AI', onTap: _unavailable),
         if (widget.isMember) ...[const SizedBox(height: 14), _account()],
       ])),
-      bottomNavigationBar: SafeArea(top: false, child: AppBottomNavigation(selectedIndex: 4, onSelected: (index) { if (index == 0) context.pop(); })),
+      bottomNavigationBar: SafeArea(top: false, child: AppBottomNavigation(selectedIndex: 4, onSelected: (index) { if (index == 0) context.pop(); if (index == 1) widget.onDashboard?.call(); })),
     ),
   );
 

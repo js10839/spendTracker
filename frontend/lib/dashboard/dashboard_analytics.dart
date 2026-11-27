@@ -3,11 +3,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../design_system/components.dart';
 import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
 import '../home/home_format.dart';
 import 'dashboard_repository.dart';
+import 'dashboard_motion.dart';
 
 typedef DashboardCashMonth = ({DateTime date, int income, int spending});
 
@@ -30,10 +30,18 @@ class DashboardAnalytics extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     spacing: AppSpacing.md,
     children: [
-      _SpendingCard(
-        daily: summary.daily,
-        yearly: summary.yearly,
-        rolling: rolling,
+      Hero(
+        tag: dashboardCardHero,
+        curve: dashboardEaseInOut,
+        flightShuttleBuilder: dashboardSurfaceFlight,
+        child: Material(
+          type: MaterialType.transparency,
+          child: _SpendingCard(
+            daily: summary.daily,
+            yearly: summary.yearly,
+            rolling: rolling,
+          ),
+        ),
       ),
       _BreakdownCard(title: 'By card', rows: summary.paymentMethods),
       _BreakdownCard(title: 'Category breakdown', rows: summary.categories),
@@ -135,6 +143,11 @@ class _SpendingCardState extends State<_SpendingCard> {
       _ => widget.daily,
     };
 
+    final details = [
+      for (final bucket in buckets)
+        (name: _dateLabel(bucket.date, _range), amount: bucket.cents),
+    ];
+
     return _DashboardCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -145,50 +158,118 @@ class _SpendingCardState extends State<_SpendingCard> {
             crossAxisAlignment: WrapCrossAlignment.center,
             runSpacing: AppSpacing.sm,
             children: [
-              Text('Spending', style: AppTypography.heading3),
+              _DetailsButton(
+                title: 'Spending',
+                rows: details,
+                labelStyle: AppTypography.heading3,
+              ),
               FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    AppSegmentedControl(
-                      labels: const ['Day', 'Week', 'Month'],
-                      selectedIndex: _range,
+                    _SpendingSelector(
+                      selection: _range,
                       onChanged: (index) => setState(() {
                         _range = index;
                         _selected = null;
                       }),
                     ),
-                    _DetailsButton(
-                      title: 'Spending',
-                      rows: [
-                        for (final bucket in buckets)
-                          (
-                            name: _dateLabel(bucket.date, _range),
-                            amount: bucket.cents,
-                          ),
-                      ],
-                    ),
+                    _DetailsButton(title: 'Spending', rows: details),
                   ],
                 ),
               ),
             ],
           ),
-          if (buckets.every((bucket) => bucket.cents == 0))
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.twoXL),
-              child: Text('No spending for this period', style: _caption),
-            )
-          else
-            _SpendingChart(
-              buckets: buckets,
-              range: _range,
-              rolling: widget.rolling,
-              selected: _selected,
-              onSelected: (index) =>
-                  setState(() => _selected = _selected == index ? null : index),
-            ),
+          AnimatedSwitcher(
+            duration: dashboardDuration(context, dashboardSpendingDuration),
+            switchInCurve: dashboardEaseInOut,
+            switchOutCurve: dashboardEaseInOut,
+            child: buckets.every((bucket) => bucket.cents == 0)
+                ? Padding(
+                    key: ValueKey(_range),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.twoXL,
+                    ),
+                    child: Text('No spending for this period', style: _caption),
+                  )
+                : _SpendingChart(
+                    key: ValueKey(_range),
+                    buckets: buckets,
+                    range: _range,
+                    rolling: widget.rolling,
+                    selected: _selected,
+                    onSelected: (index) => setState(
+                      () => _selected = _selected == index ? null : index,
+                    ),
+                  ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _SpendingSelector extends StatelessWidget {
+  const _SpendingSelector({required this.selection, required this.onChanged});
+
+  final int selection;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['Day', 'Week', 'Month'];
+    final duration = dashboardDuration(context, dashboardSpendingDuration);
+    final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    final width = 58 * scale;
+    return Material(
+      color: AppComponentColors.surface,
+      borderRadius: BorderRadius.circular(AppRadius.full),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: AnimatedAlign(
+                key: const Key('dashboard-spending-indicator'),
+                alignment: Alignment(selection - 1.0, 0),
+                duration: duration,
+                curve: dashboardEaseInOut,
+                child: SizedBox(
+                  width: width,
+                  height: double.infinity,
+                  child: const DecoratedBox(
+                    decoration: ShapeDecoration(
+                      color: AppTokens.background,
+                      shape: StadiumBorder(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final (index, label) in labels.indexed)
+                  Semantics(
+                    selected: selection == index,
+                    button: true,
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      onTap: () => onChanged(index),
+                      child: SizedBox(
+                        width: width,
+                        height: 28 * scale,
+                        child: Center(
+                          child: Text(label, style: AppTypography.labelSmall),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -196,6 +277,7 @@ class _SpendingCardState extends State<_SpendingCard> {
 
 class _SpendingChart extends StatelessWidget {
   const _SpendingChart({
+    super.key,
     required this.buckets,
     required this.range,
     required this.rolling,
@@ -411,6 +493,9 @@ class _BreakdownCard extends StatelessWidget {
     final positive = rows.where((row) => row.cents > 0).toList();
     final total = positive.fold<int>(0, (value, row) => value + row.cents);
     final credits = rows.any((row) => row.cents < 0);
+    final details = [
+      for (final row in rows) (name: row.name, amount: row.cents),
+    ];
     return _DashboardCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -420,15 +505,13 @@ class _BreakdownCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Flexible(
-                child: Text(title, style: AppTypography.bodyMediumStrong),
-              ),
-              if (rows.isNotEmpty)
-                _DetailsButton(
+                child: _DetailsButton(
                   title: title,
-                  rows: [
-                    for (final row in rows) (name: row.name, amount: row.cents),
-                  ],
+                  rows: details,
+                  labelStyle: AppTypography.bodyMediumStrong,
                 ),
+              ),
+              if (rows.isNotEmpty) _DetailsButton(title: title, rows: details),
             ],
           ),
           if (rows.isEmpty)
@@ -521,43 +604,54 @@ class _DonutPainter extends CustomPainter {
 }
 
 class _DetailsButton extends StatelessWidget {
-  const _DetailsButton({required this.title, required this.rows});
+  const _DetailsButton({
+    required this.title,
+    required this.rows,
+    this.labelStyle,
+  });
 
   final String title;
   final List<({String name, int amount})> rows;
+  final TextStyle? labelStyle;
 
   @override
-  Widget build(BuildContext context) => IconButton(
-    tooltip: '$title details',
-    visualDensity: VisualDensity.compact,
-    padding: EdgeInsets.zero,
-    constraints: const BoxConstraints(minWidth: 24, minHeight: 32),
-    icon: SvgPicture.asset('assets/dashboard/statement_chevron.svg'),
-    onPressed: rows.isEmpty
-        ? null
-        : () => showModalBottomSheet<void>(
-            context: context,
-            showDragHandle: true,
-            backgroundColor: AppTokens.background,
-            builder: (context) => SafeArea(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-                children: [
-                  Text(title, style: AppTypography.heading2),
-                  for (final row in rows)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(row.name, style: AppTypography.bodyMedium),
-                      trailing: Text(
-                        formatHomeMoney(row.amount),
-                        style: AppTypography.bodyMediumStrong,
-                      ),
-                    ),
-                ],
+  Widget build(BuildContext context) {
+    void open() => pushDashboardDetail<void>(
+      context,
+      title: title,
+      builder: (context) => ListView(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+        children: [
+          if (rows.isEmpty)
+            Text('No spending for this period', style: _caption),
+          for (final row in rows)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(row.name, style: AppTypography.bodyMedium),
+              trailing: Text(
+                formatHomeMoney(row.amount),
+                style: AppTypography.bodyMediumStrong,
               ),
             ),
-          ),
-  );
+        ],
+      ),
+    );
+
+    if (labelStyle != null) {
+      return InkWell(
+        onTap: open,
+        child: Text(title, style: labelStyle),
+      );
+    }
+    return IconButton(
+      tooltip: '$title details',
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 24, minHeight: 32),
+      icon: SvgPicture.asset('assets/dashboard/statement_chevron.svg'),
+      onPressed: open,
+    );
+  }
 }
 
 class _CashFlowCard extends StatefulWidget {
@@ -593,10 +687,18 @@ class _CashFlowCardState extends State<_CashFlowCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Income − Spending', style: _caption),
-              Text(
-                _signedMoney(selected.income - selected.spending),
-                style: AppTypography.heading1.copyWith(
-                  fontWeight: FontWeight.w600,
+              TweenAnimationBuilder<int>(
+                tween: IntTween(
+                  begin: selected.income - selected.spending,
+                  end: selected.income - selected.spending,
+                ),
+                duration: dashboardDuration(context, dashboardCashFlowDuration),
+                curve: dashboardEaseInOut,
+                builder: (context, cents, _) => Text(
+                  _signedMoney(cents),
+                  style: AppTypography.heading1.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -683,8 +785,15 @@ class _CashBar extends StatelessWidget {
           color: AppTokens.surface,
           child: Align(
             alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: limit == 0 ? 0 : cents.abs() / limit,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(
+                begin: limit == 0 ? 0 : cents.abs() / limit,
+                end: limit == 0 ? 0 : cents.abs() / limit,
+              ),
+              duration: dashboardDuration(context, dashboardCashFlowDuration),
+              curve: dashboardEaseInOut,
+              builder: (_, fraction, child) =>
+                  FractionallySizedBox(widthFactor: fraction, child: child),
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: color,
@@ -723,48 +832,62 @@ class _CashColumn extends StatelessWidget {
       selected: selected,
       label: '$name ${month.date.year}, net ${_signedMoney(net)}',
       excludeSemantics: true,
-      child: Material(
-        color: selected ? AppTokens.surface : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
+      child: AnimatedContainer(
+        duration: dashboardDuration(context, dashboardCashFlowDuration),
+        curve: dashboardEaseInOut,
+        decoration: BoxDecoration(
+          color: selected ? AppTokens.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          child: SizedBox(
-            width: 36,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Column(
-                spacing: 6,
-                children: [
-                  SizedBox(
-                    height: 72,
-                    width: 16,
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          top: net < 0 ? 36 : 36 - height,
-                          height: height,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: net < 0
-                                  ? AppTokens.statusDanger
-                                  : AppTokens.brandLime,
-                              borderRadius: BorderRadius.circular(3),
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 36,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  spacing: 6,
+                  children: [
+                    SizedBox(
+                      height: 72,
+                      width: 16,
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            top: net < 0 ? 36 : 36 - height,
+                            height: height,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: net < 0
+                                    ? AppTokens.statusDanger
+                                    : AppTokens.brandLime,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                    style: selected ? AppTypography.caption : _caption,
-                  ),
-                ],
+                    AnimatedDefaultTextStyle(
+                      duration: dashboardDuration(
+                        context,
+                        dashboardCashFlowDuration,
+                      ),
+                      curve: dashboardEaseInOut,
+                      style: selected ? AppTypography.caption : _caption,
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -14,6 +15,7 @@ import '../home/widgets/home_month_sheet.dart';
 import '../onboarding/onboarding_card_color.dart';
 import '../onboarding/widgets/onboarding_custom_card_sheet.dart';
 import 'dashboard_analytics.dart';
+import 'dashboard_motion.dart';
 import 'dashboard_preview_data.dart';
 import 'dashboard_period_switch.dart';
 import 'dashboard_repository.dart';
@@ -41,6 +43,7 @@ class _DashboardPageState extends State<DashboardPage> {
   late Future<DashboardSummary> _period;
   Future<DashboardSummary>? _rollingPeriod;
   bool _showRolling = false;
+  bool _rollingToggle = false;
   late Future<Map<DateTime, int>?> _income;
   late Future<List<DashboardCashMonth>?> _cashFlow;
   late DateTime _month;
@@ -63,10 +66,14 @@ class _DashboardPageState extends State<DashboardPage> {
     super.dispose();
   }
 
-  Future<DashboardSummary> _load(DateTime month) async {
-    if (!widget.isMember) return dashboardGuestSummary(month);
+  Future<DashboardSummary> _load(DateTime month) {
+    if (!widget.isMember) {
+      return SynchronousFuture(dashboardGuestSummary(month));
+    }
     final repository = DashboardRepository.instance;
-    if (repository == null) throw StateError('Dashboard API is not configured');
+    if (repository == null) {
+      return Future.error(StateError('Dashboard API is not configured'));
+    }
     return repository.load(_today, month: month);
   }
 
@@ -81,7 +88,14 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _togglePeriod() {
     setState(() {
-      _showRolling = !_showRolling;
+      _rollingToggle = !_rollingToggle;
+    });
+  }
+
+  void _applyPeriod() {
+    if (_showRolling == _rollingToggle) return;
+    setState(() {
+      _showRolling = _rollingToggle;
       if (_showRolling) _rollingPeriod ??= _loadRolling();
     });
   }
@@ -170,23 +184,21 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _addCard() async {
     if (!widget.isMember) {
-      await context.push('/login');
+      await context.push('/login', extra: dashboardDetailOrigin);
       return;
     }
 
-    final name = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+    final name = await pushDashboardDetail<String>(
+      context,
+      title: 'Add a card',
       builder: (_) => const OnboardingCustomCardSheet(),
     );
     if (name == null || !mounted) return;
 
     int? selectedDay;
-    final day = await showModalBottomSheet<int>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppTokens.background,
+    final day = await pushDashboardDetail<int>(
+      context,
+      title: 'Statement closing day',
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) => SafeArea(
           child: SingleChildScrollView(
@@ -195,7 +207,6 @@ class _DashboardPageState extends State<DashboardPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Statement closing day', style: AppTypography.heading2),
                 const SizedBox(height: AppSpacing.lg),
                 AppClosingDayPicker(
                   selectedDay: selectedDay,
@@ -239,15 +250,14 @@ class _DashboardPageState extends State<DashboardPage> {
   void _openStatement(DashboardStatement statement) {
     final start = DashboardStatementCard.shortDate(statement.start);
     final end = DashboardStatementCard.shortDate(statement.end);
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppTokens.background,
+    pushDashboardDetail<void>(
+      context,
+      title: statement.name,
       builder: (context) => SafeArea(
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.all(AppSpacing.xl),
           children: [
-            Text(statement.name, style: AppTypography.heading2),
             Text('Cycle $start – $end', style: AppTypography.caption),
             const SizedBox(height: AppSpacing.md),
             Text(
@@ -283,38 +293,46 @@ class _DashboardPageState extends State<DashboardPage> {
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(
-              child: FutureBuilder<DashboardSummary>(
-                future: _summary,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Padding(
-                      padding: EdgeInsets.all(AppSpacing.fiveXL),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: AppTokens.textInverse,
-                        ),
-                      ),
-                    );
-                  }
-                  if (snapshot.hasError || !snapshot.hasData) {
-                    return Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      child: Column(
-                        children: [
-                          Text(
-                            'Couldn’t load the dashboard.',
-                            style: AppTypography.bodyMedium.copyWith(
+              child: Hero(
+                tag: dashboardHeaderHero,
+                curve: dashboardEaseInOut,
+                flightShuttleBuilder: dashboardSurfaceFlight,
+                child: Material(
+                  color: AppTokens.brandPurple,
+                  child: FutureBuilder<DashboardSummary>(
+                    future: _summary,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return const Padding(
+                          padding: EdgeInsets.all(AppSpacing.fiveXL),
+                          child: Center(
+                            child: CircularProgressIndicator(
                               color: AppTokens.textInverse,
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.md),
-                          AppButton(label: 'Try again', onPressed: _reload),
-                        ],
-                      ),
-                    );
-                  }
-                  return _header(context, snapshot.data!);
-                },
+                        );
+                      }
+                      if (snapshot.hasError || !snapshot.hasData) {
+                        return Padding(
+                          padding: const EdgeInsets.all(AppSpacing.xl),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Couldn’t load the dashboard.',
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: AppTokens.textInverse,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              AppButton(label: 'Try again', onPressed: _reload),
+                            ],
+                          ),
+                        );
+                      }
+                      return _header(context, snapshot.data!);
+                    },
+                  ),
+                ),
               ),
             ),
             SliverToBoxAdapter(
@@ -336,10 +354,11 @@ class _DashboardPageState extends State<DashboardPage> {
                     spacing: AppSpacing.md,
                     children: [
                       DashboardPeriodSwitch(
-                        rolling: _showRolling,
+                        rolling: _rollingToggle,
                         today: _today,
                         month: _month,
                         onToggle: _togglePeriod,
+                        onSettled: _applyPeriod,
                         onPickMonth: _pickMonth,
                         onPreviousMonth: () => _selectMonth(
                           DateTime.utc(_month.year, _month.month - 1),

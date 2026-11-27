@@ -34,6 +34,12 @@ void main() {
       await tester.tap(find.text('Dashboard'));
       await tester.pumpAndSettle();
 
+      expect(
+        (ModalRoute.of(
+          tester.element(find.byType(DashboardPage)),
+        ) as TransitionRoute).transitionDuration,
+        const Duration(milliseconds: 400),
+      );
       final nav = find.byType(AppBottomNavigation);
       expect(tester.widget<AppBottomNavigation>(nav).selectedIndex, 1);
       expect(
@@ -60,11 +66,29 @@ void main() {
       await tester.tap(find.text('Amex'));
       await tester.pumpAndSettle();
       expect(find.text('Cycle 8/16 – 9/15'), findsOneWidget);
-      await tester.tapAt(const Offset(8, 100));
+      expect(
+        (ModalRoute.of(
+          tester.element(find.text('Cycle 8/16 – 9/15')),
+        ) as TransitionRoute).transitionDuration,
+        const Duration(milliseconds: 250),
+      );
+      await tester.pageBack();
       await tester.pumpAndSettle();
       await tester.tap(find.text('Home'));
       await tester.pumpAndSettle();
       expect(tester.widget<AppBottomNavigation>(nav).selectedIndex, 0);
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Dashboard'));
+      await tester.pumpAndSettle();
+      final route = ModalRoute.of(
+        tester.element(find.byType(DashboardPage)),
+      ) as TransitionRoute;
+      expect(route.transitionDuration, const Duration(milliseconds: 250));
+      expect(
+        route.reverseTransitionDuration,
+        const Duration(milliseconds: 400),
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -88,6 +112,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('23'), findsOneWidget);
     await tester.tap(find.text('Month'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.text('23'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.text('Jan'), findsOneWidget);
 
@@ -105,7 +132,10 @@ void main() {
     await tester.ensureVisible(find.text('Mar'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Mar'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 125));
+    expect(find.text(r'+$657.80'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 125));
     expect(find.text(r'+$657.80'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -131,13 +161,21 @@ void main() {
     final monthPill = find.byKey(const Key('dashboard-month-pill'));
     final collapsed = tester.getSize(rollingPill).width;
     final expanded = tester.getSize(monthPill).width;
+    final clock = find.byTooltip('Show past 30 days');
+    final clockCenter = tester.getCenter(clock);
 
-    await tester.tap(find.byTooltip('Show past 30 days'));
+    await tester.tap(clock);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 170));
     expect(
       tester.getSize(rollingPill).width,
       inExclusiveRange(collapsed, expanded),
+    );
+    expect(find.text('Spent this month'), findsOneWidget);
+    expect(tester.getCenter(clock), clockCenter);
+    expect(
+      tester.getTopLeft(monthPill).dx - tester.getTopRight(rollingPill).dx,
+      closeTo(8, .1),
     );
     await tester.pumpAndSettle();
     expect(tester.getSize(rollingPill).width, closeTo(expanded, .1));

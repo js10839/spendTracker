@@ -7,6 +7,7 @@ import '../design_system/tokens.dart';
 import '../design_system/typography.dart';
 import '../home/home_format.dart';
 import 'dashboard_repository.dart';
+import 'dashboard_motion.dart';
 
 class DashboardPeriodSwitch extends StatelessWidget {
   const DashboardPeriodSwitch({
@@ -15,6 +16,7 @@ class DashboardPeriodSwitch extends StatelessWidget {
     required this.today,
     required this.month,
     required this.onToggle,
+    required this.onSettled,
     required this.onPickMonth,
     required this.onPreviousMonth,
     required this.onNextMonth,
@@ -24,6 +26,7 @@ class DashboardPeriodSwitch extends StatelessWidget {
   final DateTime today;
   final DateTime month;
   final VoidCallback onToggle;
+  final VoidCallback onSettled;
   final VoidCallback onPickMonth;
   final VoidCallback onPreviousMonth;
   final VoidCallback onNextMonth;
@@ -42,10 +45,9 @@ class DashboardPeriodSwitch extends StatelessWidget {
         final expanded = constraints.maxWidth - AppSpacing.sm - _size;
         return TweenAnimationBuilder<double>(
           tween: Tween(begin: rolling ? 1.0 : 0.0, end: rolling ? 1.0 : 0.0),
-          duration: MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : const Duration(milliseconds: 340),
-          curve: Curves.easeInOutCubic,
+          duration: dashboardDuration(context, dashboardPeriodDuration),
+          curve: dashboardEaseInOut,
+          onEnd: onSettled,
           builder: (context, progress, _) {
             final leftWidth = lerpDouble(_size, expanded, progress)!;
             final rightWidth = expanded + _size - leftWidth;
@@ -54,6 +56,7 @@ class DashboardPeriodSwitch extends StatelessWidget {
                 _pill(
                   key: const Key('dashboard-rolling-pill'),
                   width: leftWidth,
+                  anchor: Alignment.centerLeft,
                   height: height,
                   expansion: progress,
                   isExpanded: rolling,
@@ -91,6 +94,7 @@ class DashboardPeriodSwitch extends StatelessWidget {
                 _pill(
                   key: const Key('dashboard-month-pill'),
                   width: rightWidth,
+                  anchor: Alignment.centerRight,
                   height: height,
                   expansion: 1 - progress,
                   isExpanded: !rolling,
@@ -136,6 +140,7 @@ class DashboardPeriodSwitch extends StatelessWidget {
   Widget _pill({
     required Key key,
     required double width,
+    required Alignment anchor,
     required double height,
     required double expansion,
     required bool isExpanded,
@@ -143,8 +148,8 @@ class DashboardPeriodSwitch extends StatelessWidget {
     required Widget collapsed,
     required Widget expanded,
   }) {
-    final labelOpacity = ((expansion - .25) / .65).clamp(0.0, 1.0);
-    final iconOpacity = (1 - expansion / .4).clamp(0.0, 1.0);
+    final labelOpacity = expansion;
+    final iconOpacity = 1 - expansion;
     return SizedBox(
       key: key,
       width: width,
@@ -182,6 +187,7 @@ class DashboardPeriodSwitch extends StatelessWidget {
                       child: Opacity(
                         opacity: labelOpacity,
                         child: OverflowBox(
+                          alignment: anchor,
                           minWidth: expandedWidth,
                           maxWidth: expandedWidth,
                           child: expanded,
@@ -194,7 +200,13 @@ class DashboardPeriodSwitch extends StatelessWidget {
                     ignoring: isExpanded,
                     child: ExcludeSemantics(
                       excluding: isExpanded,
-                      child: Opacity(opacity: iconOpacity, child: collapsed),
+                      child: Opacity(
+                        opacity: iconOpacity,
+                        child: Align(
+                          alignment: anchor,
+                          child: SizedBox(width: _size, child: collapsed),
+                        ),
+                      ),
                     ),
                   ),
               ],

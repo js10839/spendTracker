@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'home/home_page.dart';
 import 'dashboard/dashboard_page.dart';
+import 'dashboard/dashboard_motion.dart';
 import 'profile/profile_page.dart';
 import 'auth/login_email_page.dart';
 import 'auth/login_code_page.dart';
@@ -26,7 +27,21 @@ import 'splash/splash_page.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: '/splash',
   routes: [
-    GoRoute(path: '/profile', name: 'profile', redirect: (context, state) => state.extra is bool ? null : '/splash', builder: (context, state) => ProfilePage(isMember: state.extra == true)),
+    GoRoute(
+      path: '/profile',
+      name: 'profile',
+      redirect: (_, state) =>
+          state.extra is bool ? null : _homeRedirect(state.extra),
+      builder: (context, state) => ProfilePage(
+        isMember: state.extra == true || state.extra is MemberHomeAccess,
+        onDashboard: state.extra is bool
+            ? null
+            : () => context.pushReplacement(
+                '/dashboard',
+                extra: (access: state.extra, fromHome: false),
+              ),
+      ),
+    ),
     GoRoute(
       path: '/splash',
       name: 'splash',
@@ -46,27 +61,52 @@ final GoRouter appRouter = GoRouter(
       redirect: (context, state) => _homeRedirect(state.extra),
       builder: (context, state) => HomePage(
         isMember: state.extra is MemberHomeAccess,
-        onDashboard: () => context.push('/dashboard', extra: state.extra),
+        onDashboard: () => context.push(
+          '/dashboard',
+          extra: (access: state.extra, fromHome: true),
+        ),
+        onProfile: () => context.push('/profile', extra: state.extra),
       ),
     ),
     GoRoute(
       path: '/dashboard',
       name: 'dashboard',
-      redirect: (context, state) => _homeRedirect(state.extra),
-      builder: (context, state) => DashboardPage(
-        isMember: state.extra is MemberHomeAccess,
-        onHome: () {
-          if (context.canPop()) {
-            context.pop();
-          } else {
-            context.go('/', extra: state.extra);
-          }
-        },
-        onProfile: () => context.pushReplacement(
-          '/profile',
-          extra: state.extra is MemberHomeAccess,
-        ),
-      ),
+      redirect: (_, state) => _homeRedirect(_dashboardAccess(state.extra)),
+      pageBuilder: (context, state) {
+        final entry = state.extra;
+        final access = _dashboardAccess(entry);
+        final fromHome =
+            entry is ({Object? access, bool fromHome}) && entry.fromHome;
+        return CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: dashboardDuration(
+            context,
+            fromHome ? dashboardHomeDuration : dashboardFadeDuration,
+          ),
+          reverseTransitionDuration: dashboardDuration(
+            context,
+            dashboardHomeDuration,
+          ),
+          transitionsBuilder: (_, animation, _, child) => dashboardFade(
+            animation,
+            child,
+            curve: fromHome || animation.status == AnimationStatus.reverse
+                ? dashboardEaseInOut
+                : dashboardEaseOut,
+          ),
+          child: DashboardPage(
+            isMember: access is MemberHomeAccess,
+            onHome: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/', extra: access);
+              }
+            },
+            onProfile: () => context.pushReplacement('/profile', extra: access),
+          ),
+        );
+      },
     ),
     // TODO: 로그아웃 및 앱 사용 중 세션 무효화 시 온보딩으로 이동한다.
     GoRoute(
@@ -74,14 +114,32 @@ final GoRouter appRouter = GoRouter(
       name: 'signup',
       redirect: (context, state) {
         final access = state.extra;
-        return access is MemberHomeAccess && access.onboardingRequired && access.matchesSession(AuthService.instance) ? null : '/splash';
+        return access is MemberHomeAccess &&
+                access.onboardingRequired &&
+                access.matchesSession(AuthService.instance)
+            ? null
+            : '/splash';
       },
       builder: (context, state) => const SignupPage(),
     ),
     GoRoute(
       path: '/login',
       name: 'login-email',
-      builder: (context, state) => const LoginEmailPage(),
+      pageBuilder: (context, state) {
+        const child = LoginEmailPage();
+        if (state.extra != dashboardDetailOrigin) {
+          return MaterialPage<void>(key: state.pageKey, child: child);
+        }
+        final duration = dashboardDuration(context, dashboardFadeDuration);
+        return CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: duration,
+          reverseTransitionDuration: duration,
+          transitionsBuilder: (_, animation, _, child) =>
+              dashboardFade(animation, child),
+          child: child,
+        );
+      },
     ),
     GoRoute(
       path: '/login/code',
@@ -166,3 +224,6 @@ String? _homeRedirect(Object? access) {
   if (access is GuestHomeAccess && auth.currentUserId == null) return null;
   return '/splash';
 }
+
+Object? _dashboardAccess(Object? entry) =>
+    entry is ({Object? access, bool fromHome}) ? entry.access : entry;
