@@ -9,6 +9,7 @@ import 'data/payment_methods/payment_method_repository.dart';
 import 'data/ledgers/ledger_repository.dart';
 import 'calendar/calendar_access.dart';
 import 'calendar/http_calendar_data_source.dart';
+import 'dashboard/dashboard_repository.dart';
 
 // Flutter 앱의 진입점이다.
 Future<void> main() async {
@@ -27,6 +28,7 @@ Future<void> main() async {
       UserRepository.instance = ApiUserRepository(api);
       PaymentMethodRepository.instance = ApiPaymentMethodRepository(api);
       CalendarAccess.instance = CalendarAccess(ledgers: LedgerRepository(api.shared), dataSource: HttpCalendarDataSource(api.shared));
+      DashboardRepository.instance = DashboardRepository(api.shared);
     }
   }
   runApp(const SpendingTrackerApp());

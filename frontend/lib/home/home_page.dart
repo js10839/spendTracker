@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../calendar/calendar_access.dart';
+import '../dashboard/dashboard_motion.dart';
 import '../calendar/calendar_controller.dart';
 import '../calendar/calendar_models.dart';
 import '../data/transactions/transaction_search.dart';
@@ -24,9 +25,11 @@ import 'widgets/home_month_sheet.dart';
 import 'widgets/home_note_sheet.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, this.isMember = false});
+  const HomePage({super.key, this.isMember = false, this.onDashboard, this.onProfile});
 
   final bool isMember;
+  final VoidCallback? onDashboard;
+  final VoidCallback? onProfile;
 
   @override
   /// 날짜와 카드별 보기 상태를 유지한다.
@@ -274,7 +277,7 @@ class _HomePageState extends State<HomePage> {
               bottom: false,
               child: Column(
                 children: [
-                  header,
+                  Hero(tag: dashboardHeaderHero, curve: dashboardEaseInOut, flightShuttleBuilder: dashboardSurfaceFlight, child: Material(color: color, child: header)),
                   Expanded(
                     child: Container(
                       key: const Key('home-calendar-sheet'),
@@ -295,7 +298,20 @@ class _HomePageState extends State<HomePage> {
                         clipBehavior: Clip.none,
                         alignment: Alignment.topCenter,
                         children: [
-                          AppBottomNavigation(selectedIndex: 0, onSelected: (index) { if (index == 4) context.push('/profile', extra: widget.isMember); }),
+                          AppBottomNavigation(
+                            selectedIndex: 0,
+                            onSelected: (index) {
+                              if (index == 1) widget.onDashboard?.call();
+                              if (index == 4) {
+                                final open = widget.onProfile;
+                                if (open != null) {
+                                  open();
+                                } else {
+                                  context.push('/profile', extra: widget.isMember);
+                                }
+                              }
+                            },
+                          ),
                           if (_showAddTooltip &&
                               !_showSearch &&
                               keyboardInset == 0)
@@ -431,7 +447,12 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: AppSpacing.sm),
           KeyedSubtree(
             key: _daySummaryAnchor,
-            child: HomeTransactionSection(
+            child: Hero(
+              tag: dashboardCardHero,
+              curve: dashboardEaseInOut, flightShuttleBuilder: dashboardSurfaceFlight,
+              child: Material(
+                type: MaterialType.transparency,
+                child: HomeTransactionSection(
               selectedDate: widget.isMember ? state!.selectedDate : _selectedDate,
               // 같은 거래 위젯에 회원의 서버 데이터 또는 게스트의 예시 데이터만 전달한다.
               transactions: widget.isMember ? memberHomeTransactions(state!.selectedDay, state.paymentMethods, _categories) : previewHomeTransactions(_selectedDate, _card),
@@ -453,6 +474,8 @@ class _HomePageState extends State<HomePage> {
                 }
               }),
               onOpenNoteEditor: _openNoteEditor,
+                ),
+              ),
             ),
           ),
         ],
